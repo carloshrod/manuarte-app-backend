@@ -4,6 +4,9 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node-dev src/index.ts",
+    "generate:migration": "npx sequelize-cli migration:generate --name",
+    "migrate": "npx sequelize-cli db:migrate",
+    "migrate:undo": "npx sequelize-cli db:migrate:undo",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -17,16 +20,21 @@
     "morgan": "^1.10.0",
     "pg": "^8.13.1",
     "pg-hstore": "^2.3.4",
-    "sequelize": "^6.37.4"
+    "qrcode": "^1.5.4",
+    "sequelize": "^6.37.4",
+    "sequelize-auto": "^0.8.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/morgan": "^1.9.9",
+    "@types/qrcode": "^1.5.5",
+    "@types/sequelize": "^4.28.20",
     "eslint": "^9.13.0",
     "globals": "^15.11.0",
     "prettier": "^3.0.3",
+    "sequelize-cli": "^6.6.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.11.0"
