@@ -1,7 +1,6 @@
 import sequelize from 'sequelize';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductModel } from '../product/model';
-import QRCode from 'qrcode';
 import { CustomCreateOptions } from '../types';
 import {
 	ProductVariantConstructor,
@@ -14,7 +13,7 @@ export class ProductVariantService {
 
 	constructor({
 		productVariantModel,
-		productCategoryService = undefined,
+		productCategoryService,
 	}: ProductVariantConstructor) {
 		this.productVariantModel = productVariantModel;
 		this.productCategoryService = productCategoryService;
@@ -50,17 +49,7 @@ export class ProductVariantService {
 				order: [['productName', 'ASC']],
 			});
 
-			const productVariantsWithQR = await Promise.all(
-				productVariants.map(async productVariant => {
-					const variantProductVId = productVariant.vId ?? 'NO vID';
-
-					const qrCodeData = await QRCode.toDataURL(variantProductVId);
-
-					return { ...productVariant.dataValues, qrCode: qrCodeData };
-				}),
-			);
-
-			return productVariantsWithQR;
+			return productVariants;
 		} catch (error) {
 			console.error(error);
 			throw error;
@@ -83,18 +72,15 @@ export class ProductVariantService {
 				{ submittedBy } as CustomCreateOptions,
 			);
 
-			const categoryName = await this.productCategoryService?.getName(
+			const categoryName = await this.productCategoryService.getName(
 				productData.categoryProductId,
 			);
-
-			const qrCodeData = await QRCode.toDataURL(newProductVariant.vId);
 
 			return {
 				...newProductVariant.dataValues,
 				productName: productData?.name,
 				productDescription: productData?.description,
 				categoryProductName: categoryName,
-				qrCode: qrCodeData,
 			};
 		} catch (error) {
 			console.error('Error creando presentación de producto: ', error);
