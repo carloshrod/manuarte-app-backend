@@ -1,8 +1,12 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 
-export const ProductCategoryModel = sequelize.define(
-	'category_product',
+export class ProductCategoryModel extends Model {
+	public cId!: string;
+	public name!: string;
+}
+
+ProductCategoryModel.init(
 	{
 		id: {
 			type: DataTypes.UUID,
@@ -43,6 +47,7 @@ export const ProductCategoryModel = sequelize.define(
 		},
 	},
 	{
+		sequelize,
 		tableName: 'category_product',
 		schema: 'public',
 		timestamps: false,

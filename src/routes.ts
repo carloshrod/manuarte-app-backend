@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { sequelize } from './config/database';
 import productRouter from './modules/product/routes';
+import productVariantRouter from './modules/product-variant/routes';
 import productCategoryRouter from './modules/product-category/routes';
 
 const router = Router();
@@ -22,6 +23,7 @@ router.get('/api/v1/ping', async (_req, res) => {
 });
 
 router.use('/api/v1/products', productRouter);
+router.use('/api/v1/product-variants', productVariantRouter);
 router.use('/api/v1/product-categories', productCategoryRouter);
 
 export default router;

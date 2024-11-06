@@ -1,8 +1,48 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
+import { ProductModel } from '../product/model';
+import { Op } from 'sequelize';
+import { CustomCreateOptions } from '../types';
 
-export const ProductVariantModel = sequelize.define(
-	'variant_product',
+export class ProductVariantModel extends Model {
+	public productId!: string;
+	public vId!: string;
+	public createdBy!: string;
+	public updatedBy!: string;
+
+	async generateVId() {
+		try {
+			const product = await ProductModel.findByPk(this.productId);
+
+			if (!product) {
+				throw new Error('Producto no encontrado');
+			}
+
+			const pId = product?.pId;
+
+			// Buscar el último vId con el prefijo de pId
+			const maxItem = await ProductVariantModel.findOne({
+				where: { vId: { [Op.like]: `${pId}%` } },
+				order: [['vId', 'DESC']],
+			});
+
+			let nextId = `${pId}0001`;
+
+			if (maxItem) {
+				const currentId = maxItem.vId.slice(pId?.length);
+				const nextNumericId = parseInt(currentId, 10) + 1;
+				nextId = pId + nextNumericId.toString().padStart(4, '0');
+			}
+
+			this.vId = nextId;
+		} catch (error) {
+			console.error('Error generando vId: ', error);
+			throw error;
+		}
+	}
+}
+
+ProductVariantModel.init(
 	{
 		id: {
 			type: DataTypes.UUID,
@@ -17,6 +57,7 @@ export const ProductVariantModel = sequelize.define(
 		quantity: {
 			type: DataTypes.INTEGER,
 			allowNull: false,
+			defaultValue: 0,
 		},
 		productId: {
 			type: DataTypes.UUID,
@@ -55,6 +96,7 @@ export const ProductVariantModel = sequelize.define(
 		},
 	},
 	{
+		sequelize,
 		tableName: 'variant_product',
 		schema: 'public',
 		timestamps: false,
@@ -70,5 +112,22 @@ export const ProductVariantModel = sequelize.define(
 				fields: [{ name: 'vId' }],
 			},
 		],
+		hooks: {
+			beforeValidate: async (productVariant, options: CustomCreateOptions) => {
+				await productVariant.generateVId();
+
+				const submittedBy = options.submittedBy;
+				if (submittedBy) {
+					productVariant.createdBy = submittedBy;
+					productVariant.updatedBy = submittedBy;
+				}
+			},
+			beforeUpdate: (product, options: CustomCreateOptions) => {
+				const submittedBy = options.submittedBy;
+				if (submittedBy) {
+					product.updatedBy = submittedBy;
+				}
+			},
+		},
 	},
 );

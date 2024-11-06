@@ -3,8 +3,8 @@ import { ProductCategoryModel } from './model';
 export class ProductCategoryService {
 	private productCategoryModel;
 
-	constructor() {
-		this.productCategoryModel = ProductCategoryModel;
+	constructor(productCategoryModel: typeof ProductCategoryModel) {
+		this.productCategoryModel = productCategoryModel;
 	}
 
 	getAll = async () => {
@@ -14,6 +14,23 @@ export class ProductCategoryService {
 			return categories;
 		} catch (error) {
 			console.error(error);
+			throw error;
+		}
+	};
+
+	getName = async (categoryProductId: string) => {
+		try {
+			const category = await this.productCategoryModel.findByPk(
+				categoryProductId,
+				{ attributes: ['name'] },
+			);
+
+			if (!category) throw new Error('Categoría no encontrada');
+
+			return category.name;
+		} catch (error) {
+			console.error('Error obteniendo nombre de la categoría: ', error);
+			throw error;
 		}
 	};
 }

@@ -1,51 +1,60 @@
-import { sequelize } from '../../config/database';
 import { ProductModel } from './model';
-import { ProductCategoryModel } from '../product-category/model';
-import { ProductVariantModel } from '../product-variant/model';
-import QRCode from 'qrcode';
+import { ProductCreateService } from './types';
+import { ProductVariantService } from '../product-variant/service';
+import { CustomCreateOptions } from '../types';
 
 export class ProductService {
 	private productModel;
+	private productVariantService;
 
-	constructor() {
-		this.productModel = ProductModel;
+	constructor(
+		productModel: typeof ProductModel,
+		productVariantService: ProductVariantService,
+	) {
+		this.productModel = productModel;
+		this.productVariantService = productVariantService;
 	}
 
 	getAll = async () => {
-		const products = await this.productModel.findAll({
-			attributes: {
-				include: [
-					[sequelize.col('variantProduct.vId'), 'variantProductVId'],
-					[sequelize.col('variantProduct.name'), 'variantProductName'],
-					[sequelize.col('categoryProduct.name'), 'categoryProductName'],
-				],
-			},
-			include: [
-				{
-					model: ProductCategoryModel,
-					as: 'categoryProduct',
-					attributes: [],
-				},
-				{
-					model: ProductVariantModel,
-					as: 'variantProduct',
-					attributes: [],
-				},
-			],
-			order: [['name', 'ASC']],
-		});
+		try {
+			const products = await this.productModel.findAll({
+				attributes: ['id', 'name'],
+			});
 
-		const productsWithQR = await Promise.all(
-			products.map(async product => {
-				const variantProductVId =
-					(product.get('variantProductVId') as string) ?? 'NO vID';
+			return products;
+		} catch (error) {
+			console.error(error);
+			throw error;
+		}
+	};
 
-				const qrCodeData = await QRCode.toDataURL(variantProductVId);
+	create = async ({
+		productData,
+		productVariants,
+		submittedBy,
+	}: ProductCreateService) => {
+		try {
+			const newProduct = await this.productModel.create(productData, {
+				submittedBy,
+			} as CustomCreateOptions);
 
-				return { ...product.get(), qrCode: qrCodeData };
-			}),
-		);
+			const newProductVariants = [];
+			if (productVariants?.length > 0) {
+				for (const productVariantName of productVariants) {
+					const newProductVariant = await this.productVariantService.create({
+						productVariantName,
+						productData: newProduct,
+						submittedBy,
+					});
 
-		return productsWithQR;
+					newProductVariants.push(newProductVariant);
+				}
+			}
+
+			return { newProduct, newProductVariants };
+		} catch (error) {
+			console.error('Error creando producto: ', error);
+			throw error;
+		}
 	};
 }

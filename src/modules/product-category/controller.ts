@@ -4,8 +4,8 @@ import { ProductCategoryService } from './service';
 export class ProductCategoryController {
 	private productCategoryService;
 
-	constructor() {
-		this.productCategoryService = new ProductCategoryService();
+	constructor(productCategoryService: ProductCategoryService) {
+		this.productCategoryService = productCategoryService;
 	}
 
 	getAll = async (_req: Request, res: Response) => {

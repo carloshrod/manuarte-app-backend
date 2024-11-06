@@ -1,10 +1,54 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductVariantModel } from '../product-variant/model';
+import { Op } from 'sequelize';
+import { CustomCreateOptions } from '../types';
 
-export const ProductModel = sequelize.define(
-	'product',
+export class ProductModel extends Model {
+	public id!: string;
+	public name!: string;
+	public pId!: string;
+	public description!: string;
+	public categoryProductId!: string;
+	public createdBy!: string;
+	public updatedBy!: string;
+
+	async generatePId() {
+		try {
+			const categoryProduct = await ProductCategoryModel.findByPk(
+				this.categoryProductId,
+			);
+
+			if (!categoryProduct) {
+				throw new Error('Categoría no encontrada');
+			}
+
+			const cId = categoryProduct.cId;
+
+			// Buscar el último pId con el prefijo de cId
+			const maxItem = await ProductModel.findOne({
+				where: { pId: { [Op.like]: `${cId}%` } },
+				order: [['pId', 'DESC']],
+			});
+
+			let nextId = `${cId}0001`;
+
+			if (maxItem) {
+				const currentId = maxItem.pId.slice(cId.length);
+				const nextNumericId = parseInt(currentId, 10) + 1;
+				nextId = cId + nextNumericId.toString().padStart(4, '0');
+			}
+
+			this.pId = nextId;
+		} catch (error) {
+			console.error('Error generando pId: ', error);
+			throw error;
+		}
+	}
+}
+
+ProductModel.init(
 	{
 		id: {
 			type: DataTypes.UUID,
@@ -53,6 +97,7 @@ export const ProductModel = sequelize.define(
 		},
 	},
 	{
+		sequelize,
 		tableName: 'product',
 		schema: 'public',
 		timestamps: false,
@@ -68,17 +113,42 @@ export const ProductModel = sequelize.define(
 				fields: [{ name: 'pId' }],
 			},
 		],
+		hooks: {
+			beforeValidate: async (product, options: CustomCreateOptions) => {
+				await product.generatePId();
+
+				const submittedBy = options.submittedBy;
+				if (submittedBy) {
+					product.createdBy = submittedBy;
+					product.updatedBy = submittedBy;
+				}
+			},
+			beforeUpdate: (product, options: CustomCreateOptions) => {
+				const submittedBy = options.submittedBy;
+				if (submittedBy) {
+					product.updatedBy = submittedBy;
+				}
+			},
+		},
 	},
 );
 
+// ***** ProductModel-ProductCategoryModel Relations *****
 ProductModel.belongsTo(ProductCategoryModel, {
 	foreignKey: 'categoryProductId',
 	as: 'categoryProduct',
 	targetKey: 'id',
 });
 
+// ***** ProductModel-ProductVariantModel Relations *****
 ProductModel.hasMany(ProductVariantModel, {
 	foreignKey: 'productId',
 	as: 'variantProduct',
 	sourceKey: 'id',
+});
+
+ProductVariantModel.belongsTo(ProductModel, {
+	foreignKey: 'productId',
+	as: 'product',
+	targetKey: 'id',
 });
