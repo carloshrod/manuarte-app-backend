@@ -1,18 +1,23 @@
-import { ProductModel } from './model';
-import { ProductCreateService } from './types';
-import { ProductVariantService } from '../product-variant/service';
-import { CustomCreateOptions } from '../types';
+import {
+	ProductCreateService,
+	ProductServiceConstructor,
+	ProductUpdateService,
+} from './types';
+import { sequelize } from '../../config/database';
 
 export class ProductService {
 	private productModel;
 	private productVariantService;
+	private productCategoryService;
 
-	constructor(
-		productModel: typeof ProductModel,
-		productVariantService: ProductVariantService,
-	) {
+	constructor({
+		productModel,
+		productVariantService,
+		productCategoryService,
+	}: ProductServiceConstructor) {
 		this.productModel = productModel;
 		this.productVariantService = productVariantService;
+		this.productCategoryService = productCategoryService;
 	}
 
 	getAll = async () => {
@@ -34,24 +39,77 @@ export class ProductService {
 		submittedBy,
 	}: ProductCreateService) => {
 		try {
-			const newProduct = await this.productModel.create(productData, {
-				submittedBy,
-			} as CustomCreateOptions);
+			const newProduct = this.productModel.build({
+				...productData,
+				createdBy: submittedBy,
+				updatedBy: submittedBy,
+			});
+
+			await newProduct.generatePId();
+			await newProduct.save();
 
 			const newProductVariants = [];
 			if (productVariants?.length > 0) {
-				for (const productVariantName of productVariants) {
-					const newProductVariant = await this.productVariantService.create({
-						productVariantName,
-						productData: newProduct,
+				for (const name of productVariants) {
+					const newProductVariant = await this.productVariantService.create(
+						{
+							name,
+							productId: newProduct.id,
+						},
 						submittedBy,
-					});
+					);
 
 					newProductVariants.push(newProductVariant);
 				}
 			}
 
-			return { newProduct, newProductVariants };
+			const categoryName = await this.productCategoryService.getName(
+				newProduct?.categoryProductId,
+			);
+
+			return {
+				...newProduct.dataValues,
+				categoryProductName: categoryName,
+				productVariants: newProductVariants,
+			};
+		} catch (error) {
+			console.error('Error creando producto: ', error);
+			throw error;
+		}
+	};
+
+	update = async ({
+		id,
+		productData,
+		productVariant,
+		submittedBy,
+	}: ProductUpdateService) => {
+		try {
+			const productToUpdate = await this.productModel.findByPk(id);
+			if (!productToUpdate)
+				throw new Error(`No se encontró el producto con id ${id}`);
+
+			await productToUpdate.update({
+				...productData,
+				updatedBy: submittedBy,
+				updatedDate: sequelize.fn('now'),
+			});
+
+			let productVariantToUpdate;
+			if (productVariant) {
+				const { id, name } = productVariant;
+
+				productVariantToUpdate = await this.productVariantService.update({
+					id,
+					name,
+					submittedBy,
+				});
+			}
+
+			return {
+				...productToUpdate.dataValues,
+				productVariant: productVariantToUpdate,
+			};
 		} catch (error) {
 			console.error('Error creando producto: ', error);
 			throw error;

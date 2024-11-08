@@ -1,22 +1,13 @@
-import sequelize from 'sequelize';
+import { sequelize } from '../../config/database';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductModel } from '../product/model';
-import { CustomCreateOptions } from '../types';
-import {
-	ProductVariantConstructor,
-	ProductVariantCreateService,
-} from './types';
+import { ProductVariantServiceConstructor, ProductVariantAttr } from './types';
 
 export class ProductVariantService {
 	private productVariantModel;
-	private productCategoryService;
 
-	constructor({
-		productVariantModel,
-		productCategoryService,
-	}: ProductVariantConstructor) {
+	constructor(productVariantModel: ProductVariantServiceConstructor) {
 		this.productVariantModel = productVariantModel;
-		this.productCategoryService = productCategoryService;
 	}
 
 	getAll = async () => {
@@ -26,6 +17,7 @@ export class ProductVariantService {
 					include: [
 						[sequelize.col('product.name'), 'productName'],
 						[sequelize.col('product.description'), 'productDescription'],
+						[sequelize.col('product.categoryProduct.id'), 'categoryProductId'],
 						[
 							sequelize.col('product.categoryProduct.name'),
 							'categoryProductName',
@@ -56,34 +48,54 @@ export class ProductVariantService {
 		}
 	};
 
-	create = async ({
-		productVariantName,
-		productData,
-		submittedBy,
-	}: ProductVariantCreateService) => {
+	create = async (
+		productVariantData: Partial<ProductVariantAttr>,
+		submittedBy: string,
+	) => {
 		try {
-			const productVariantData = {
-				name: productVariantName,
-				productId: productData.id,
-			};
+			const newProductVariant = this.productVariantModel.build({
+				...productVariantData,
+				createdBy: submittedBy,
+				updatedBy: submittedBy,
+			});
 
-			const newProductVariant = await this.productVariantModel.create(
-				productVariantData,
-				{ submittedBy } as CustomCreateOptions,
-			);
+			await newProductVariant.generateVId();
+			await newProductVariant.save();
 
-			const categoryName = await this.productCategoryService.getName(
-				productData.categoryProductId,
-			);
-
-			return {
-				...newProductVariant.dataValues,
-				productName: productData?.name,
-				productDescription: productData?.description,
-				categoryProductName: categoryName,
-			};
+			return newProductVariant.dataValues;
 		} catch (error) {
 			console.error('Error creando presentación de producto: ', error);
+			throw error;
+		}
+	};
+
+	update = async ({
+		id,
+		name,
+		submittedBy,
+	}: {
+		id: string;
+		name: string;
+		submittedBy: string;
+	}) => {
+		try {
+			const productVariantToUpdate =
+				await this.productVariantModel.findByPk(id);
+			if (!productVariantToUpdate) {
+				throw new Error(
+					`No se encontró la presentación de producto con id ${id}`,
+				);
+			}
+
+			await productVariantToUpdate.update({
+				name,
+				updatedBy: submittedBy,
+				updatedDate: sequelize.fn('now'),
+			});
+
+			return productVariantToUpdate.dataValues;
+		} catch (error) {
+			console.error('Error actualizando presentación de producto: ', error);
 			throw error;
 		}
 	};

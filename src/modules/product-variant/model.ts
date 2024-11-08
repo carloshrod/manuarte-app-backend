@@ -2,9 +2,10 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { ProductModel } from '../product/model';
 import { Op } from 'sequelize';
-import { CustomCreateOptions } from '../types';
 
 export class ProductVariantModel extends Model {
+	public id!: string;
+	public name!: string;
 	public productId!: string;
 	public vId!: string;
 	public createdBy!: string;
@@ -112,22 +113,5 @@ ProductVariantModel.init(
 				fields: [{ name: 'vId' }],
 			},
 		],
-		hooks: {
-			beforeValidate: async (productVariant, options: CustomCreateOptions) => {
-				await productVariant.generateVId();
-
-				const submittedBy = options.submittedBy;
-				if (submittedBy) {
-					productVariant.createdBy = submittedBy;
-					productVariant.updatedBy = submittedBy;
-				}
-			},
-			beforeUpdate: (product, options: CustomCreateOptions) => {
-				const submittedBy = options.submittedBy;
-				if (submittedBy) {
-					product.updatedBy = submittedBy;
-				}
-			},
-		},
 	},
 );

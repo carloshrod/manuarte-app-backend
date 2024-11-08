@@ -10,15 +10,17 @@ import { ProductCategoryModel } from '../product-category/model';
 const router = Router();
 
 const productCategoryService = new ProductCategoryService(ProductCategoryModel);
-const productVariantService = new ProductVariantService({
-	productVariantModel: ProductVariantModel,
+const productVariantService = new ProductVariantService(ProductVariantModel);
+const productService = new ProductService({
+	productModel: ProductModel,
+	productVariantService,
 	productCategoryService,
 });
-const productService = new ProductService(ProductModel, productVariantService);
 
 const productController = new ProductController(productService);
 
 router.get('/', productController.getAll);
 router.post('/', productController.create);
+router.put('/:id', productController.update);
 
 export default router;

@@ -1,4 +1,5 @@
 import { ProductCategoryService } from '../product-category/service';
+import { ProductData } from '../product/types';
 import { ProductVariantModel } from './model';
 
 export interface ProductVariantAttr {
@@ -14,18 +15,4 @@ export interface ProductVariantAttr {
 	deletedDate?: Date | null;
 }
 
-export interface ProductVariantCreateService {
-	productVariantName: string;
-	productData: {
-		id: string;
-		name: string;
-		description: string;
-		categoryProductId: string;
-	};
-	submittedBy: string;
-}
-
-export interface ProductVariantConstructor {
-	productVariantModel: typeof ProductVariantModel;
-	productCategoryService: ProductCategoryService;
-}
+export type ProductVariantServiceConstructor = typeof ProductVariantModel;

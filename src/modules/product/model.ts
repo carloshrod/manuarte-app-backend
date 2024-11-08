@@ -3,7 +3,6 @@ import { sequelize } from '../../config/database';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductVariantModel } from '../product-variant/model';
 import { Op } from 'sequelize';
-import { CustomCreateOptions } from '../types';
 
 export class ProductModel extends Model {
 	public id!: string;
@@ -113,23 +112,6 @@ ProductModel.init(
 				fields: [{ name: 'pId' }],
 			},
 		],
-		hooks: {
-			beforeValidate: async (product, options: CustomCreateOptions) => {
-				await product.generatePId();
-
-				const submittedBy = options.submittedBy;
-				if (submittedBy) {
-					product.createdBy = submittedBy;
-					product.updatedBy = submittedBy;
-				}
-			},
-			beforeUpdate: (product, options: CustomCreateOptions) => {
-				const submittedBy = options.submittedBy;
-				if (submittedBy) {
-					product.updatedBy = submittedBy;
-				}
-			},
-		},
 	},
 );
 
