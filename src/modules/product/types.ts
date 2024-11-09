@@ -31,7 +31,7 @@ export interface ProductCreateService {
 export interface ProductUpdateService {
 	id: string;
 	productData: Partial<ProductAttr>;
-	productVariant: {
+	productVariantData: {
 		id: string;
 		name: string;
 	};

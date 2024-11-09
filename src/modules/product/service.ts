@@ -81,7 +81,7 @@ export class ProductService {
 	update = async ({
 		id,
 		productData,
-		productVariant,
+		productVariantData,
 		submittedBy,
 	}: ProductUpdateService) => {
 		try {
@@ -95,23 +95,13 @@ export class ProductService {
 				updatedDate: sequelize.fn('now'),
 			});
 
-			let productVariantToUpdate;
-			if (productVariant) {
-				const { id, name } = productVariant;
-
-				productVariantToUpdate = await this.productVariantService.update({
-					id,
-					name,
-					submittedBy,
-				});
-			}
-
-			return {
-				...productToUpdate.dataValues,
-				productVariant: productVariantToUpdate,
-			};
+			await this.productVariantService.update({
+				id: productVariantData.id,
+				name: productVariantData.name,
+				submittedBy,
+			});
 		} catch (error) {
-			console.error('Error creando producto: ', error);
+			console.error('Error actualizando producto: ', error);
 			throw error;
 		}
 	};
