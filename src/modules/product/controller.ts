@@ -36,10 +36,12 @@ export class ProductController {
 				submittedBy,
 			});
 
-			res.status(201).json(newProduct);
+			res
+				.status(201)
+				.json({ newProduct, message: 'Producto agregado con éxito' });
 		} catch (error) {
 			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error inesperado!';
+				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
 			res.status(500).json({ message: errorMsg });
 		}
 	};
@@ -47,22 +49,21 @@ export class ProductController {
 	update = async (req: Request, res: Response) => {
 		try {
 			const { id } = req.params;
-			const { productVariants, ...rest } = req.body;
+			const { productVariant, ...rest } = req.body;
 			// ToDo: Obtener el id del usuario que actualiza el producto
 			const submittedBy = '13503e37-f230-4471-965b-312ae136a484';
 
-			const updatedProduct = await this.productService.update({
+			await this.productService.update({
 				id,
-				productData: rest,
-				productVariant:
-					productVariants?.length > 0 ? productVariants[0] : undefined,
+				productData: { ...rest },
+				productVariantData: productVariant,
 				submittedBy,
 			});
 
-			res.status(200).json(updatedProduct);
+			res.status(200).json({ message: 'Producto actualizado con éxito' });
 		} catch (error) {
 			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error inesperado!';
+				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
 			res.status(500).json({ message: errorMsg });
 		}
 	};
