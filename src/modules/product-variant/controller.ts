@@ -24,4 +24,28 @@ export class ProductVariantController {
 			res.status(500).json({ message: errorMsg });
 		}
 	};
+
+	update = async (req: Request, res: Response) => {
+		try {
+			const { id } = req.params;
+			const { name } = req.body;
+			// ToDo: Obtener el id del usuario que actualiza el producto
+			const submittedBy = '13503e37-f230-4471-965b-312ae136a484';
+
+			await this.productVariantService.update({
+				id,
+				name,
+				submittedBy,
+			});
+
+			res.status(200).json({
+				message: 'Presentación del producto actualizada con éxito',
+			});
+		} catch (error) {
+			console.error(error);
+			const errorMsg =
+				error instanceof Error ? error.message : 'Ocurrió un error inesperado!';
+			res.status(500).json({ message: errorMsg });
+		}
+	};
 }

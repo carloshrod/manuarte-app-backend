@@ -12,5 +12,6 @@ const productVariantController = new ProductVariantController(
 );
 
 router.get('/', productVariantController.getAll);
+router.put('/:id', productVariantController.update);
 
 export default router;

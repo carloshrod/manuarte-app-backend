@@ -95,11 +95,21 @@ export class ProductService {
 				updatedDate: sequelize.fn('now'),
 			});
 
-			await this.productVariantService.update({
+			const updatedProductVariant = await this.productVariantService.update({
 				id: productVariantData.id,
 				name: productVariantData.name,
 				submittedBy,
 			});
+
+			const categoryName = await this.productCategoryService.getName(
+				productToUpdate?.categoryProductId,
+			);
+
+			return {
+				...productToUpdate.dataValues,
+				categoryProductName: categoryName,
+				productVariant: updatedProductVariant,
+			};
 		} catch (error) {
 			console.error('Error actualizando producto: ', error);
 			throw error;
