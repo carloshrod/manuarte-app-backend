@@ -22,19 +22,25 @@ export interface ProductData {
 	categoryProductId: string;
 }
 
-export interface ProductCreateService {
+export interface CreateProductService {
 	productData: Partial<ProductAttr>;
 	productVariants: string[];
 	submittedBy: string;
 }
 
-export interface ProductUpdateService {
+export interface UpdateProductService {
 	id: string;
 	productData: Partial<ProductAttr>;
 	productVariantData: {
 		id: string;
 		name: string;
 	};
+	submittedBy: string;
+}
+
+export interface AddProductVariantService {
+	productId: string;
+	name: string;
 	submittedBy: string;
 }
 

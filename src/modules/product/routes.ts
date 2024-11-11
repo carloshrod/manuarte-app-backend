@@ -21,6 +21,8 @@ const productController = new ProductController(productService);
 
 router.get('/', productController.getAll);
 router.post('/', productController.create);
+router.post('/add-variant/:id', productController.addVariant);
 router.put('/:id', productController.update);
+router.get('/search', productController.searchProducts);
 
 export default router;

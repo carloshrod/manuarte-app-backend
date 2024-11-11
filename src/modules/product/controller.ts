@@ -67,4 +67,42 @@ export class ProductController {
 			res.status(500).json({ message: errorMsg });
 		}
 	};
+
+	addVariant = async (req: Request, res: Response) => {
+		try {
+			const { id } = req.params;
+			const submittedBy = '13503e37-f230-4471-965b-312ae136a484';
+
+			const newProductVariant = await this.productService.addVariant({
+				productId: id,
+				name: req.body.name,
+				submittedBy,
+			});
+
+			res.status(201).json({
+				newProductVariant,
+				message: 'Presentación del producto creada con éxito',
+			});
+		} catch (error) {
+			const errorMsg =
+				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
+			res.status(500).json({ message: errorMsg });
+		}
+	};
+
+	searchProducts = async (req: Request, res: Response) => {
+		try {
+			const productName = (req.query.productName as string) || '';
+			console.log(productName);
+			const products = await this.productService.getProductsByName(productName);
+
+			console.log(products);
+
+			res.status(200).json(products);
+		} catch (error) {
+			const errorMsg =
+				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
+			res.status(500).json({ message: errorMsg });
+		}
+	};
 }

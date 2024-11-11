@@ -1,9 +1,11 @@
 import {
-	ProductCreateService,
+	AddProductVariantService,
+	CreateProductService,
 	ProductServiceConstructor,
-	ProductUpdateService,
+	UpdateProductService,
 } from './types';
 import { sequelize } from '../../config/database';
+import { Op } from 'sequelize';
 
 export class ProductService {
 	private productModel;
@@ -37,7 +39,7 @@ export class ProductService {
 		productData,
 		productVariants,
 		submittedBy,
-	}: ProductCreateService) => {
+	}: CreateProductService) => {
 		try {
 			const newProduct = this.productModel.build({
 				...productData,
@@ -83,7 +85,7 @@ export class ProductService {
 		productData,
 		productVariantData,
 		submittedBy,
-	}: ProductUpdateService) => {
+	}: UpdateProductService) => {
 		try {
 			const productToUpdate = await this.productModel.findByPk(id);
 			if (!productToUpdate)
@@ -112,6 +114,52 @@ export class ProductService {
 			};
 		} catch (error) {
 			console.error('Error actualizando producto: ', error);
+			throw error;
+		}
+	};
+
+	addVariant = async ({
+		productId,
+		name,
+		submittedBy,
+	}: AddProductVariantService) => {
+		try {
+			const productVariantToUpdate = await this.productVariantService.create(
+				{ name, productId },
+				submittedBy,
+			);
+
+			const product = await this.productModel.findByPk(productId);
+			let categoryProductName;
+			if (product) {
+				categoryProductName = await this.productCategoryService.getName(
+					product?.categoryProductId,
+				);
+			}
+
+			return {
+				...productVariantToUpdate,
+				productId,
+				productName: product?.name,
+				productDescription: product?.description,
+				categoryProductId: product?.categoryProductId,
+				categoryProductName,
+			};
+		} catch (error) {
+			console.error('Error actualizando producto: ', error);
+			throw error;
+		}
+	};
+
+	getProductsByName = async (productName: string) => {
+		try {
+			const products = await this.productModel.findAll({
+				where: { name: { [Op.iLike]: `%${productName}%` } },
+			});
+
+			return products;
+		} catch (error) {
+			console.error('Error obteniendo productos por nombre: ', error);
 			throw error;
 		}
 	};

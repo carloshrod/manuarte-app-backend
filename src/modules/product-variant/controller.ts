@@ -18,7 +18,6 @@ export class ProductVariantController {
 				res.sendStatus(204);
 			}
 		} catch (error) {
-			console.error(error);
 			const errorMsg =
 				error instanceof Error ? error.message : 'Ocurrió un error inesperado!';
 			res.status(500).json({ message: errorMsg });
@@ -42,7 +41,6 @@ export class ProductVariantController {
 				message: 'Presentación del producto actualizada con éxito',
 			});
 		} catch (error) {
-			console.error(error);
 			const errorMsg =
 				error instanceof Error ? error.message : 'Ocurrió un error inesperado!';
 			res.status(500).json({ message: errorMsg });
