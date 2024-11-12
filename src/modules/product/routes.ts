@@ -23,6 +23,7 @@ router.get('/', productController.getAll);
 router.post('/', productController.create);
 router.post('/add-variant/:id', productController.addVariant);
 router.put('/:id', productController.update);
+router.delete('/', productController.delete);
 router.get('/search', productController.searchProducts);
 
 export default router;

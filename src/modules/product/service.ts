@@ -22,19 +22,6 @@ export class ProductService {
 		this.productCategoryService = productCategoryService;
 	}
 
-	getAll = async () => {
-		try {
-			const products = await this.productModel.findAll({
-				attributes: ['id', 'name'],
-			});
-
-			return products;
-		} catch (error) {
-			console.error(error);
-			throw error;
-		}
-	};
-
 	create = async ({
 		productData,
 		productVariants,
@@ -76,6 +63,33 @@ export class ProductService {
 			};
 		} catch (error) {
 			console.error('Error creando producto: ', error);
+			throw error;
+		}
+	};
+
+	getAll = async () => {
+		try {
+			const products = await this.productModel.findAll({
+				attributes: ['id', 'name'],
+				order: [['name', 'ASC']],
+			});
+
+			return products;
+		} catch (error) {
+			console.error('Error obteniendo productos: ', error);
+			throw error;
+		}
+	};
+
+	getProductsByName = async (productName: string) => {
+		try {
+			const products = await this.productModel.findAll({
+				where: { name: { [Op.iLike]: `%${productName}%` } },
+			});
+
+			return products;
+		} catch (error) {
+			console.error('Error obteniendo productos por nombre: ', error);
 			throw error;
 		}
 	};
@@ -146,20 +160,30 @@ export class ProductService {
 				categoryProductName,
 			};
 		} catch (error) {
-			console.error('Error actualizando producto: ', error);
+			console.error('Error agregando presentación de producto: ', error);
 			throw error;
 		}
 	};
 
-	getProductsByName = async (productName: string) => {
+	delete = async (productId: string, productVariantId: string) => {
 		try {
-			const products = await this.productModel.findAll({
-				where: { name: { [Op.iLike]: `%${productName}%` } },
-			});
+			const productVariantDeleted =
+				await this.productVariantService.delete(productVariantId);
 
-			return products;
+			const count = await this.productVariantService.count(productId);
+
+			let productDeleted = 0;
+			if (count === 0) {
+				productDeleted = await this.productModel.destroy({
+					where: { id: productId },
+				});
+
+				return { productVariantDeleted, productDeleted };
+			}
+
+			return { productVariantDeleted, productDeleted };
 		} catch (error) {
-			console.error('Error obteniendo productos por nombre: ', error);
+			console.error('Error eliminando producto: ', error);
 			throw error;
 		}
 	};

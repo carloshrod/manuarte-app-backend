@@ -99,4 +99,33 @@ export class ProductVariantService {
 			throw error;
 		}
 	};
+
+	delete = async (productVariantId: string) => {
+		try {
+			const deletedCount = await this.productVariantModel.destroy({
+				where: { id: productVariantId },
+			});
+
+			return deletedCount;
+		} catch (error) {
+			console.error('Error eliminando presentación del producto: ', error);
+			throw error;
+		}
+	};
+
+	count = async (productId: string) => {
+		try {
+			const productVariants = await this.productVariantModel.findAndCountAll({
+				where: { productId },
+			});
+
+			return productVariants.count;
+		} catch (error) {
+			console.error(
+				'Error en el conteo de presentaciones del producto: ',
+				error,
+			);
+			throw error;
+		}
+	};
 }

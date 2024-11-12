@@ -8,22 +8,6 @@ export class ProductController {
 		this.productService = productService;
 	}
 
-	getAll = async (_req: Request, res: Response) => {
-		try {
-			const products = await this.productService.getAll();
-
-			if (products.length > 0) {
-				res.status(200).json(products);
-			} else {
-				res.sendStatus(204);
-			}
-		} catch (error) {
-			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error!';
-			res.status(500).json({ message: errorMsg });
-		}
-	};
-
 	create = async (req: Request, res: Response) => {
 		try {
 			const { productVariants, ...rest } = req.body;
@@ -42,6 +26,22 @@ export class ProductController {
 		} catch (error) {
 			const errorMsg =
 				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
+			res.status(500).json({ message: errorMsg });
+		}
+	};
+
+	getAll = async (_req: Request, res: Response) => {
+		try {
+			const products = await this.productService.getAll();
+
+			if (products.length > 0) {
+				res.status(200).json(products);
+			} else {
+				res.sendStatus(204);
+			}
+		} catch (error) {
+			const errorMsg =
+				error instanceof Error ? error.message : 'Ocurrió un error!';
 			res.status(500).json({ message: errorMsg });
 		}
 	};
@@ -90,13 +90,35 @@ export class ProductController {
 		}
 	};
 
+	delete = async (req: Request, res: Response) => {
+		try {
+			const productId = (req.query.productId as string) || '';
+			const productVariantId = (req.query.productVariantId as string) || '';
+
+			const result = await this.productService.delete(
+				productId,
+				productVariantId,
+			);
+
+			const productDeleted = result.productDeleted === 1;
+
+			res.status(200).json({
+				productDeleted,
+				message: productDeleted
+					? 'Producto y su presentación eliminados con éxito'
+					: 'Presentación del producto eliminada con éxito',
+			});
+		} catch (error) {
+			const errorMsg =
+				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
+			res.status(500).json({ message: errorMsg });
+		}
+	};
+
 	searchProducts = async (req: Request, res: Response) => {
 		try {
 			const productName = (req.query.productName as string) || '';
-			console.log(productName);
 			const products = await this.productService.getProductsByName(productName);
-
-			console.log(products);
 
 			res.status(200).json(products);
 		} catch (error) {
