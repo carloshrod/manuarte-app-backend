@@ -1,9 +1,41 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
+import { Op } from 'sequelize';
 
 export class ProductCategoryModel extends Model {
 	public cId!: string;
 	public name!: string;
+
+	async generateCId() {
+		try {
+			const lastCategory = await ProductCategoryModel.findOne({
+				where: { cId: { [Op.not]: null } },
+				order: [['cId', 'DESC']],
+			});
+
+			let nextCId = '0001';
+
+			if (lastCategory && lastCategory.cId) {
+				const lastCIdNumeric = parseInt(lastCategory.cId, 10);
+
+				if (isNaN(lastCIdNumeric)) {
+					throw new Error(
+						`Formato de cId inválido en la última categoría: ${lastCategory.cId}`,
+					);
+				}
+
+				const nextNumericId = lastCIdNumeric + 1;
+				nextCId = nextNumericId.toString().padStart(4, '0');
+			}
+
+			this.cId = nextCId;
+		} catch (error) {
+			console.error('Error generando el cId:', error);
+			throw new Error(
+				'No se pudo generar un nuevo cId para la categoría de producto',
+			);
+		}
+	}
 }
 
 ProductCategoryModel.init(

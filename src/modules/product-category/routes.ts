@@ -11,6 +11,9 @@ const productCategoryController = new ProductCategoryController(
 	productCategoryService,
 );
 
+router.post('/', productCategoryController.create);
 router.get('/', productCategoryController.getAll);
+router.put('/:id', productCategoryController.update);
+router.delete('/:id', productCategoryController.delete);
 
 export default router;
