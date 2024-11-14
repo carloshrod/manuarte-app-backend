@@ -20,29 +20,37 @@ export class ProductModel extends Model {
 			);
 
 			if (!categoryProduct) {
-				throw new Error('Categoría no encontrada');
+				throw new Error(
+					`Categoría con ID ${this.categoryProductId} no encontrada`,
+				);
 			}
 
 			const cId = categoryProduct.cId;
 
-			// Buscar el último pId con el prefijo de cId
-			const maxItem = await ProductModel.findOne({
+			const lastProduct = await ProductModel.findOne({
 				where: { pId: { [Op.like]: `${cId}%` } },
 				order: [['pId', 'DESC']],
 			});
 
-			let nextId = `${cId}0001`;
+			let nextPId = `${cId}0001`;
 
-			if (maxItem) {
-				const currentId = maxItem.pId.slice(cId.length);
+			if (lastProduct) {
+				const currentId = lastProduct.pId.slice(cId.length);
 				const nextNumericId = parseInt(currentId, 10) + 1;
-				nextId = cId + nextNumericId.toString().padStart(4, '0');
+
+				if (isNaN(nextNumericId)) {
+					throw new Error(
+						`Formato de pId inválido en el último producto: ${lastProduct.pId}`,
+					);
+				}
+
+				nextPId = `${cId}${nextNumericId.toString().padStart(4, '0')}`;
 			}
 
-			this.pId = nextId;
+			this.pId = nextPId;
 		} catch (error) {
-			console.error('Error generando pId: ', error);
-			throw error;
+			console.error('Error generando pId:', error);
+			throw new Error('No se pudo generar un nuevo pId para el producto');
 		}
 	}
 }
@@ -120,6 +128,12 @@ ProductModel.belongsTo(ProductCategoryModel, {
 	foreignKey: 'categoryProductId',
 	as: 'categoryProduct',
 	targetKey: 'id',
+});
+
+ProductCategoryModel.hasMany(ProductModel, {
+	foreignKey: 'categoryProductId',
+	as: 'products',
+	sourceKey: 'id',
 });
 
 // ***** ProductModel-ProductVariantModel Relations *****

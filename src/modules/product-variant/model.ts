@@ -13,32 +13,40 @@ export class ProductVariantModel extends Model {
 
 	async generateVId() {
 		try {
-			const product = await ProductModel.findByPk(this.productId);
+			const associatedProduct = await ProductModel.findByPk(this.productId);
 
-			if (!product) {
-				throw new Error('Producto no encontrado');
+			if (!associatedProduct) {
+				throw new Error(`Producto con ID ${this.productId} no encontrado`);
 			}
 
-			const pId = product?.pId;
+			const pId = associatedProduct.pId;
 
-			// Buscar el último vId con el prefijo de pId
 			const maxItem = await ProductVariantModel.findOne({
 				where: { vId: { [Op.like]: `${pId}%` } },
 				order: [['vId', 'DESC']],
 			});
 
-			let nextId = `${pId}0001`;
+			let nextVId = `${pId}0001`;
 
 			if (maxItem) {
-				const currentId = maxItem.vId.slice(pId?.length);
+				const currentId = maxItem.vId.slice(pId.length);
 				const nextNumericId = parseInt(currentId, 10) + 1;
-				nextId = pId + nextNumericId.toString().padStart(4, '0');
+
+				if (isNaN(nextNumericId)) {
+					throw new Error(
+						`Formato de vId inválido en la última variante: ${maxItem.vId}`,
+					);
+				}
+
+				nextVId = `${pId}${nextNumericId.toString().padStart(4, '0')}`;
 			}
 
-			this.vId = nextId;
+			this.vId = nextVId;
 		} catch (error) {
-			console.error('Error generando vId: ', error);
-			throw error;
+			console.error('Error generando vId:', error);
+			throw new Error(
+				'No se pudo generar un nuevo vId para la variante del producto',
+			);
 		}
 	}
 }
