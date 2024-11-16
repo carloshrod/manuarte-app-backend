@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Handler } from 'express';
 import { ProductService } from './service';
 
 export class ProductController {
@@ -8,7 +8,7 @@ export class ProductController {
 		this.productService = productService;
 	}
 
-	create = async (req: Request, res: Response) => {
+	create: Handler = async (req, res, next) => {
 		try {
 			const { productVariants, ...rest } = req.body;
 			// ToDo: Obtener el id del usuario que crea el producto
@@ -24,13 +24,11 @@ export class ProductController {
 				.status(201)
 				.json({ newProduct, message: 'Producto agregado con éxito' });
 		} catch (error) {
-			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
-			res.status(500).json({ message: errorMsg });
+			next(error);
 		}
 	};
 
-	getAll = async (_req: Request, res: Response) => {
+	getAll: Handler = async (_req, res, next) => {
 		try {
 			const products = await this.productService.getAll();
 
@@ -40,13 +38,11 @@ export class ProductController {
 				res.sendStatus(204);
 			}
 		} catch (error) {
-			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error!';
-			res.status(500).json({ message: errorMsg });
+			next(error);
 		}
 	};
 
-	update = async (req: Request, res: Response) => {
+	update: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
 			const { productVariant, ...rest } = req.body;
@@ -62,13 +58,11 @@ export class ProductController {
 
 			res.status(200).json({ message: 'Producto actualizado con éxito' });
 		} catch (error) {
-			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
-			res.status(500).json({ message: errorMsg });
+			next(error);
 		}
 	};
 
-	addVariant = async (req: Request, res: Response) => {
+	addVariant: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
 			const submittedBy = '13503e37-f230-4471-965b-312ae136a484';
@@ -84,13 +78,11 @@ export class ProductController {
 				message: 'Presentación del producto creada con éxito',
 			});
 		} catch (error) {
-			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
-			res.status(500).json({ message: errorMsg });
+			next(error);
 		}
 	};
 
-	delete = async (req: Request, res: Response) => {
+	delete: Handler = async (req, res, next) => {
 		try {
 			const productId = (req.query.productId as string) || '';
 			const productVariantId = (req.query.productVariantId as string) || '';
@@ -109,22 +101,18 @@ export class ProductController {
 					: 'Presentación del producto eliminada con éxito',
 			});
 		} catch (error) {
-			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
-			res.status(500).json({ message: errorMsg });
+			next(error);
 		}
 	};
 
-	searchProducts = async (req: Request, res: Response) => {
+	searchProducts: Handler = async (req, res, next) => {
 		try {
 			const productName = (req.query.productName as string) || '';
 			const products = await this.productService.getProductsByName(productName);
 
 			res.status(200).json(products);
 		} catch (error) {
-			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error inesperado';
-			res.status(500).json({ message: errorMsg });
+			next(error);
 		}
 	};
 }

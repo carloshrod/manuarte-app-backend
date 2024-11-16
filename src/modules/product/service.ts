@@ -62,7 +62,7 @@ export class ProductService {
 				productVariants: newProductVariants,
 			};
 		} catch (error) {
-			console.error('Error creando producto: ', error);
+			console.error('ServiceError creando producto: ', error);
 			throw error;
 		}
 	};
@@ -76,7 +76,7 @@ export class ProductService {
 
 			return products;
 		} catch (error) {
-			console.error('Error obteniendo productos: ', error);
+			console.error('ServiceError obteniendo productos: ', error);
 			throw error;
 		}
 	};
@@ -89,7 +89,7 @@ export class ProductService {
 
 			return products;
 		} catch (error) {
-			console.error('Error obteniendo productos por nombre: ', error);
+			console.error('ServiceError obteniendo productos por nombre: ', error);
 			throw error;
 		}
 	};
@@ -103,7 +103,7 @@ export class ProductService {
 		try {
 			const productToUpdate = await this.productModel.findByPk(id);
 			if (!productToUpdate)
-				throw new Error(`No se encontró el producto con id ${id}`);
+				throw new Error(`No fue posible encontrar el producto`);
 
 			await productToUpdate.update({
 				...productData,
@@ -127,7 +127,7 @@ export class ProductService {
 				productVariant: updatedProductVariant,
 			};
 		} catch (error) {
-			console.error('Error actualizando producto: ', error);
+			console.error('ServiceError actualizando producto: ', error);
 			throw error;
 		}
 	};
@@ -160,7 +160,7 @@ export class ProductService {
 				categoryProductName,
 			};
 		} catch (error) {
-			console.error('Error agregando presentación de producto: ', error);
+			console.error('ServiceError agregando presentación de producto: ', error);
 			throw error;
 		}
 	};
@@ -183,7 +183,7 @@ export class ProductService {
 
 			return { productVariantDeleted, productDeleted };
 		} catch (error) {
-			console.error('Error eliminando producto: ', error);
+			console.error('ServiceError eliminando producto: ', error);
 			throw error;
 		}
 	};

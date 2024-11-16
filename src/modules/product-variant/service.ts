@@ -43,7 +43,10 @@ export class ProductVariantService {
 
 			return productVariants;
 		} catch (error) {
-			console.error(error);
+			console.error(
+				'ServiceError obteniendo presentaciones de productos: ',
+				error,
+			);
 			throw error;
 		}
 	};
@@ -64,7 +67,7 @@ export class ProductVariantService {
 
 			return newProductVariant.dataValues;
 		} catch (error) {
-			console.error('Error creando presentación de producto: ', error);
+			console.error('ServiceError creando presentación de producto: ', error);
 			throw error;
 		}
 	};
@@ -95,7 +98,10 @@ export class ProductVariantService {
 
 			return productVariantToUpdate.dataValues;
 		} catch (error) {
-			console.error('Error actualizando presentación de producto: ', error);
+			console.error(
+				'ServiceError actualizando presentación de producto: ',
+				error,
+			);
 			throw error;
 		}
 	};
@@ -108,7 +114,10 @@ export class ProductVariantService {
 
 			return deletedCount;
 		} catch (error) {
-			console.error('Error eliminando presentación del producto: ', error);
+			console.error(
+				'ServiceError eliminando presentación del producto: ',
+				error,
+			);
 			throw error;
 		}
 	};
@@ -122,7 +131,7 @@ export class ProductVariantService {
 			return productVariants.count;
 		} catch (error) {
 			console.error(
-				'Error en el conteo de presentaciones del producto: ',
+				'ServiceError en el conteo de presentaciones del producto: ',
 				error,
 			);
 			throw error;

@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Handler } from 'express';
 import { ProductVariantService } from './service';
 
 export class ProductVariantController {
@@ -8,7 +8,7 @@ export class ProductVariantController {
 		this.productVariantService = productVariantService;
 	}
 
-	getAll = async (_req: Request, res: Response) => {
+	getAll: Handler = async (_req, res, next) => {
 		try {
 			const productVariants = await this.productVariantService.getAll();
 
@@ -18,13 +18,11 @@ export class ProductVariantController {
 				res.sendStatus(204);
 			}
 		} catch (error) {
-			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error inesperado!';
-			res.status(500).json({ message: errorMsg });
+			next(error);
 		}
 	};
 
-	update = async (req: Request, res: Response) => {
+	update: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
 			const { name } = req.body;
@@ -41,9 +39,7 @@ export class ProductVariantController {
 				message: 'Presentación del producto actualizada con éxito',
 			});
 		} catch (error) {
-			const errorMsg =
-				error instanceof Error ? error.message : 'Ocurrió un error inesperado!';
-			res.status(500).json({ message: errorMsg });
+			next(error);
 		}
 	};
 }
