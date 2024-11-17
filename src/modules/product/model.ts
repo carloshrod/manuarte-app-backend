@@ -131,24 +131,20 @@ ProductModel.init(
 ProductModel.belongsTo(ProductCategoryModel, {
 	foreignKey: 'categoryProductId',
 	as: 'categoryProduct',
-	targetKey: 'id',
 });
 
 ProductCategoryModel.hasMany(ProductModel, {
 	foreignKey: 'categoryProductId',
 	as: 'products',
-	sourceKey: 'id',
 });
 
 // ***** ProductModel-ProductVariantModel Relations *****
 ProductModel.hasMany(ProductVariantModel, {
 	foreignKey: 'productId',
 	as: 'variantProduct',
-	sourceKey: 'id',
 });
 
 ProductVariantModel.belongsTo(ProductModel, {
 	foreignKey: 'productId',
 	as: 'product',
-	targetKey: 'id',
 });
