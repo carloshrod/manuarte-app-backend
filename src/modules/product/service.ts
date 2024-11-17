@@ -1,25 +1,23 @@
+import { sequelize } from '../../config/database';
+import { ProductModel } from './model';
+import { ProductCategoryModel } from '../product-category/model';
+import { ProductVariantService } from '../product-variant/service';
+import { ProductVariantModel } from '../product-variant/model';
 import {
 	AddProductVariantService,
 	CreateProductService,
-	ProductServiceConstructor,
 	UpdateProductService,
 } from './types';
-import { sequelize } from '../../config/database';
-import { Op } from 'sequelize';
 
 export class ProductService {
 	private productModel;
+	private productCategoryModel;
 	private productVariantService;
-	private productCategoryService;
 
-	constructor({
-		productModel,
-		productVariantService,
-		productCategoryService,
-	}: ProductServiceConstructor) {
+	constructor(productModel: typeof ProductModel) {
 		this.productModel = productModel;
-		this.productVariantService = productVariantService;
-		this.productCategoryService = productCategoryService;
+		this.productCategoryModel = ProductCategoryModel;
+		this.productVariantService = new ProductVariantService(ProductVariantModel);
 	}
 
 	create = async ({
@@ -52,7 +50,7 @@ export class ProductService {
 				}
 			}
 
-			const categoryName = await this.productCategoryService.getName(
+			const categoryName = await this.getCategoryName(
 				newProduct?.categoryProductId,
 			);
 
@@ -81,19 +79,6 @@ export class ProductService {
 		}
 	};
 
-	getProductsByName = async (productName: string) => {
-		try {
-			const products = await this.productModel.findAll({
-				where: { name: { [Op.iLike]: `%${productName}%` } },
-			});
-
-			return products;
-		} catch (error) {
-			console.error('ServiceError obteniendo productos por nombre: ', error);
-			throw error;
-		}
-	};
-
 	update = async ({
 		id,
 		productData,
@@ -117,7 +102,7 @@ export class ProductService {
 				submittedBy,
 			});
 
-			const categoryName = await this.productCategoryService.getName(
+			const categoryName = await this.getCategoryName(
 				productToUpdate?.categoryProductId,
 			);
 
@@ -146,7 +131,7 @@ export class ProductService {
 			const product = await this.productModel.findByPk(productId);
 			let categoryProductName;
 			if (product) {
-				categoryProductName = await this.productCategoryService.getName(
+				categoryProductName = await this.getCategoryName(
 					product?.categoryProductId,
 				);
 			}
@@ -185,6 +170,37 @@ export class ProductService {
 		} catch (error) {
 			console.error('ServiceError eliminando producto: ', error);
 			throw error;
+		}
+	};
+
+	count = async (categoryProductId: string) => {
+		try {
+			const productsCount = await this.productModel.count({
+				where: { categoryProductId },
+			});
+
+			return productsCount;
+		} catch (error) {
+			console.error('ServiceError en el conteo de productos: ', error);
+			throw error;
+		}
+	};
+
+	getCategoryName = async (id: string) => {
+		try {
+			const category = await this.productCategoryModel.findByPk(id, {
+				attributes: ['name'],
+			});
+
+			if (!category) throw new Error('Categoría no encontrada');
+
+			return category.name;
+		} catch (error) {
+			console.error(
+				'ServiceError obteniendo nombre de la categoría de producto: ',
+				error,
+			);
+			throw new Error('Error interno del servidor');
 		}
 	};
 }

@@ -104,15 +104,4 @@ export class ProductController {
 			next(error);
 		}
 	};
-
-	searchProducts: Handler = async (req, res, next) => {
-		try {
-			const productName = (req.query.productName as string) || '';
-			const products = await this.productService.getProductsByName(productName);
-
-			res.status(200).json(products);
-		} catch (error) {
-			next(error);
-		}
-	};
 }

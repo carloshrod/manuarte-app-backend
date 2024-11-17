@@ -1,4 +1,3 @@
-import { col, fn } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { ProductModel } from '../product/model';
 import { ProductCategoryModel } from './model';
@@ -6,9 +5,11 @@ import { UpdateProductCategoryService } from './types';
 
 export class ProductCategoryService {
 	private productCategoryModel;
+	private productModel;
 
 	constructor(productCategoryModel: typeof ProductCategoryModel) {
 		this.productCategoryModel = productCategoryModel;
+		this.productModel = ProductModel;
 	}
 
 	create = async (name: string, submittedBy: string) => {
@@ -67,7 +68,9 @@ export class ProductCategoryService {
 
 	delete = async (id: string) => {
 		try {
-			const productsCount = await this.countProducts(id);
+			const productsCount = await this.productModel.count({
+				where: { categoryProductId: id },
+			});
 
 			if (productsCount > 0) {
 				return {
@@ -87,45 +90,6 @@ export class ProductCategoryService {
 			};
 		} catch (error) {
 			console.error('ServiceError eliminando categoría de producto: ', error);
-			throw new Error('Error interno del servidor');
-		}
-	};
-
-	getName = async (id: string) => {
-		try {
-			const category = await this.productCategoryModel.findByPk(id, {
-				attributes: ['name'],
-			});
-
-			if (!category) throw new Error('Categoría no encontrada');
-
-			return category.name;
-		} catch (error) {
-			console.error('ServiceError obteniendo nombre de la categoría: ', error);
-			throw new Error('Error interno del servidor');
-		}
-	};
-
-	private countProducts = async (id: string) => {
-		try {
-			const result = await this.productCategoryModel.findByPk(id, {
-				attributes: [[fn('COUNT', col('products.id')), 'productCount']],
-				include: [
-					{
-						model: ProductModel,
-						as: 'products',
-						attributes: [],
-					},
-				],
-				group: ['ProductCategoryModel.id'],
-			});
-
-			return Number(result?.dataValues.productCount);
-		} catch (error) {
-			console.error(
-				'ServiceError en el conteo de productos de la categoría: ',
-				error,
-			);
 			throw new Error('Error interno del servidor');
 		}
 	};

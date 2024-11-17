@@ -1,13 +1,18 @@
 import { sequelize } from '../../config/database';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductModel } from '../product/model';
-import { ProductVariantServiceConstructor, ProductVariantAttr } from './types';
+import { ProductVariantModel } from './model';
+import { ProductVariantAttr } from './types';
 
 export class ProductVariantService {
 	private productVariantModel;
+	private productModel;
+	private productCategoryModel;
 
-	constructor(productVariantModel: ProductVariantServiceConstructor) {
+	constructor(productVariantModel: typeof ProductVariantModel) {
 		this.productVariantModel = productVariantModel;
+		this.productModel = ProductModel;
+		this.productCategoryModel = ProductCategoryModel;
 	}
 
 	getAll = async () => {
@@ -26,12 +31,12 @@ export class ProductVariantService {
 				},
 				include: [
 					{
-						model: ProductModel,
+						model: this.productModel,
 						as: 'product',
 						attributes: [],
 						include: [
 							{
-								model: ProductCategoryModel,
+								model: this.productCategoryModel,
 								as: 'categoryProduct',
 								attributes: [],
 							},
@@ -124,11 +129,11 @@ export class ProductVariantService {
 
 	count = async (productId: string) => {
 		try {
-			const productVariants = await this.productVariantModel.findAndCountAll({
+			const productVariantsCount = await this.productVariantModel.count({
 				where: { productId },
 			});
 
-			return productVariants.count;
+			return productVariantsCount;
 		} catch (error) {
 			console.error(
 				'ServiceError en el conteo de presentaciones del producto: ',
