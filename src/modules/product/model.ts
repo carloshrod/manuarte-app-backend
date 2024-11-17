@@ -79,6 +79,10 @@ ProductModel.init(
 		categoryProductId: {
 			type: DataTypes.UUID,
 			allowNull: false,
+			references: {
+				model: 'category_product',
+				key: 'id',
+			},
 		},
 		createdBy: {
 			type: DataTypes.STRING,
