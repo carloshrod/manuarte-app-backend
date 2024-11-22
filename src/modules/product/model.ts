@@ -53,6 +53,21 @@ export class ProductModel extends Model {
 			throw new Error('No se pudo generar un nuevo pId para el producto');
 		}
 	}
+
+	async validateProductName() {
+		const existingProduct = await ProductModel.findOne({
+			where: sequelize.where(
+				sequelize.fn('LOWER', sequelize.col('name')),
+				this.name.toLowerCase(),
+			),
+		});
+
+		if (existingProduct && existingProduct.id !== this.id) {
+			throw new Error(
+				'El nombre del producto debe ser único (sin distinguir entre mayúsculas y minúsculas)',
+			);
+		}
+	}
 }
 
 ProductModel.init(
@@ -125,7 +140,11 @@ ProductModel.init(
 			},
 		],
 		hooks: {
-			beforeUpdate: product => {
+			beforeCreate: async product => {
+				await product.validateProductName();
+			},
+			beforeUpdate: async product => {
+				await product.validateProductName();
 				if (product.changed('categoryProductId')) {
 					throw new Error(
 						'No se permite actualizar la categoría del producto una vez creado',
