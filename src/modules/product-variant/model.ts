@@ -2,6 +2,7 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { ProductModel } from '../product/model';
 import { Op } from 'sequelize';
+import { BillingItemModel } from '../billing-item/model';
 
 export class ProductVariantModel extends Model {
 	public id!: string;
@@ -123,3 +124,13 @@ ProductVariantModel.init(
 		],
 	},
 );
+
+BillingItemModel.belongsTo(ProductVariantModel, {
+	foreignKey: 'variantProductId',
+	as: 'productVariant',
+});
+
+ProductVariantModel.hasMany(BillingItemModel, {
+	foreignKey: 'variantProductId',
+	as: 'billingItems',
+});
