@@ -12,9 +12,11 @@ export class UserController {
 		try {
 			const users = await this.userService.getAll();
 
-			console.log(users);
-
-			res.status(200).json(users);
+			if (users.length > 0) {
+				res.status(200).json(users);
+			} else {
+				res.sendStatus(204);
+			}
 		} catch (error) {
 			next(error);
 		}

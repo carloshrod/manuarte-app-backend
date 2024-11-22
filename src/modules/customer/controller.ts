@@ -12,7 +12,11 @@ export class CustomerController {
 		try {
 			const customers = await this.customerService.getAll();
 
-			res.status(200).json(customers);
+			if (customers.length > 0) {
+				res.status(200).json(customers);
+			} else {
+				res.sendStatus(204);
+			}
 		} catch (error) {
 			next(error);
 		}
