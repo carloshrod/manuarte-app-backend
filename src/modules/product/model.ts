@@ -124,6 +124,15 @@ ProductModel.init(
 				fields: [{ name: 'pId' }],
 			},
 		],
+		hooks: {
+			beforeUpdate: product => {
+				if (product.changed('categoryProductId')) {
+					throw new Error(
+						'No se permite actualizar la categoría del producto una vez creado',
+					);
+				}
+			},
+		},
 	},
 );
 
