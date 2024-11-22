@@ -5,6 +5,7 @@ import productVariantRouter from './modules/product-variant/routes';
 import productCategoryRouter from './modules/product-category/routes';
 import userRouter from './modules/user/routes';
 import customerRouter from './modules/customer/routes';
+import dashboardRouter from './modules/dashboard/routes';
 
 const router = Router();
 
@@ -29,5 +30,6 @@ router.use('/api/v1/product-variants', productVariantRouter);
 router.use('/api/v1/product-categories', productCategoryRouter);
 router.use('/api/v1/users', userRouter);
 router.use('/api/v1/customers', customerRouter);
+router.use('/api/v1/dashboard', dashboardRouter);
 
 export default router;
