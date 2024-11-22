@@ -141,7 +141,7 @@ ProductCategoryModel.hasMany(ProductModel, {
 // ***** ProductModel-ProductVariantModel Relations *****
 ProductModel.hasMany(ProductVariantModel, {
 	foreignKey: 'productId',
-	as: 'variantProduct',
+	as: 'productVariants',
 });
 
 ProductVariantModel.belongsTo(ProductModel, {
