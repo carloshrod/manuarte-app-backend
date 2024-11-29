@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { RequestHandler, Router } from 'express';
 import { sequelize } from './config/database';
 import productRouter from './modules/product/routes';
 import productVariantRouter from './modules/product-variant/routes';
@@ -6,6 +6,8 @@ import productCategoryRouter from './modules/product-category/routes';
 import userRouter from './modules/user/routes';
 import customerRouter from './modules/customer/routes';
 import dashboardRouter from './modules/dashboard/routes';
+import authRouter from './modules/auth/routes';
+import { verifyJWT } from './middlewares/verifyJWT';
 
 const router = Router();
 
@@ -25,6 +27,11 @@ router.get('/api/v1/ping', async (_req, res) => {
 	}
 });
 
+router.use('/api/v1/auth', authRouter);
+
+router.use(verifyJWT as unknown as RequestHandler);
+
+// Routes that need auth
 router.use('/api/v1/products', productRouter);
 router.use('/api/v1/product-variants', productVariantRouter);
 router.use('/api/v1/product-categories', productCategoryRouter);

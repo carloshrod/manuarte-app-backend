@@ -2,7 +2,12 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { PartModel } from '../part/model';
 
-export class UserModel extends Model {}
+export class UserModel extends Model {
+	public id!: string;
+	public email!: string;
+	public password!: string;
+	public refreshToken!: string;
+}
 
 UserModel.init(
 	{
@@ -59,6 +64,10 @@ UserModel.init(
 		},
 		deletedDate: {
 			type: DataTypes.DATE,
+			allowNull: true,
+		},
+		refreshToken: {
+			type: DataTypes.STRING,
 			allowNull: true,
 		},
 	},
