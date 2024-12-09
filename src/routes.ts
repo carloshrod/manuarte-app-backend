@@ -32,11 +32,11 @@ router.use('/api/v1/auth', authRouter);
 router.use(verifyJWT as unknown as RequestHandler);
 
 // Routes that need auth
+router.use('/api/v1/dashboard', dashboardRouter);
 router.use('/api/v1/products', productRouter);
 router.use('/api/v1/product-variants', productVariantRouter);
 router.use('/api/v1/product-categories', productCategoryRouter);
 router.use('/api/v1/users', userRouter);
 router.use('/api/v1/customers', customerRouter);
-router.use('/api/v1/dashboard', dashboardRouter);
 
 export default router;

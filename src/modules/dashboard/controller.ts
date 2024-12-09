@@ -15,33 +15,26 @@ export class DashboardController {
 		this.billingItemService = new BillingItemService(BillingItemModel);
 	}
 
-	getStats: Handler = async (_req, res, next) => {
+	getStats: Handler = async (req, res, next) => {
 		try {
+			const month = parseInt(req.query.month as string);
 			const productVariantsCount = await this.productVariantModel.count();
 			const customersCount = await this.customerModel.count();
-
-			res.status(200).json({ productVariantsCount, customersCount });
-		} catch (error) {
-			next(error);
-		}
-	};
-
-	getMonthlySales: Handler = async (_req, res, next) => {
-		try {
 			const sales = await this.billingItemService.getMonthlySales();
+			const topSalesCurrentMonth =
+				await this.billingItemService.getTopSalesProducts(month);
+			const topSalesLastMonth =
+				await this.billingItemService.getTopSalesProducts(month - 1);
 
-			res.status(200).json(sales);
-		} catch (error) {
-			next(error);
-		}
-	};
-
-	getTopSalesProducts: Handler = async (req, res, next) => {
-		try {
-			const month = parseInt(req.params?.month);
-			const topSales = await this.billingItemService.getTopSalesProducts(month);
-
-			res.status(200).json(topSales);
+			res.status(200).json({
+				counts: {
+					productVariantsCount,
+					customersCount,
+				},
+				sales,
+				topSalesCurrentMonth,
+				topSalesLastMonth,
+			});
 		} catch (error) {
 			next(error);
 		}
