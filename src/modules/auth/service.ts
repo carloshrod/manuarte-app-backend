@@ -13,103 +13,130 @@ export class AuthService {
 	}
 
 	login = async ({ email, password }: { email: string; password: string }) => {
-		const foundUser = await this.userModel.findOne({ where: { email } });
-		if (!foundUser) {
-			return { status: 401, message: 'User not found' };
-		}
-
 		try {
-			// evaluate password
+			const foundUser = await this.userModel.findOne({
+				where: { email },
+				attributes: ['id', 'email', 'password'],
+			});
+			if (!foundUser) {
+				return { status: 401, message: 'Invalid credentials' };
+			}
+
 			const match = await bcrypt.compare(password, foundUser.password);
 			if (!match) return { status: 401, message: 'Invalid credentials' };
 
-			// const roles = Object.values(foundUser.roles).filter(Boolean);
-			// create JWTs
-			const accessToken = jwt.sign(
-				{
-					UserInfo: {
-						id: foundUser.id,
-						email: foundUser.email,
-						// roles: roles,
-					},
-				},
-				env.ACCESS_TOKEN_SECRET,
-				{ expiresIn: '15s' },
-			);
+			const { accessToken, refreshToken } =
+				(await this.generateJWTs(foundUser)) ?? {};
 
-			const refreshToken = jwt.sign(
-				{ id: foundUser.id },
-				env.REFRESH_TOKEN_SECRET,
-				{ expiresIn: '1d' },
-			);
+			await foundUser.update({
+				refreshToken,
+			});
 
-			// Saving refreshToken with current user
-			await foundUser.update({ refreshToken });
-			// console.log(roles);
-
-			// Send authorization roles and access token to user
-			// return { roles, accessToken };
-			return { status: 200, accessToken, refreshToken };
+			return {
+				status: 200,
+				userId: foundUser.id,
+				email: foundUser.email,
+				accessToken,
+				refreshToken,
+			};
 		} catch (error) {
 			console.error(error);
 			throw new Error('Authentication error');
 		}
 	};
 
-	refreshToken = async (cookies: Request['cookies']) => {
-		if (!cookies?.jwt) {
+	refreshTokens = async (headers: Request['headers']) => {
+		const authHeader = headers.authorization || headers.Authorization;
+		if (typeof authHeader !== 'string') {
 			return { status: 401, message: 'User not authenticated' };
 		}
 
-		const refreshToken = cookies.jwt;
-
-		const foundUser = await this.userModel.findOne({ where: { refreshToken } });
-		if (!foundUser) {
+		if (!authHeader?.startsWith('Bearer ')) {
 			return { status: 401, message: 'User not authenticated' };
 		}
+		const refreshToken = authHeader.split(' ')[1];
 
-		// evaluate jwt
 		try {
 			const decoded = jwt.verify(
 				refreshToken,
 				env.REFRESH_TOKEN_SECRET,
 			) as DecodedToken;
 
-			if (foundUser.id !== decoded.id) {
+			const foundUser = await this.userModel.findByPk(decoded.id, {
+				attributes: ['id', 'email', 'refreshToken'],
+			});
+			if (!foundUser) {
 				return { status: 401, message: 'User not authenticated' };
 			}
 
-			// const roles = Object.values(foundUser.roles);
-			const accessToken = jwt.sign(
-				{
-					UserInfo: {
-						id: decoded.id,
-						email: decoded.email,
-					},
-				},
-				env.ACCESS_TOKEN_SECRET,
-				{ expiresIn: '15s' },
+			const validRefreshToken = await bcrypt.compare(
+				refreshToken,
+				foundUser.refreshToken,
 			);
+			if (!validRefreshToken) {
+				return { status: 401, message: 'Invalid token' };
+			}
 
-			// return { roles, accessToken };
-			return { status: 200, accessToken };
+			const { accessToken, refreshToken: newRefreshToken } =
+				(await this.generateJWTs(foundUser)) ?? {};
+
+			await foundUser.update({ refreshToken: newRefreshToken });
+
+			return { status: 200, accessToken, refreshToken: newRefreshToken };
 		} catch (error) {
 			console.error(error);
-			throw new Error('Invalid or expired token');
+			return { status: 401, message: 'Invalid or expired token' };
 		}
 	};
 
-	logout = async (cookies: Request['cookies']) => {
-		if (!cookies?.jwt) return { status: 204, message: 'No content' };
-		const refreshToken = cookies.jwt;
+	logout = async (headers: Request['headers']) => {
+		const authHeader = headers.authorization || headers.Authorization;
+		if (typeof authHeader !== 'string') {
+			return { status: 204, message: 'No content' };
+		}
 
-		const foundUser = await this.userModel.findOne({ where: { refreshToken } });
+		if (!authHeader?.startsWith('Bearer ')) {
+			return { status: 204, message: 'No content' };
+		}
+		const refreshToken = authHeader.split(' ')[1];
 
-		if (!foundUser)
-			return { status: 204, clearCookie: true, message: 'User not found' };
+		const decoded = jwt.verify(
+			refreshToken,
+			env.REFRESH_TOKEN_SECRET,
+		) as DecodedToken;
+
+		const foundUser = await this.userModel.findByPk(decoded.id, {
+			attributes: ['id'],
+		});
+		if (!foundUser) return { status: 204, message: 'User not found' };
 
 		await foundUser.update({ refreshToken: null });
 
-		return { status: 204, clearCookie: true };
+		return { status: 204 };
+	};
+
+	private generateJWTs = async (user: UserModel) => {
+		try {
+			const accessToken = jwt.sign(
+				{
+					UserInfo: {
+						id: user.id,
+						email: user.email,
+						// roles: roles,
+					},
+				},
+				env.ACCESS_TOKEN_SECRET,
+				{ expiresIn: '15m' },
+			);
+
+			const refreshToken = jwt.sign({ id: user.id }, env.REFRESH_TOKEN_SECRET, {
+				expiresIn: '7d',
+			});
+
+			return { accessToken, refreshToken };
+		} catch (error) {
+			console.error(error);
+			return { status: 500, message: 'Error generando tokens' };
+		}
 	};
 }

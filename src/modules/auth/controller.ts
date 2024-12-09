@@ -15,18 +15,17 @@ export class AuthController {
 			const result = await this.authService.login({ email, password });
 
 			if (result.status === 200) {
-				const { status, accessToken, refreshToken } = result;
+				const { status, userId, email, accessToken, refreshToken } = result;
 
-				res.cookie('jwt', refreshToken, {
-					httpOnly: true,
-					secure: true,
-					sameSite: 'none',
-					maxAge: 24 * 60 * 60 * 1000,
-				});
+				// res.cookie('jwt', refreshToken, {
+				// 	httpOnly: true,
+				// 	secure: true,
+				// 	sameSite: 'none',
+				// 	maxAge: 24 * 60 * 60 * 1000,
+				// });
 
-				// Send authorization roles and access token to user
-				// res.json({ roles, accessToken });
-				res.status(status).json({ accessToken });
+				// Send authorization user info and access token
+				res.status(status).json({ userId, email, accessToken, refreshToken });
 			} else {
 				res.sendStatus(result.status);
 			}
@@ -35,12 +34,15 @@ export class AuthController {
 		}
 	};
 
-	refreshToken: Handler = async (req, res, next) => {
+	refreshTokens: Handler = async (req, res, next) => {
 		try {
-			const result = await this.authService.refreshToken(req.cookies);
+			const result = await this.authService.refreshTokens(req.headers);
 
-			if (result.accessToken) {
-				res.status(result.status).json({ accessToken: result.accessToken });
+			if (result.accessToken && result.refreshToken) {
+				res.status(result.status).json({
+					accessToken: result.accessToken,
+					refreshToken: result.refreshToken,
+				});
 			} else {
 				res.sendStatus(result.status);
 			}
@@ -51,15 +53,7 @@ export class AuthController {
 
 	logout: Handler = async (req, res, next) => {
 		try {
-			const result = await this.authService.logout(req.cookies);
-
-			if (result.clearCookie) {
-				res.clearCookie('jwt', {
-					httpOnly: true,
-					sameSite: 'none',
-					secure: true,
-				});
-			}
+			const result = await this.authService.logout(req.headers);
 
 			res.sendStatus(result.status);
 		} catch (error) {

@@ -10,7 +10,7 @@ const authService = new AuthService(UserModel);
 const authController = new AuthController(authService);
 
 router.post('/login', authController.login);
-router.get('/refresh', authController.refreshToken);
-router.post('/logout', authController.logout);
+router.get('/refresh', authController.refreshTokens);
+router.get('/logout', authController.logout);
 
 export default router;

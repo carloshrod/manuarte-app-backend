@@ -1,6 +1,7 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { PartModel } from '../part/model';
+import bcrypt from 'bcrypt';
 
 export class UserModel extends Model {
 	public id!: string;
@@ -33,10 +34,6 @@ UserModel.init(
 				model: 'part',
 				key: 'id',
 			},
-		},
-		salt: {
-			type: DataTypes.STRING,
-			allowNull: false,
 		},
 		isActive: {
 			type: DataTypes.BOOLEAN,
@@ -93,6 +90,13 @@ UserModel.init(
 				fields: [{ name: 'email' }],
 			},
 		],
+		hooks: {
+			beforeUpdate: async user => {
+				if (user.refreshToken !== null) {
+					user.refreshToken = await bcrypt.hash(user.refreshToken, 10);
+				}
+			},
+		},
 	},
 );
 
