@@ -1,9 +1,9 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 
-export class PartModel extends Model {}
+export class PermissionModel extends Model {}
 
-PartModel.init(
+PermissionModel.init(
 	{
 		id: {
 			type: DataTypes.UUID,
@@ -14,7 +14,11 @@ PartModel.init(
 		name: {
 			type: DataTypes.STRING,
 			allowNull: false,
-			unique: 'UQ_a5362eb271179ceec5304917d0d',
+			unique: 'UQ_c81ee3c195bc1cb233f69c9e904',
+		},
+		description: {
+			type: DataTypes.STRING,
+			allowNull: true,
 		},
 		createdDate: {
 			type: DataTypes.DATE,
@@ -33,17 +37,17 @@ PartModel.init(
 	},
 	{
 		sequelize,
-		tableName: 'part',
+		tableName: 'permission',
 		schema: 'public',
 		timestamps: false,
 		indexes: [
 			{
-				name: 'PK_58888debdf048d2dfe459aa59da',
+				name: 'PK_2391da0f3ffdb3315e96908b776',
 				unique: true,
 				fields: [{ name: 'id' }],
 			},
 			{
-				name: 'UQ_a5362eb271179ceec5304917d0d',
+				name: 'UQ_c81ee3c195bc1cb233f69c9e904',
 				unique: true,
 				fields: [{ name: 'name' }],
 			},

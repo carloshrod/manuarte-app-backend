@@ -1,17 +1,17 @@
 import { sequelize } from '../../config/database';
-import { PartModel } from '../part/model';
+import { RoleModel } from '../role/model';
 import { PersonModel } from '../person/model';
 import { UserModel } from './model';
 
 export class UserService {
 	private userModel;
 	private personModel;
-	private partModel;
+	private roleModel;
 
 	constructor(userModel: typeof UserModel) {
 		this.userModel = userModel;
 		this.personModel = PersonModel;
-		this.partModel = PartModel;
+		this.roleModel = RoleModel;
 	}
 
 	getAll = async () => {
@@ -21,12 +21,12 @@ export class UserService {
 					'id',
 					'personId',
 					'email',
-					'permitPartId',
+					'roleId',
 					'isActive',
 					'createdDate',
 					[sequelize.col('person.fullName'), 'fullName'],
 					[sequelize.col('person.dni'), 'docId'],
-					[sequelize.col('permitPart.name'), 'permitName'],
+					[sequelize.col('role.name'), 'roleName'],
 				],
 				include: [
 					{
@@ -35,8 +35,8 @@ export class UserService {
 						attributes: [],
 					},
 					{
-						model: this.partModel,
-						as: 'permitPart',
+						model: this.roleModel,
+						as: 'role',
 						attributes: [],
 					},
 				],

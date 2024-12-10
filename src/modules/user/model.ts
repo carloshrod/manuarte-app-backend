@@ -1,6 +1,6 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
-import { PartModel } from '../part/model';
+import { RoleModel } from '../role/model';
 import bcrypt from 'bcrypt';
 
 export class UserModel extends Model {
@@ -100,12 +100,12 @@ UserModel.init(
 	},
 );
 
-UserModel.belongsTo(PartModel, {
-	foreignKey: 'permitPartId',
-	as: 'permitPart',
+UserModel.belongsTo(RoleModel, {
+	foreignKey: 'roleId',
+	as: 'role',
 });
 
-PartModel.hasMany(UserModel, {
-	foreignKey: 'permitPartId',
+RoleModel.hasMany(UserModel, {
+	foreignKey: 'roleId',
 	as: 'users',
 });
