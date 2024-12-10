@@ -6,6 +6,8 @@ import bcrypt from 'bcrypt';
 export class UserModel extends Model {
 	public id!: string;
 	public email!: string;
+	public roleId!: string;
+	public personId!: string;
 	public password!: string;
 	public refreshToken!: string;
 }
@@ -27,11 +29,11 @@ UserModel.init(
 			type: DataTypes.STRING,
 			allowNull: false,
 		},
-		permitPartId: {
+		roleId: {
 			type: DataTypes.UUID,
 			allowNull: true,
 			references: {
-				model: 'part',
+				model: 'role',
 				key: 'id',
 			},
 		},
@@ -91,8 +93,16 @@ UserModel.init(
 			},
 		],
 		hooks: {
+			beforeCreate: async user => {
+				if (user.password !== null) {
+					user.password = await bcrypt.hash(user.password, 10);
+				}
+			},
 			beforeUpdate: async user => {
-				if (user.refreshToken !== null) {
+				if (user.changed('password')) {
+					user.password = await bcrypt.hash(user.password, 10);
+				}
+				if (user.refreshToken !== null && user.changed('refreshToken')) {
 					user.refreshToken = await bcrypt.hash(user.refreshToken, 10);
 				}
 			},

@@ -3,7 +3,9 @@ import { sequelize } from '../../config/database';
 import { PermissionModel } from '../permission/model';
 import { RolePermissionModel } from '../role-permission/model';
 
-export class RoleModel extends Model {}
+export class RoleModel extends Model {
+	public name!: string;
+}
 
 RoleModel.init(
 	{

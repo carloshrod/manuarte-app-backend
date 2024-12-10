@@ -21,4 +21,69 @@ export class UserController {
 			next(error);
 		}
 	};
+
+	getRoles: Handler = async (_req, res, next) => {
+		try {
+			const result = await this.userService.getRoles();
+
+			if (result.status === 200) {
+				res.status(result.status).json(result.roles);
+			} else {
+				res.sendStatus(result.status);
+			}
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	register: Handler = async (req, res, next) => {
+		try {
+			const result = await this.userService.register(req.body);
+
+			if (result.status === 201) {
+				res.status(result.status).json({
+					newUser: result.userRegistered,
+					message: result.message,
+				});
+			} else {
+				res.sendStatus(result.status);
+			}
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	update: Handler = async (req, res, next) => {
+		try {
+			const { personId, userId } = req.params;
+			const result = await this.userService.update(req.body, {
+				personId,
+				userId,
+			});
+
+			if (result.status === 200) {
+				res
+					.status(result.status)
+					.json({ updatedUser: result.updatedUser, message: result.message });
+			} else {
+				res.sendStatus(result.status);
+			}
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	delete: Handler = async (req, res, next) => {
+		try {
+			const result = await this.userService.delete(req.params.personId);
+
+			if (result.status === 200) {
+				res.status(result.status).json({ message: result.message });
+			} else {
+				res.sendStatus(result.status);
+			}
+		} catch (error) {
+			next(error);
+		}
+	};
 }
