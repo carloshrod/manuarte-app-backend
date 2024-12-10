@@ -3,7 +3,11 @@ import { sequelize } from '../../config/database';
 import { UserModel } from '../user/model';
 import { CustomerModel } from '../customer/model';
 
-export class PersonModel extends Model {}
+export class PersonModel extends Model {
+	public id!: string;
+	public fullName!: string;
+	public dni!: string;
+}
 
 PersonModel.init(
 	{
@@ -21,15 +25,6 @@ PersonModel.init(
 			type: DataTypes.STRING,
 			allowNull: false,
 			unique: 'UQ_4f83f47c3d77d87ccb066c91af6',
-		},
-		gender: {
-			type: DataTypes.STRING,
-			allowNull: true,
-		},
-		birthDate: {
-			type: DataTypes.DATE,
-			allowNull: true,
-			defaultValue: sequelize.fn('now'),
 		},
 		createdDate: {
 			type: DataTypes.DATE,
