@@ -1,7 +1,10 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 
-export class PermissionModel extends Model {}
+export class PermissionModel extends Model {
+	public id!: string;
+	public name!: string;
+}
 
 PermissionModel.init(
 	{

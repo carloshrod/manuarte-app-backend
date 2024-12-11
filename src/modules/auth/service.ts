@@ -16,7 +16,7 @@ export class AuthService {
 		try {
 			const foundUser = await this.userModel.findOne({
 				where: { email },
-				attributes: ['id', 'email', 'password'],
+				attributes: ['id', 'email', 'password', 'roleId'],
 			});
 			if (!foundUser) {
 				return { status: 401, message: 'Invalid credentials' };
@@ -63,7 +63,7 @@ export class AuthService {
 			) as DecodedToken;
 
 			const foundUser = await this.userModel.findByPk(decoded.id, {
-				attributes: ['id', 'email', 'refreshToken'],
+				attributes: ['id', 'email', 'roleId', 'refreshToken'],
 			});
 			if (!foundUser) {
 				return { status: 401, message: 'User not authenticated' };
@@ -122,7 +122,7 @@ export class AuthService {
 					UserInfo: {
 						id: user.id,
 						email: user.email,
-						// roles: roles,
+						role: user.roleId,
 					},
 				},
 				env.ACCESS_TOKEN_SECRET,

@@ -5,6 +5,17 @@ import { RolePermissionModel } from '../role-permission/model';
 
 export class RoleModel extends Model {
 	public name!: string;
+
+	// public getPermissions!: () => Promise<PermissionModel[]>;
+	// public addPermission!: (
+	// 	permission: PermissionModel | string,
+	// ) => Promise<void>;
+	// public removePermission!: (
+	// 	permission: PermissionModel | string,
+	// ) => Promise<void>;
+	public hasPermission!: (
+		permission: PermissionModel | string,
+	) => Promise<boolean>;
 }
 
 RoleModel.init(

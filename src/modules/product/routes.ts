@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { ProductController } from './controller';
 import { ProductService } from './service';
 import { ProductModel } from './model';
+import { authorize } from '../../middlewares/authorize';
+import { ProductPermissions } from '../permission/enums';
 
 const router = Router();
 
@@ -9,10 +11,30 @@ const productService = new ProductService(ProductModel);
 
 const productController = new ProductController(productService);
 
-router.get('/', productController.getAll);
-router.post('/', productController.create);
-router.post('/add-variant/:id', productController.addVariant);
-router.put('/:id', productController.update);
-router.delete('/', productController.delete);
+router.get(
+	'/',
+	authorize(ProductPermissions.PRODUCT_READ),
+	productController.getAll,
+);
+router.post(
+	'/',
+	authorize(ProductPermissions.PRODUCT_CREATE),
+	productController.create,
+);
+router.post(
+	'/add-variant/:id',
+	authorize(ProductPermissions.PRODUCT_CREATE),
+	productController.addVariant,
+);
+router.put(
+	'/:id',
+	authorize(ProductPermissions.PRODUCT_UPDATE),
+	productController.update,
+);
+router.delete(
+	'/',
+	authorize(ProductPermissions.PRODUCT_DELETE),
+	productController.delete,
+);
 
 export default router;

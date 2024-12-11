@@ -4,6 +4,6 @@ export interface DecodedToken extends JwtPayload {
 	UserInfo: {
 		id: string;
 		email: string;
-		roles?: string[];
+		role: string;
 	};
 }
