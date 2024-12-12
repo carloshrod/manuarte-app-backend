@@ -1,9 +1,9 @@
 import { UserModel } from '../user/model';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { env } from '../../config/env';
-import { DecodedToken } from './types';
+import { ENV } from '../../config/env';
 import { Request } from 'express';
+import { DecodedRefreshToken } from './types';
 
 export class AuthService {
 	private userModel;
@@ -47,22 +47,19 @@ export class AuthService {
 
 	refreshTokens = async (headers: Request['headers']) => {
 		const authHeader = headers.authorization || headers.Authorization;
-		if (typeof authHeader !== 'string') {
+		if (typeof authHeader !== 'string' || !authHeader?.startsWith('Bearer ')) {
 			return { status: 401, message: 'User not authenticated' };
 		}
 
-		if (!authHeader?.startsWith('Bearer ')) {
-			return { status: 401, message: 'User not authenticated' };
-		}
 		const refreshToken = authHeader.split(' ')[1];
 
 		try {
-			const decoded = jwt.verify(
+			const decodedToken = jwt.verify(
 				refreshToken,
-				env.REFRESH_TOKEN_SECRET,
-			) as DecodedToken;
+				ENV.REFRESH_TOKEN_SECRET,
+			) as DecodedRefreshToken;
 
-			const foundUser = await this.userModel.findByPk(decoded.id, {
+			const foundUser = await this.userModel.findByPk(decodedToken.id, {
 				attributes: ['id', 'email', 'roleId', 'refreshToken'],
 			});
 			if (!foundUser) {
@@ -91,19 +88,16 @@ export class AuthService {
 
 	logout = async (headers: Request['headers']) => {
 		const authHeader = headers.authorization || headers.Authorization;
-		if (typeof authHeader !== 'string') {
+		if (typeof authHeader !== 'string' || !authHeader?.startsWith('Bearer ')) {
 			return { status: 204, message: 'No content' };
 		}
 
-		if (!authHeader?.startsWith('Bearer ')) {
-			return { status: 204, message: 'No content' };
-		}
 		const refreshToken = authHeader.split(' ')[1];
 
 		const decoded = jwt.verify(
 			refreshToken,
-			env.REFRESH_TOKEN_SECRET,
-		) as DecodedToken;
+			ENV.REFRESH_TOKEN_SECRET,
+		) as DecodedRefreshToken;
 
 		const foundUser = await this.userModel.findByPk(decoded.id, {
 			attributes: ['id'],
@@ -125,11 +119,11 @@ export class AuthService {
 						role: user.roleId,
 					},
 				},
-				env.ACCESS_TOKEN_SECRET,
+				ENV.ACCESS_TOKEN_SECRET,
 				{ expiresIn: '15m' },
 			);
 
-			const refreshToken = jwt.sign({ id: user.id }, env.REFRESH_TOKEN_SECRET, {
+			const refreshToken = jwt.sign({ id: user.id }, ENV.REFRESH_TOKEN_SECRET, {
 				expiresIn: '7d',
 			});
 

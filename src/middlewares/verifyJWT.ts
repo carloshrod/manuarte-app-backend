@@ -1,31 +1,34 @@
-import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { env } from '../config/env';
-import { DecodedToken } from '../modules/auth/types';
-
-interface AuthenticatedRequest extends Request {
-	id?: string;
-}
+import { ENV } from '../config/env';
+import { DecodedAccessToken } from '../modules/auth/types';
+import { NextFunction, Response } from 'express';
+import { CustomRequest } from '../modules/types';
 
 export const verifyJWT = (
-	req: AuthenticatedRequest,
+	req: CustomRequest,
 	res: Response,
 	next: NextFunction,
 ) => {
-	const authHeader = req.headers.authorization || req.headers.Authorization;
-	if (typeof authHeader !== 'string') return res.sendStatus(401);
+	try {
+		const authHeader = req.headers.authorization || req.headers.Authorization;
+		if (typeof authHeader !== 'string' || !authHeader?.startsWith('Bearer '))
+			return res.sendStatus(401);
 
-	if (!authHeader?.startsWith('Bearer ')) return res.sendStatus(401);
-	const token = authHeader.split(' ')[1];
+		const token = authHeader.split(' ')[1];
 
-	jwt.verify(token, env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-		if (err) return res.sendStatus(403);
+		const decodedAccessToken = jwt.verify(
+			token,
+			ENV.ACCESS_TOKEN_SECRET,
+		) as DecodedAccessToken;
 
-		if (decoded && typeof decoded === 'object' && 'UserInfo' in decoded) {
-			req.id = (decoded as DecodedToken).UserInfo.id;
-			next();
-		} else {
+		if (!decodedAccessToken.UserInfo) {
 			return res.sendStatus(403);
 		}
-	});
+
+		req.requestedBy = decodedAccessToken.UserInfo.id;
+		next();
+	} catch (error) {
+		console.error(error);
+		return res.sendStatus(403);
+	}
 };

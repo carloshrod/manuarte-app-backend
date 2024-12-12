@@ -1,5 +1,6 @@
-import { Handler } from 'express';
 import { ProductCategoryService } from './service';
+import { Handler } from 'express';
+import { CustomRequest } from '../types';
 
 export class ProductCategoryController {
 	private productCategoryService;
@@ -11,11 +12,10 @@ export class ProductCategoryController {
 	create: Handler = async (req, res, next) => {
 		try {
 			const { name } = req.body;
-			// ToDo: Obtener el id del usuario que crea el producto
-			const submittedBy = '13503e37-f230-4471-965b-312ae136a484';
+			const requestedBy = (req as CustomRequest).requestedBy;
 			const newProductCategory = await this.productCategoryService.create(
 				name,
-				submittedBy,
+				requestedBy,
 			);
 
 			res.status(201).json({
@@ -45,12 +45,12 @@ export class ProductCategoryController {
 		try {
 			const { id } = req.params;
 			const { name } = req.body;
-			const submittedBy = '13503e37-f230-4471-965b-312ae136a484';
+			const requestedBy = (req as CustomRequest).requestedBy;
 
 			const updatedProductCategory = await this.productCategoryService.update({
 				id,
 				name,
-				submittedBy,
+				requestedBy,
 			});
 
 			res.status(200).json({

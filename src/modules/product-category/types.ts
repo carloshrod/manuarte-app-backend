@@ -11,7 +11,7 @@ export interface ProductCategoryAttr {
 
 export interface CreateProductCategoryService {
 	name: string;
-	submittedBy: string;
+	requestedBy: string;
 }
 
 export interface UpdateProductCategoryService

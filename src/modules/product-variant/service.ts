@@ -80,11 +80,11 @@ export class ProductVariantService {
 	update = async ({
 		id,
 		name,
-		submittedBy,
+		requestedBy,
 	}: {
 		id: string;
 		name: string;
-		submittedBy: string;
+		requestedBy: string;
 	}) => {
 		try {
 			const productVariantToUpdate =
@@ -97,7 +97,7 @@ export class ProductVariantService {
 
 			await productVariantToUpdate.update({
 				name,
-				updatedBy: submittedBy,
+				updatedBy: requestedBy,
 				updatedDate: sequelize.fn('now'),
 			});
 

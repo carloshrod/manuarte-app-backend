@@ -1,5 +1,6 @@
-import { Handler } from 'express';
 import { ProductService } from './service';
+import { Handler } from 'express';
+import { CustomRequest } from '../types';
 
 export class ProductController {
 	private productService;
@@ -11,13 +12,12 @@ export class ProductController {
 	create: Handler = async (req, res, next) => {
 		try {
 			const { productVariants, ...rest } = req.body;
-			// ToDo: Obtener el id del usuario que crea el producto
-			const submittedBy = '13503e37-f230-4471-965b-312ae136a484';
+			const requestedBy = (req as CustomRequest).requestedBy;
 
 			const newProduct = await this.productService.create({
 				productData: rest,
 				productVariants,
-				submittedBy,
+				requestedBy,
 			});
 
 			res
@@ -46,14 +46,13 @@ export class ProductController {
 		try {
 			const { id } = req.params;
 			const { productVariant, ...rest } = req.body;
-			// ToDo: Obtener el id del usuario que actualiza el producto
-			const submittedBy = '13503e37-f230-4471-965b-312ae136a484';
+			const requestedBy = (req as CustomRequest).requestedBy;
 
 			await this.productService.update({
 				id,
 				productData: { ...rest },
 				productVariantData: productVariant,
-				submittedBy,
+				requestedBy,
 			});
 
 			res.status(200).json({ message: 'Producto actualizado con éxito' });
@@ -65,12 +64,12 @@ export class ProductController {
 	addVariant: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
-			const submittedBy = '13503e37-f230-4471-965b-312ae136a484';
+			const requestedBy = (req as CustomRequest).requestedBy;
 
 			const newProductVariant = await this.productService.addVariant({
 				productId: id,
 				name: req.body.name,
-				submittedBy,
+				requestedBy,
 			});
 
 			res.status(201).json({

@@ -1,8 +1,8 @@
-import { env } from './config/env';
+import { ENV } from './config/env';
 import { sequelize } from './config/database';
 import app from './app';
 
-const PORT = env.PORT ?? 5000;
+const PORT = ENV.PORT ?? 5000;
 
 async function main() {
 	try {

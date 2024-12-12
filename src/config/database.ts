@@ -1,9 +1,9 @@
-import { Sequelize } from "sequelize";
-import { env } from "./env";
+import { Sequelize } from 'sequelize';
+import { ENV } from './env';
 
-const { DB_NAME, DB_USER, DB_PASSWORD, DB_HOST } = env;
+const { DB_NAME, DB_USER, DB_PASSWORD, DB_HOST } = ENV;
 
 export const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
-  host: DB_HOST,
-  dialect: "postgres",
+	host: DB_HOST,
+	dialect: 'postgres',
 });

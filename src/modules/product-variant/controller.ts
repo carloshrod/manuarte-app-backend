@@ -1,5 +1,6 @@
-import { Handler } from 'express';
 import { ProductVariantService } from './service';
+import { Handler } from 'express';
+import { CustomRequest } from '../types';
 
 export class ProductVariantController {
 	private productVariantService;
@@ -26,13 +27,12 @@ export class ProductVariantController {
 		try {
 			const { id } = req.params;
 			const { name } = req.body;
-			// ToDo: Obtener el id del usuario que actualiza el producto
-			const submittedBy = '13503e37-f230-4471-965b-312ae136a484';
+			const requestedBy = (req as CustomRequest).requestedBy;
 
 			await this.productVariantService.update({
 				id,
 				name,
-				submittedBy,
+				requestedBy,
 			});
 
 			res.status(200).json({

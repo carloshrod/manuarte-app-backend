@@ -1,10 +1,10 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { env } from '../config/env';
+import { ENV } from '../config/env';
 import { RoleModel } from '../modules/role/model';
-import { DecodedToken } from '../modules/auth/types';
 import { PermissionModel } from '../modules/permission/model';
 import { UserModel } from '../modules/user/model';
+import { DecodedAccessToken } from '../modules/auth/types';
 
 export const authorize = (permissionName: string) => {
 	return async (
@@ -18,12 +18,12 @@ export const authorize = (permissionName: string) => {
 				res.sendStatus(401);
 				return;
 			}
-			const token = authHeader.split(' ')[1];
+			const accessToken = authHeader.split(' ')[1];
 
 			const decoded = jwt.verify(
-				token,
-				env.ACCESS_TOKEN_SECRET,
-			) as DecodedToken;
+				accessToken,
+				ENV.ACCESS_TOKEN_SECRET,
+			) as DecodedAccessToken;
 
 			const roleId = decoded.UserInfo.role;
 			const userId = decoded.UserInfo.id;

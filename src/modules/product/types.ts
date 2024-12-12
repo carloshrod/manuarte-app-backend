@@ -25,7 +25,7 @@ export interface ProductData {
 export interface CreateProductService {
 	productData: Partial<ProductAttr>;
 	productVariants: string[];
-	submittedBy: string;
+	requestedBy: string;
 }
 
 export interface UpdateProductService {
@@ -35,13 +35,13 @@ export interface UpdateProductService {
 		id: string;
 		name: string;
 	};
-	submittedBy: string;
+	requestedBy: string;
 }
 
 export interface AddProductVariantService {
 	productId: string;
 	name: string;
-	submittedBy: string;
+	requestedBy: string;
 }
 
 export interface ProductServiceConstructor {

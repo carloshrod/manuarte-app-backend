@@ -12,12 +12,12 @@ export class ProductCategoryService {
 		this.productModel = ProductModel;
 	}
 
-	create = async (name: string, submittedBy: string) => {
+	create = async (name: string, requestedBy: string) => {
 		try {
 			const newProductCategory = this.productCategoryModel.build({
 				name: name.toUpperCase(),
-				createdBy: submittedBy,
-				updatedBy: submittedBy,
+				createdBy: requestedBy,
+				updatedBy: requestedBy,
 			});
 
 			await newProductCategory.generateCId();
@@ -44,7 +44,7 @@ export class ProductCategoryService {
 
 	update = async (data: UpdateProductCategoryService) => {
 		try {
-			const { id, name, submittedBy } = data;
+			const { id, name, requestedBy } = data;
 			const productCategoryToUpdate =
 				await this.productCategoryModel.findByPk(id);
 			if (!productCategoryToUpdate) {
@@ -55,7 +55,7 @@ export class ProductCategoryService {
 
 			await productCategoryToUpdate.update({
 				name: name.toUpperCase(),
-				updatedBy: submittedBy,
+				updatedBy: requestedBy,
 				updatedDate: sequelize.fn('now'),
 			});
 

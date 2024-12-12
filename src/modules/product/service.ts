@@ -23,13 +23,13 @@ export class ProductService {
 	create = async ({
 		productData,
 		productVariants,
-		submittedBy,
+		requestedBy,
 	}: CreateProductService) => {
 		try {
 			const newProduct = this.productModel.build({
 				...productData,
-				createdBy: submittedBy,
-				updatedBy: submittedBy,
+				createdBy: requestedBy,
+				updatedBy: requestedBy,
 			});
 
 			await newProduct.generatePId();
@@ -43,7 +43,7 @@ export class ProductService {
 							name,
 							productId: newProduct.id,
 						},
-						submittedBy,
+						requestedBy,
 					);
 
 					newProductVariants.push(newProductVariant);
@@ -83,7 +83,7 @@ export class ProductService {
 		id,
 		productData,
 		productVariantData,
-		submittedBy,
+		requestedBy,
 	}: UpdateProductService) => {
 		try {
 			const productToUpdate = await this.productModel.findByPk(id);
@@ -92,14 +92,14 @@ export class ProductService {
 
 			await productToUpdate.update({
 				...productData,
-				updatedBy: submittedBy,
+				updatedBy: requestedBy,
 				updatedDate: sequelize.fn('now'),
 			});
 
 			const updatedProductVariant = await this.productVariantService.update({
 				id: productVariantData.id,
 				name: productVariantData.name,
-				submittedBy,
+				requestedBy,
 			});
 
 			const categoryName = await this.getCategoryName(
@@ -120,12 +120,12 @@ export class ProductService {
 	addVariant = async ({
 		productId,
 		name,
-		submittedBy,
+		requestedBy,
 	}: AddProductVariantService) => {
 		try {
 			const productVariantToUpdate = await this.productVariantService.create(
 				{ name, productId },
-				submittedBy,
+				requestedBy,
 			);
 
 			const product = await this.productModel.findByPk(productId);
