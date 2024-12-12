@@ -4,6 +4,7 @@ import { env } from '../config/env';
 import { RoleModel } from '../modules/role/model';
 import { DecodedToken } from '../modules/auth/types';
 import { PermissionModel } from '../modules/permission/model';
+import { UserModel } from '../modules/user/model';
 
 export const authorize = (permissionName: string) => {
 	return async (
@@ -25,7 +26,8 @@ export const authorize = (permissionName: string) => {
 			) as DecodedToken;
 
 			const roleId = decoded.UserInfo.role;
-			const allowed = await hasPermission(roleId, permissionName);
+			const userId = decoded.UserInfo.id;
+			const allowed = await hasPermission(roleId, userId, permissionName);
 
 			if (!allowed) {
 				const isGet = req.method === 'GET';
@@ -44,9 +46,14 @@ export const authorize = (permissionName: string) => {
 	};
 };
 
-async function hasPermission(roleId: string, permissionName: string) {
+async function hasPermission(
+	roleId: string,
+	userId: string,
+	permissionName: string,
+) {
 	const role = await RoleModel.findByPk(roleId, { attributes: ['id'] });
-	if (!role) return false;
+	const user = await UserModel.findByPk(userId, { attributes: ['id'] });
+	if (!role || !user) return false;
 
 	const permission = await PermissionModel.findOne({
 		where: { name: permissionName },
@@ -55,6 +62,7 @@ async function hasPermission(roleId: string, permissionName: string) {
 	if (!permission) return false;
 
 	const roleHasPermission = await role.hasPermission(permission.id);
+	const userHasExtraPermission = await user?.hasExtraPermission(permission.id);
 
-	return roleHasPermission;
+	return roleHasPermission || userHasExtraPermission;
 }
