@@ -1,6 +1,8 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { RoleModel } from '../role/model';
+import { PermissionModel } from '../permission/model';
+import { UserPermissionModel } from '../user-permission/model';
 import bcrypt from 'bcrypt';
 
 export class UserModel extends Model {
@@ -10,6 +12,14 @@ export class UserModel extends Model {
 	public personId!: string;
 	public password!: string;
 	public refreshToken!: string;
+
+	public getExtraPermissions!: () => Promise<PermissionModel[]>;
+	public setExtraPermissions!: (
+		permission: PermissionModel[] | string[],
+	) => Promise<PermissionModel[]>;
+	public hasExtraPermission!: (
+		permission: PermissionModel | string,
+	) => Promise<boolean>;
 }
 
 UserModel.init(
@@ -110,6 +120,7 @@ UserModel.init(
 	},
 );
 
+// ***** UserModel-RoleModel Relations *****
 UserModel.belongsTo(RoleModel, {
 	foreignKey: 'roleId',
 	as: 'role',
@@ -118,4 +129,19 @@ UserModel.belongsTo(RoleModel, {
 RoleModel.hasMany(UserModel, {
 	foreignKey: 'roleId',
 	as: 'users',
+});
+
+// ***** UserModel-PermissionModel Relations *****
+UserModel.belongsToMany(PermissionModel, {
+	through: UserPermissionModel,
+	as: 'extraPermissions',
+	foreignKey: 'userId',
+	otherKey: 'permissionId',
+});
+
+PermissionModel.belongsToMany(UserModel, {
+	through: UserPermissionModel,
+	as: 'users',
+	foreignKey: 'permissionId',
+	otherKey: 'userId',
 });
