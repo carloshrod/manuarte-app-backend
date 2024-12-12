@@ -3,16 +3,20 @@ import { RoleModel } from '../role/model';
 import { PersonModel } from '../person/model';
 import { UserModel } from './model';
 import { UserData } from './types';
+import { PermissionModel } from '../permission/model';
+import { Op } from 'sequelize';
 
 export class UserService {
 	private userModel;
 	private personModel;
 	private roleModel;
+	private permissionModel;
 
 	constructor(userModel: typeof UserModel) {
 		this.userModel = userModel;
 		this.personModel = PersonModel;
 		this.roleModel = RoleModel;
+		this.permissionModel = PermissionModel;
 	}
 
 	getAll = async () => {
@@ -39,6 +43,12 @@ export class UserService {
 						model: this.roleModel,
 						as: 'role',
 						attributes: [],
+					},
+					{
+						model: this.permissionModel,
+						as: 'extraPermissions',
+						attributes: ['id', 'name'],
+						through: { attributes: [] },
 					},
 				],
 			});
@@ -108,6 +118,7 @@ export class UserService {
 		userData: UserData,
 		{ personId, userId }: { personId: string; userId: string },
 	) => {
+		const transaction = await sequelize.transaction();
 		try {
 			const personToUpdate = await this.personModel.findByPk(personId);
 			const userToUpdate = await this.userModel.findByPk(userId);
@@ -116,9 +127,9 @@ export class UserService {
 			}
 
 			const { fullName, dni, roleId, email, password } = userData;
-			await personToUpdate.update({ fullName, dni });
+			await personToUpdate.update({ fullName, dni }, { transaction });
 
-			await userToUpdate.update({ roleId, email, password });
+			await userToUpdate.update({ roleId, email, password }, { transaction });
 
 			const updatedUser = {
 				id: userToUpdate.id,
@@ -130,12 +141,15 @@ export class UserService {
 				dni,
 			};
 
+			await transaction.commit();
+
 			return {
 				status: 200,
 				updatedUser,
 				message: 'Usuario actualizado con éxito',
 			};
 		} catch (error) {
+			await transaction.rollback();
 			console.error(error);
 			throw error;
 		}
@@ -152,6 +166,67 @@ export class UserService {
 			}
 
 			return { status: 404, message: 'Usuario no encontrado' };
+		} catch (error) {
+			console.error(error);
+			throw error;
+		}
+	};
+
+	setPermissions = async (userId: string, extraPermissions: string[]) => {
+		try {
+			const user = await this.userModel.findByPk(userId);
+			if (!user) {
+				return { status: 404, message: 'Usuario no encontrado' };
+			}
+
+			await user.setExtraPermissions(extraPermissions);
+
+			return {
+				status: 200,
+				message:
+					extraPermissions.length === 0
+						? 'Permisos eliminados con éxito'
+						: 'Permisos actualizados con éxito',
+			};
+		} catch (error) {
+			console.error(error);
+			return {
+				status: 500,
+				message: 'Error asignando permisos de usuario',
+			};
+		}
+	};
+
+	getAssignablePermissions = async (userId: string) => {
+		try {
+			const user = await this.userModel.findByPk(userId);
+			if (!user) return { status: 404, message: 'Usuario no encontrado' };
+			const roleName = await this.getRoleName(user.roleId);
+			if (roleName !== 'cajero') {
+				return { status: 204, assignablePermissions: [] };
+			}
+
+			const ITEMS_PERMISSIONS_BY_ROLE = {
+				cajero: ['product', 'customer'], // Items por los que se le puede asignar permisos al usuario con rol = cajero
+			};
+
+			const permissionConditions =
+				ITEMS_PERMISSIONS_BY_ROLE[roleName].length > 0
+					? ITEMS_PERMISSIONS_BY_ROLE[roleName].map(permission => ({
+							[Op.iLike]: `%${permission}%`,
+						}))
+					: null;
+
+			const assignablePermissions = await this.permissionModel.findAll({
+				where: {
+					name: {
+						[Op.or]: permissionConditions,
+					},
+				},
+				attributes: ['id', 'name'],
+			});
+
+			return { status: 200, assignablePermissions };
 		} catch (error) {
 			console.error(error);
 			throw error;

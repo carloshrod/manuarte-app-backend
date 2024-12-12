@@ -3,7 +3,7 @@ import { UserController } from './controller';
 import { UserModel } from './model';
 import { UserService } from './service';
 import { authorize } from '../../middlewares/authorize';
-import { UserPermissions } from '../permission/enums';
+import { PermissionPermissions, UserPermissions } from '../permission/enums';
 
 const router = Router();
 
@@ -17,10 +17,20 @@ router.get(
 	authorize(UserPermissions.USER_READ),
 	userController.getRoles,
 );
+router.get(
+	'/assignable-permissions/:userId',
+	authorize(PermissionPermissions.PERMISSION_READ),
+	userController.getAssignablePermissions,
+);
 router.post(
 	'/',
 	authorize(UserPermissions.USER_CREATE),
 	userController.register,
+);
+router.post(
+	'/set-permissions/:userId',
+	authorize(UserPermissions.USER_UPDATE),
+	userController.setPermissions,
 );
 router.put(
 	'/:personId/:userId',
