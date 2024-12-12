@@ -1,10 +1,10 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
-import { AddressModel } from '../address/model';
+import { CityModel } from '../city/model';
 
-export class CustomerModel extends Model {}
+export class ProvinceModel extends Model {}
 
-CustomerModel.init(
+ProvinceModel.init(
 	{
 		id: {
 			type: DataTypes.UUID,
@@ -12,22 +12,17 @@ CustomerModel.init(
 			defaultValue: DataTypes.UUIDV4,
 			primaryKey: true,
 		},
-		personId: {
+		name: {
+			type: DataTypes.STRING,
+			allowNull: false,
+		},
+		countryId: {
 			type: DataTypes.UUID,
 			allowNull: false,
 			references: {
-				model: 'person',
+				model: 'country',
 				key: 'id',
 			},
-			unique: 'REL_b48cc61c6aa50b58eb2522ee40',
-		},
-		email: {
-			type: DataTypes.STRING,
-			allowNull: true,
-		},
-		phoneNumber: {
-			type: DataTypes.STRING,
-			allowNull: true,
 		},
 		createdDate: {
 			type: DataTypes.DATE,
@@ -43,37 +38,28 @@ CustomerModel.init(
 			type: DataTypes.DATE,
 			allowNull: true,
 		},
-		city: {
-			type: DataTypes.STRING,
-			allowNull: true,
-		},
 	},
 	{
 		sequelize,
-		tableName: 'customer',
+		tableName: 'province',
 		schema: 'public',
 		timestamps: false,
 		indexes: [
 			{
-				name: 'PK_a7a13f4cacb744524e44dfdad32',
+				name: 'PK_4f461cb46f57e806516b7073659',
 				unique: true,
 				fields: [{ name: 'id' }],
-			},
-			{
-				name: 'REL_b48cc61c6aa50b58eb2522ee40',
-				unique: true,
-				fields: [{ name: 'personId' }],
 			},
 		],
 	},
 );
 
-CustomerModel.hasMany(AddressModel, {
-	foreignKey: 'customerId',
-	as: 'addresses',
+ProvinceModel.hasMany(CityModel, {
+	foreignKey: 'provinceId',
+	as: 'cities',
 });
 
-AddressModel.belongsTo(CustomerModel, {
-	foreignKey: 'customerId',
-	as: 'customer',
+CityModel.belongsTo(ProvinceModel, {
+	foreignKey: 'provinceId',
+	as: 'province',
 });
