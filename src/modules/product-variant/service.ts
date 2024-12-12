@@ -2,7 +2,7 @@ import { sequelize } from '../../config/database';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductModel } from '../product/model';
 import { ProductVariantModel } from './model';
-import { ProductVariantAttr } from './types';
+import { CreateProductVariantDto, UpdateProductVariantDto } from './types';
 
 export class ProductVariantService {
 	private productVariantModel;
@@ -56,15 +56,17 @@ export class ProductVariantService {
 		}
 	};
 
-	create = async (
-		productVariantData: Partial<ProductVariantAttr>,
-		submittedBy: string,
-	) => {
+	create = async ({
+		name,
+		productId,
+		requestedBy,
+	}: CreateProductVariantDto) => {
 		try {
 			const newProductVariant = this.productVariantModel.build({
-				...productVariantData,
-				createdBy: submittedBy,
-				updatedBy: submittedBy,
+				name,
+				productId,
+				createdBy: requestedBy,
+				updatedBy: requestedBy,
 			});
 
 			await newProductVariant.generateVId();
@@ -77,15 +79,7 @@ export class ProductVariantService {
 		}
 	};
 
-	update = async ({
-		id,
-		name,
-		requestedBy,
-	}: {
-		id: string;
-		name: string;
-		requestedBy: string;
-	}) => {
+	update = async ({ id, name, requestedBy }: UpdateProductVariantDto) => {
 		try {
 			const productVariantToUpdate =
 				await this.productVariantModel.findByPk(id);

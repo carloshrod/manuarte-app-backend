@@ -13,10 +13,10 @@ export class ProductCategoryController {
 		try {
 			const { name } = req.body;
 			const requestedBy = (req as CustomRequest).requestedBy;
-			const newProductCategory = await this.productCategoryService.create(
+			const newProductCategory = await this.productCategoryService.create({
 				name,
 				requestedBy,
-			);
+			});
 
 			res.status(201).json({
 				newProductCategory,

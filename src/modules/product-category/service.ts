@@ -1,7 +1,7 @@
 import { sequelize } from '../../config/database';
 import { ProductModel } from '../product/model';
 import { ProductCategoryModel } from './model';
-import { UpdateProductCategoryService } from './types';
+import { CreateProductCategoryDto, UpdateProductCategoryDto } from './types';
 
 export class ProductCategoryService {
 	private productCategoryModel;
@@ -12,7 +12,7 @@ export class ProductCategoryService {
 		this.productModel = ProductModel;
 	}
 
-	create = async (name: string, requestedBy: string) => {
+	create = async ({ name, requestedBy }: CreateProductCategoryDto) => {
 		try {
 			const newProductCategory = this.productCategoryModel.build({
 				name: name.toUpperCase(),
@@ -42,9 +42,8 @@ export class ProductCategoryService {
 		}
 	};
 
-	update = async (data: UpdateProductCategoryService) => {
+	update = async ({ id, name, requestedBy }: UpdateProductCategoryDto) => {
 		try {
-			const { id, name, requestedBy } = data;
 			const productCategoryToUpdate =
 				await this.productCategoryModel.findByPk(id);
 			if (!productCategoryToUpdate) {

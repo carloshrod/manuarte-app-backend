@@ -9,12 +9,11 @@ export interface ProductCategoryAttr {
 	deletedDate?: Date | null;
 }
 
-export interface CreateProductCategoryService {
+export interface CreateProductCategoryDto {
 	name: string;
 	requestedBy: string;
 }
 
-export interface UpdateProductCategoryService
-	extends CreateProductCategoryService {
+export interface UpdateProductCategoryDto extends CreateProductCategoryDto {
 	id: string;
 }

@@ -4,9 +4,9 @@ import { ProductCategoryModel } from '../product-category/model';
 import { ProductVariantService } from '../product-variant/service';
 import { ProductVariantModel } from '../product-variant/model';
 import {
-	AddProductVariantService,
-	CreateProductService,
-	UpdateProductService,
+	AddProductVariantDto,
+	CreateProductDto,
+	UpdateProductDto,
 } from './types';
 
 export class ProductService {
@@ -20,11 +20,25 @@ export class ProductService {
 		this.productVariantService = new ProductVariantService(ProductVariantModel);
 	}
 
+	getAll = async () => {
+		try {
+			const products = await this.productModel.findAll({
+				attributes: ['id', 'name'],
+				order: [['name', 'ASC']],
+			});
+
+			return products;
+		} catch (error) {
+			console.error('ServiceError obteniendo productos: ', error);
+			throw error;
+		}
+	};
+
 	create = async ({
 		productData,
 		productVariants,
 		requestedBy,
-	}: CreateProductService) => {
+	}: CreateProductDto) => {
 		try {
 			const newProduct = this.productModel.build({
 				...productData,
@@ -38,13 +52,11 @@ export class ProductService {
 			const newProductVariants = [];
 			if (productVariants?.length > 0) {
 				for (const name of productVariants) {
-					const newProductVariant = await this.productVariantService.create(
-						{
-							name,
-							productId: newProduct.id,
-						},
+					const newProductVariant = await this.productVariantService.create({
+						name,
+						productId: newProduct.id,
 						requestedBy,
-					);
+					});
 
 					newProductVariants.push(newProductVariant);
 				}
@@ -65,26 +77,12 @@ export class ProductService {
 		}
 	};
 
-	getAll = async () => {
-		try {
-			const products = await this.productModel.findAll({
-				attributes: ['id', 'name'],
-				order: [['name', 'ASC']],
-			});
-
-			return products;
-		} catch (error) {
-			console.error('ServiceError obteniendo productos: ', error);
-			throw error;
-		}
-	};
-
 	update = async ({
 		id,
 		productData,
 		productVariantData,
 		requestedBy,
-	}: UpdateProductService) => {
+	}: UpdateProductDto) => {
 		try {
 			const productToUpdate = await this.productModel.findByPk(id);
 			if (!productToUpdate)
@@ -121,12 +119,13 @@ export class ProductService {
 		productId,
 		name,
 		requestedBy,
-	}: AddProductVariantService) => {
+	}: AddProductVariantDto) => {
 		try {
-			const productVariantToUpdate = await this.productVariantService.create(
-				{ name, productId },
+			const productVariantToUpdate = await this.productVariantService.create({
+				name,
+				productId,
 				requestedBy,
-			);
+			});
 
 			const product = await this.productModel.findByPk(productId);
 			let categoryProductName;

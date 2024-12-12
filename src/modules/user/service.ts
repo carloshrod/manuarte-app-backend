@@ -2,7 +2,7 @@ import { sequelize } from '../../config/database';
 import { RoleModel } from '../role/model';
 import { PersonModel } from '../person/model';
 import { UserModel } from './model';
-import { UserData } from './types';
+import { CreateUserDto, SetPermissionsDto, UpdateUserDto } from './types';
 import { PermissionModel } from '../permission/model';
 import { Op } from 'sequelize';
 
@@ -74,7 +74,7 @@ export class UserService {
 		}
 	};
 
-	register = async (userData: UserData) => {
+	register = async (userData: CreateUserDto) => {
 		const transaction = await sequelize.transaction();
 		try {
 			const { fullName, dni, roleId, email, password } = userData;
@@ -114,21 +114,19 @@ export class UserService {
 		}
 	};
 
-	update = async (
-		userData: UserData,
-		{ personId, userId }: { personId: string; userId: string },
-	) => {
+	update = async (userData: UpdateUserDto) => {
 		const transaction = await sequelize.transaction();
 		try {
+			const { personId, userId, ...rest } = userData;
+
 			const personToUpdate = await this.personModel.findByPk(personId);
 			const userToUpdate = await this.userModel.findByPk(userId);
 			if (!userToUpdate || !personToUpdate) {
 				return { status: 404, message: 'Usuario no encontrado' };
 			}
 
-			const { fullName, dni, roleId, email, password } = userData;
+			const { fullName, dni, roleId, email, password } = rest;
 			await personToUpdate.update({ fullName, dni }, { transaction });
-
 			await userToUpdate.update({ roleId, email, password }, { transaction });
 
 			const updatedUser = {
@@ -172,7 +170,7 @@ export class UserService {
 		}
 	};
 
-	setPermissions = async (userId: string, extraPermissions: string[]) => {
+	setPermissions = async ({ userId, extraPermissions }: SetPermissionsDto) => {
 		try {
 			const user = await this.userModel.findByPk(userId);
 			if (!user) {

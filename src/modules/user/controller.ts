@@ -56,7 +56,8 @@ export class UserController {
 	update: Handler = async (req, res, next) => {
 		try {
 			const { personId, userId } = req.params;
-			const result = await this.userService.update(req.body, {
+			const result = await this.userService.update({
+				...req.body,
 				personId,
 				userId,
 			});
@@ -91,10 +92,10 @@ export class UserController {
 		try {
 			const { userId } = req.params;
 			const { extraPermissions } = req.body;
-			const result = await this.userService.setPermissions(
+			const result = await this.userService.setPermissions({
 				userId,
 				extraPermissions,
-			);
+			});
 
 			if (result.status === 200) {
 				res.status(result.status).json({ message: result.message });

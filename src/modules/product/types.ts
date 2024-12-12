@@ -1,7 +1,3 @@
-import { ProductCategoryService } from '../product-category/service';
-import { ProductVariantService } from '../product-variant/service';
-import { ProductModel } from './model';
-
 export interface ProductAttr {
 	id?: string;
 	name: string;
@@ -15,20 +11,13 @@ export interface ProductAttr {
 	deletedDate?: Date | null;
 }
 
-export interface ProductData {
-	id: string;
-	name: string;
-	description: string;
-	categoryProductId: string;
-}
-
-export interface CreateProductService {
+export interface CreateProductDto {
 	productData: Partial<ProductAttr>;
 	productVariants: string[];
 	requestedBy: string;
 }
 
-export interface UpdateProductService {
+export interface UpdateProductDto {
 	id: string;
 	productData: Partial<ProductAttr>;
 	productVariantData: {
@@ -38,14 +27,8 @@ export interface UpdateProductService {
 	requestedBy: string;
 }
 
-export interface AddProductVariantService {
+export interface AddProductVariantDto {
 	productId: string;
 	name: string;
 	requestedBy: string;
-}
-
-export interface ProductServiceConstructor {
-	productModel: typeof ProductModel;
-	productVariantService: ProductVariantService;
-	productCategoryService: ProductCategoryService;
 }
