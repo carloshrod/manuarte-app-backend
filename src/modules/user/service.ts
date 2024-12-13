@@ -117,10 +117,12 @@ export class UserService {
 	update = async (userData: UpdateUserDto) => {
 		const transaction = await sequelize.transaction();
 		try {
-			const { personId, userId, ...rest } = userData;
+			const { personId, ...rest } = userData;
 
 			const personToUpdate = await this.personModel.findByPk(personId);
-			const userToUpdate = await this.userModel.findByPk(userId);
+			const userToUpdate = await this.userModel.findOne({
+				where: { personId },
+			});
 			if (!userToUpdate || !personToUpdate) {
 				return { status: 404, message: 'Usuario no encontrado' };
 			}

@@ -55,11 +55,10 @@ export class UserController {
 
 	update: Handler = async (req, res, next) => {
 		try {
-			const { personId, userId } = req.params;
+			const { personId } = req.params;
 			const result = await this.userService.update({
 				...req.body,
 				personId,
-				userId,
 			});
 
 			if (result.status === 200) {

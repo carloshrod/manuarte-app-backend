@@ -33,7 +33,7 @@ router.post(
 	userController.setPermissions,
 );
 router.put(
-	'/:personId/:userId',
+	'/:personId',
 	authorize(UserPermissions.USER_UPDATE),
 	userController.update,
 );
