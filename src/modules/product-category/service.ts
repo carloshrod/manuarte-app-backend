@@ -15,7 +15,7 @@ export class ProductCategoryService {
 	create = async ({ name, requestedBy }: CreateProductCategoryDto) => {
 		try {
 			const newProductCategory = this.productCategoryModel.build({
-				name: name.toUpperCase(),
+				name,
 				createdBy: requestedBy,
 				updatedBy: requestedBy,
 			});
@@ -27,7 +27,7 @@ export class ProductCategoryService {
 			return newProductCategory.dataValues;
 		} catch (error) {
 			console.error('ServiceError creando categoría de producto: ', error);
-			throw new Error('Error interno del servidor');
+			throw error;
 		}
 	};
 
@@ -38,7 +38,7 @@ export class ProductCategoryService {
 			return categories;
 		} catch (error) {
 			console.error('ServiceError obteniendo categorías de producto: ', error);
-			throw new Error('Error interno del servidor');
+			throw error;
 		}
 	};
 
@@ -53,7 +53,7 @@ export class ProductCategoryService {
 			}
 
 			await productCategoryToUpdate.update({
-				name: name.toUpperCase(),
+				name,
 				updatedBy: requestedBy,
 				updatedDate: sequelize.fn('now'),
 			});
@@ -61,7 +61,7 @@ export class ProductCategoryService {
 			return productCategoryToUpdate.dataValues;
 		} catch (error) {
 			console.error('ServiceError actualizando categoría de producto: ', error);
-			throw new Error('Error interno del servidor');
+			throw error;
 		}
 	};
 
@@ -89,7 +89,7 @@ export class ProductCategoryService {
 			};
 		} catch (error) {
 			console.error('ServiceError eliminando categoría de producto: ', error);
-			throw new Error('Error interno del servidor');
+			throw error;
 		}
 	};
 }

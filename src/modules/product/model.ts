@@ -64,7 +64,7 @@ export class ProductModel extends Model {
 
 		if (existingProduct && existingProduct.id !== this.id) {
 			throw new Error(
-				'El nombre del producto debe ser único (sin distinguir entre mayúsculas y minúsculas)',
+				'Ya existe un producto con este nombre (Ten en cuenta mayúsculas y minúsculas)',
 			);
 		}
 	}

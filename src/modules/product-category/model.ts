@@ -3,6 +3,7 @@ import { sequelize } from '../../config/database';
 import { Op } from 'sequelize';
 
 export class ProductCategoryModel extends Model {
+	public id!: string;
 	public cId!: string;
 	public name!: string;
 
@@ -34,6 +35,16 @@ export class ProductCategoryModel extends Model {
 			throw new Error(
 				'No se pudo generar un nuevo cId para la categoría de producto',
 			);
+		}
+	}
+
+	async validateProductCategoryName() {
+		const existingProduct = await ProductCategoryModel.findOne({
+			where: { name: this.name },
+		});
+
+		if (existingProduct && existingProduct.id !== this.id) {
+			throw new Error('Ya existe una categoría de producto con este nombre');
 		}
 	}
 }
@@ -95,5 +106,15 @@ ProductCategoryModel.init(
 				fields: [{ name: 'cId' }],
 			},
 		],
+		hooks: {
+			beforeCreate: async productCategory => {
+				productCategory.name = productCategory.name.toUpperCase().trim();
+				await productCategory.validateProductCategoryName();
+			},
+			beforeUpdate: async productCategory => {
+				productCategory.name = productCategory.name.toUpperCase().trim();
+				await productCategory.validateProductCategoryName();
+			},
+		},
 	},
 );
