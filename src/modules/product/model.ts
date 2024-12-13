@@ -141,9 +141,11 @@ ProductModel.init(
 		],
 		hooks: {
 			beforeCreate: async product => {
+				product.name = product.name.trim();
 				await product.validateProductName();
 			},
 			beforeUpdate: async product => {
+				product.name = product.name.trim();
 				await product.validateProductName();
 				if (product.changed('categoryProductId')) {
 					throw new Error(

@@ -42,7 +42,6 @@ export class ProductService {
 		try {
 			const newProduct = this.productModel.build({
 				...productData,
-				name: productData.name?.trim(),
 				createdBy: requestedBy,
 				updatedBy: requestedBy,
 			});
@@ -91,7 +90,6 @@ export class ProductService {
 
 			await productToUpdate.update({
 				...productData,
-				name: productData.name?.trim(),
 				updatedBy: requestedBy,
 				updatedDate: sequelize.fn('now'),
 			});
