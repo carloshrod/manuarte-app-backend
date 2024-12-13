@@ -21,4 +21,53 @@ export class CustomerController {
 			next(error);
 		}
 	};
+
+	create: Handler = async (req, res, next) => {
+		try {
+			const result = await this.customerService.create(req.body);
+			if (result.status !== 201) {
+				res.sendStatus(500);
+				return;
+			}
+
+			res.status(result.status).json({
+				newCustomer: result.customer,
+				message: 'Cliente registrado con éxito',
+			});
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	update: Handler = async (req, res, next) => {
+		try {
+			const { personId } = req.params;
+			const result = await this.customerService.update({
+				...req.body,
+				personId,
+			});
+			if (result.status !== 200) {
+				res.sendStatus(500);
+				return;
+			}
+
+			res.status(result.status).json({
+				updatedCustomer: result.updatedCustomer,
+				message: 'Cliente actualizado con éxito',
+			});
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	delete: Handler = async (req, res, next) => {
+		try {
+			const { personId } = req.params;
+			const result = await this.customerService.delete(personId);
+
+			res.status(result.status).json({ message: result.message });
+		} catch (error) {
+			next(error);
+		}
+	};
 }

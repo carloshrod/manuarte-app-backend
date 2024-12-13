@@ -16,5 +16,20 @@ router.get(
 	authorize(CustomerPermissions.CUSTOMER_READ),
 	customerController.getAll,
 );
+router.post(
+	'/',
+	authorize(CustomerPermissions.CUSTOMER_CREATE),
+	customerController.create,
+);
+router.put(
+	'/:personId',
+	authorize(CustomerPermissions.CUSTOMER_UPDATE),
+	customerController.update,
+);
+router.delete(
+	'/:personId',
+	authorize(CustomerPermissions.CUSTOMER_DELETE),
+	customerController.delete,
+);
 
 export default router;

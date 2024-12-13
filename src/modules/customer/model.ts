@@ -2,7 +2,9 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { AddressModel } from '../address/model';
 
-export class CustomerModel extends Model {}
+export class CustomerModel extends Model {
+	public id!: string;
+}
 
 CustomerModel.init(
 	{
@@ -71,6 +73,7 @@ CustomerModel.init(
 CustomerModel.hasMany(AddressModel, {
 	foreignKey: 'customerId',
 	as: 'addresses',
+	onDelete: 'CASCADE',
 });
 
 AddressModel.belongsTo(CustomerModel, {
