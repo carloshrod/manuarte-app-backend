@@ -5,6 +5,7 @@ import { UserModel } from './model';
 import { CreateUserDto, SetPermissionsDto, UpdateUserDto } from './types';
 import { PermissionModel } from '../permission/model';
 import { Op } from 'sequelize';
+import { CustomError } from '../../middlewares/errorHandler';
 
 export class UserService {
 	private userModel;
@@ -109,7 +110,13 @@ export class UserService {
 			};
 		} catch (error) {
 			await transaction.rollback();
-			console.error(error);
+			console.error('***************** Error creando user: ');
+			if (
+				error instanceof Error &&
+				(error as CustomError).parent?.code === '23505'
+			) {
+				error.message = 'Ya existe un usuario con este número de documento';
+			}
 			throw error;
 		}
 	};
@@ -150,7 +157,13 @@ export class UserService {
 			};
 		} catch (error) {
 			await transaction.rollback();
-			console.error(error);
+			console.error('***************** Error editando user: ');
+			if (
+				error instanceof Error &&
+				(error as CustomError).parent?.code === '23505'
+			) {
+				error.message = 'Ya existe un usuario con este número de documento';
+			}
 			throw error;
 		}
 	};

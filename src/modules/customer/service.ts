@@ -1,4 +1,5 @@
 import { sequelize } from '../../config/database';
+import { CustomError } from '../../middlewares/errorHandler';
 import { AddressModel } from '../address/model';
 import { PersonModel } from '../person/model';
 import { CustomerModel } from './model';
@@ -26,12 +27,18 @@ export class CustomerService {
 					'createdDate',
 					'city',
 					[sequelize.col('person.fullName'), 'fullName'],
-					[sequelize.col('person.dni'), 'docId'],
+					[sequelize.col('person.dni'), 'dni'],
+					[sequelize.col('addresses.location'), 'location'],
 				],
 				include: [
 					{
 						model: this.personModel,
 						as: 'person',
+						attributes: [],
+					},
+					{
+						model: this.addressModel,
+						as: 'addresses',
 						attributes: [],
 					},
 				],
@@ -79,7 +86,14 @@ export class CustomerService {
 				},
 			};
 		} catch (error) {
-			console.error(error);
+			await transaction.rollback();
+			console.error('***************** Error creando customer: ');
+			if (
+				error instanceof Error &&
+				(error as CustomError).parent?.code === '23505'
+			) {
+				error.message = 'Ya existe un cliente con este número de documento';
+			}
 			throw error;
 		}
 	};
@@ -113,11 +127,17 @@ export class CustomerService {
 
 			return {
 				status: 200,
-				updatedCustomer: customerData,
+				updatedCustomer: { ...customerData, id: customerToUpdate.id },
 			};
 		} catch (error) {
 			await transaction.rollback();
-			console.error(error);
+			console.error('***************** Error editando customer: ');
+			if (
+				error instanceof Error &&
+				(error as CustomError).parent?.code === '23505'
+			) {
+				error.message = 'Ya existe un cliente con este número de documento';
+			}
 			throw error;
 		}
 	};

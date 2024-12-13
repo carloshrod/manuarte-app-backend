@@ -1,8 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ErrorRequestHandler, NextFunction, Request, Response } from 'express';
 
-interface CustomError extends Error {
+export interface CustomError extends Error {
 	status?: number;
+	parent?: {
+		code?: string;
+	};
 }
 
 export const errorHandler: ErrorRequestHandler = (
