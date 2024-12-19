@@ -25,8 +25,8 @@ export const authorize = (permissionName: string) => {
 				ENV.ACCESS_TOKEN_SECRET,
 			) as DecodedAccessToken;
 
-			const roleId = decoded.UserInfo.role;
-			const userId = decoded.UserInfo.id;
+			const roleId = decoded.user.roleId;
+			const userId = decoded.user.id;
 			const allowed = await hasPermission(roleId, userId, permissionName);
 
 			if (!allowed) {

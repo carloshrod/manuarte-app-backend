@@ -21,11 +21,11 @@ export const verifyJWT = (
 			ENV.ACCESS_TOKEN_SECRET,
 		) as DecodedAccessToken;
 
-		if (!decodedAccessToken.UserInfo) {
+		if (!decodedAccessToken.user) {
 			return res.sendStatus(403);
 		}
 
-		req.requestedBy = decodedAccessToken.UserInfo.id;
+		req.requestedBy = decodedAccessToken.user.id;
 		next();
 	} catch (error) {
 		console.error(error);

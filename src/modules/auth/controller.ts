@@ -17,14 +17,6 @@ export class AuthController {
 			if (result.status === 200) {
 				const { status, userId, email, accessToken, refreshToken } = result;
 
-				// res.cookie('jwt', refreshToken, {
-				// 	httpOnly: true,
-				// 	secure: true,
-				// 	sameSite: 'none',
-				// 	maxAge: 24 * 60 * 60 * 1000,
-				// });
-
-				// Send authorization user info and access token
 				res.status(status).json({ userId, email, accessToken, refreshToken });
 			} else {
 				res.sendStatus(result.status);

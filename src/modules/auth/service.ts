@@ -4,12 +4,15 @@ import jwt from 'jsonwebtoken';
 import { ENV } from '../../config/env';
 import { Request } from 'express';
 import { DecodedRefreshToken } from './types';
+import { RoleModel } from '../role/model';
 
 export class AuthService {
 	private userModel;
+	private roleModel;
 
 	constructor(userModel: typeof UserModel) {
 		this.userModel = userModel;
+		this.roleModel = RoleModel;
 	}
 
 	login = async ({ email, password }: { email: string; password: string }) => {
@@ -113,10 +116,14 @@ export class AuthService {
 		try {
 			const accessToken = jwt.sign(
 				{
-					UserInfo: {
+					user: {
 						id: user.id,
 						email: user.email,
-						role: user.roleId,
+						roleId: user.roleId,
+						roleName: await this.getRoleName(user.roleId),
+						extraPermissions: (await user.getExtraPermissions()).map(
+							permission => permission.name,
+						),
 					},
 				},
 				ENV.ACCESS_TOKEN_SECRET,
@@ -131,6 +138,20 @@ export class AuthService {
 		} catch (error) {
 			console.error(error);
 			return { status: 500, message: 'Error generando tokens' };
+		}
+	};
+
+	private getRoleName = async (id: string) => {
+		try {
+			const role = await this.roleModel.findByPk(id, {
+				attributes: ['name'],
+			});
+			if (!role) throw new Error('Rol no encontrado');
+
+			return role.name;
+		} catch (error) {
+			console.error(error);
+			throw error;
 		}
 	};
 }

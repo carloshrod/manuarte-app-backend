@@ -1,10 +1,12 @@
 import { JwtPayload } from 'jsonwebtoken';
 
 export interface DecodedAccessToken extends JwtPayload {
-	UserInfo: {
+	user: {
 		id: string;
 		email: string;
-		role: string;
+		roleId: string;
+		roleName: string;
+		extraPermissions: string[];
 	};
 }
 
