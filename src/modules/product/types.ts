@@ -3,7 +3,7 @@ export interface ProductAttr {
 	name: string;
 	description: string;
 	pId?: string;
-	categoryProductId: string;
+	productCategoryId: string;
 	createdBy: string;
 	updatedBy: string;
 	createdDate?: Date;

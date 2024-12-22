@@ -27,7 +27,7 @@ BillingItemModel.init(
 			type: DataTypes.UUID,
 			allowNull: false,
 			references: {
-				model: 'variant_product',
+				model: 'product_variant',
 				key: 'id',
 			},
 		},

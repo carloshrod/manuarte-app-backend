@@ -63,12 +63,12 @@ export class ProductService {
 			}
 
 			const categoryName = await this.getCategoryName(
-				newProduct?.categoryProductId,
+				newProduct?.productCategoryId,
 			);
 
 			return {
 				...newProduct.dataValues,
-				categoryProductName: categoryName,
+				productCategoryName: categoryName,
 				productVariants: newProductVariants,
 			};
 		} catch (error) {
@@ -101,12 +101,12 @@ export class ProductService {
 			});
 
 			const categoryName = await this.getCategoryName(
-				productToUpdate?.categoryProductId,
+				productToUpdate?.productCategoryId,
 			);
 
 			return {
 				...productToUpdate.dataValues,
-				categoryProductName: categoryName,
+				productCategoryName: categoryName,
 				productVariant: updatedProductVariant,
 			};
 		} catch (error) {
@@ -128,10 +128,10 @@ export class ProductService {
 			});
 
 			const product = await this.productModel.findByPk(productId);
-			let categoryProductName;
+			let productCategoryName;
 			if (product) {
-				categoryProductName = await this.getCategoryName(
-					product?.categoryProductId,
+				productCategoryName = await this.getCategoryName(
+					product?.productCategoryId,
 				);
 			}
 
@@ -140,8 +140,8 @@ export class ProductService {
 				productId,
 				productName: product?.name,
 				productDescription: product?.description,
-				categoryProductId: product?.categoryProductId,
-				categoryProductName,
+				productCategoryId: product?.productCategoryId,
+				productCategoryName,
 			};
 		} catch (error) {
 			console.error('ServiceError agregando presentación de producto: ', error);
@@ -172,10 +172,10 @@ export class ProductService {
 		}
 	};
 
-	count = async (categoryProductId: string) => {
+	count = async (productCategoryId: string) => {
 		try {
 			const productsCount = await this.productModel.count({
-				where: { categoryProductId },
+				where: { productCategoryId },
 			});
 
 			return productsCount;

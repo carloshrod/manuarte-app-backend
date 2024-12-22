@@ -9,23 +9,23 @@ export class ProductModel extends Model {
 	public name!: string;
 	public pId!: string;
 	public description!: string;
-	public categoryProductId!: string;
+	public productCategoryId!: string;
 	public createdBy!: string;
 	public updatedBy!: string;
 
 	async generatePId() {
 		try {
-			const categoryProduct = await ProductCategoryModel.findByPk(
-				this.categoryProductId,
+			const productCategory = await ProductCategoryModel.findByPk(
+				this.productCategoryId,
 			);
 
-			if (!categoryProduct) {
+			if (!productCategory) {
 				throw new Error(
-					`Categoría con ID ${this.categoryProductId} no encontrada`,
+					`Categoría con ID ${this.productCategoryId} no encontrada`,
 				);
 			}
 
-			const cId = categoryProduct.cId;
+			const cId = productCategory.cId;
 
 			const lastProduct = await ProductModel.findOne({
 				where: { pId: { [Op.like]: `${cId}%` } },
@@ -91,11 +91,11 @@ ProductModel.init(
 			allowNull: false,
 			unique: 'UQ_60968f56bca6403ae5387658832',
 		},
-		categoryProductId: {
+		productCategoryId: {
 			type: DataTypes.UUID,
 			allowNull: false,
 			references: {
-				model: 'category_product',
+				model: 'product_category',
 				key: 'id',
 			},
 		},
@@ -147,7 +147,7 @@ ProductModel.init(
 			beforeUpdate: async product => {
 				product.name = product.name.trim();
 				await product.validateProductName();
-				if (product.changed('categoryProductId')) {
+				if (product.changed('productCategoryId')) {
 					throw new Error(
 						'No se permite actualizar la categoría del producto una vez creado',
 					);
@@ -159,12 +159,12 @@ ProductModel.init(
 
 // ***** ProductModel-ProductCategoryModel Relations *****
 ProductModel.belongsTo(ProductCategoryModel, {
-	foreignKey: 'categoryProductId',
-	as: 'categoryProduct',
+	foreignKey: 'productCategoryId',
+	as: 'productCategory',
 });
 
 ProductCategoryModel.hasMany(ProductModel, {
-	foreignKey: 'categoryProductId',
+	foreignKey: 'productCategoryId',
 	as: 'products',
 });
 

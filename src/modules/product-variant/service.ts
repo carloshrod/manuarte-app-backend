@@ -1,6 +1,7 @@
 import { sequelize } from '../../config/database';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductModel } from '../product/model';
+import { StockItemModel } from '../stock-item/model';
 import { ProductVariantModel } from './model';
 import { CreateProductVariantDto, UpdateProductVariantDto } from './types';
 
@@ -22,10 +23,10 @@ export class ProductVariantService {
 					include: [
 						[sequelize.col('product.name'), 'productName'],
 						[sequelize.col('product.description'), 'productDescription'],
-						[sequelize.col('product.categoryProduct.id'), 'categoryProductId'],
+						[sequelize.col('product.productCategoryId'), 'productCategoryId'],
 						[
-							sequelize.col('product.categoryProduct.name'),
-							'categoryProductName',
+							sequelize.col('product.productCategory.name'),
+							'productCategoryName',
 						],
 					],
 				},
@@ -37,7 +38,7 @@ export class ProductVariantService {
 						include: [
 							{
 								model: this.productCategoryModel,
-								as: 'categoryProduct',
+								as: 'productCategory',
 								attributes: [],
 							},
 						],
@@ -52,6 +53,43 @@ export class ProductVariantService {
 				'ServiceError obteniendo presentaciones de productos: ',
 				error,
 			);
+			throw error;
+		}
+	};
+
+	getProductVariantStockInfo = async (
+		productVariantId: string,
+		stockId: string,
+	) => {
+		try {
+			const productVariantWithStockInfo =
+				await this.productVariantModel.findByPk(productVariantId, {
+					attributes: [
+						'id',
+						'name',
+						[sequelize.col('product.name'), 'productName'],
+						[sequelize.col('stockItems.price'), 'price'],
+						[sequelize.col('stockItems.currency'), 'currency'],
+					],
+					include: [
+						{
+							model: this.productModel,
+							as: 'product',
+							attributes: [],
+						},
+						{
+							model: StockItemModel,
+							as: 'stockItems',
+							where: { stockId },
+							attributes: ['id', 'stockId'],
+							through: { attributes: [] },
+						},
+					],
+				});
+
+			return { status: 200, productVariantWithStockInfo };
+		} catch (error) {
+			console.error(error);
 			throw error;
 		}
 	};

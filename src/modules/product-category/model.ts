@@ -91,7 +91,7 @@ ProductCategoryModel.init(
 	},
 	{
 		sequelize,
-		tableName: 'category_product',
+		tableName: 'product_category',
 		schema: 'public',
 		timestamps: false,
 		indexes: [

@@ -107,7 +107,7 @@ ProductVariantModel.init(
 	},
 	{
 		sequelize,
-		tableName: 'variant_product',
+		tableName: 'product_variant',
 		schema: 'public',
 		timestamps: false,
 		indexes: [

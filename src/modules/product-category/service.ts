@@ -68,7 +68,7 @@ export class ProductCategoryService {
 	delete = async (id: string) => {
 		try {
 			const productsCount = await this.productModel.count({
-				where: { categoryProductId: id },
+				where: { productCategoryId: id },
 			});
 
 			if (productsCount > 0) {
