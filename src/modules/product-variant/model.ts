@@ -126,11 +126,11 @@ ProductVariantModel.init(
 );
 
 BillingItemModel.belongsTo(ProductVariantModel, {
-	foreignKey: 'variantProductId',
+	foreignKey: 'productVariantId',
 	as: 'productVariant',
 });
 
 ProductVariantModel.hasMany(BillingItemModel, {
-	foreignKey: 'variantProductId',
+	foreignKey: 'productVariantId',
 	as: 'billingItems',
 });

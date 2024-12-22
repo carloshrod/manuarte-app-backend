@@ -23,7 +23,7 @@ BillingItemModel.init(
 			type: DataTypes.STRING,
 			allowNull: false,
 		},
-		variantProductId: {
+		productVariantId: {
 			type: DataTypes.UUID,
 			allowNull: false,
 			references: {
