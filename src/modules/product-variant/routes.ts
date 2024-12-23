@@ -18,6 +18,11 @@ router.get(
 	authorize(ProductPermissions.PRODUCT_READ),
 	productVariantController.getAll,
 );
+router.get(
+	'/stock-info/:id',
+	authorize(ProductPermissions.PRODUCT_READ),
+	productVariantController.getProductVariantStockInfo,
+);
 router.put(
 	'/:id',
 	authorize(ProductPermissions.PRODUCT_UPDATE),

@@ -23,6 +23,25 @@ export class ProductVariantController {
 		}
 	};
 
+	getProductVariantStockInfo: Handler = async (req, res, next) => {
+		try {
+			const { id } = req.params;
+			const stockId = (req.query.stockId as string) || '';
+			const result =
+				await this.productVariantService.getProductVariantStockInfo(
+					id,
+					stockId,
+				);
+			if (result.status !== 200) {
+				res.sendStatus(400);
+			}
+
+			res.status(result.status).json(result.productVariantWithStockInfo);
+		} catch (error) {
+			next(error);
+		}
+	};
+
 	update: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
