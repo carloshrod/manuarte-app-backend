@@ -1,7 +1,7 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { PermissionModel } from '../permission/model';
-import { RolePermissionModel } from '../role-permission/model';
+import { RolePermissionModel } from '../associations/role-permission-model';
 
 export class RoleModel extends Model {
 	public name!: string;
