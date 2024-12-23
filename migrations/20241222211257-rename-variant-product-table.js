@@ -5,6 +5,11 @@
 module.exports = {
 	async up(queryInterface) {
 		await queryInterface.renameTable('variant_product', 'product_variant');
+		await queryInterface.renameTable(
+			'stock_item_product_variant_product',
+			'stock_item_product_variant',
+		);
+
 		await queryInterface.renameColumn(
 			'quote_item',
 			'variantProductId',
@@ -16,7 +21,7 @@ module.exports = {
 			'productVariantId',
 		);
 		await queryInterface.renameColumn(
-			'stock_item_product_variant_product',
+			'stock_item_product_variant',
 			'variantProductId',
 			'productVariantId',
 		);
@@ -39,7 +44,7 @@ module.exports = {
 			'variantProductId',
 		);
 		await queryInterface.renameColumn(
-			'stock_item_product_variant_product',
+			'stock_item_product_variant',
 			'productVariantId',
 			'variantProductId',
 		);
@@ -47,6 +52,11 @@ module.exports = {
 			'billing_item',
 			'productVariantId',
 			'variantProductId',
+		);
+
+		await queryInterface.renameTable(
+			'stock_item_product_variant',
+			'stock_item_product_variant_product',
 		);
 		await queryInterface.renameTable('product_variant', 'variant_product');
 	},
