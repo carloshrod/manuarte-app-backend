@@ -1,7 +1,9 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 
-export class ShopModel extends Model {}
+export class ShopModel extends Model {
+	public id!: string;
+}
 
 ShopModel.init(
 	{
@@ -14,6 +16,11 @@ ShopModel.init(
 		name: {
 			type: DataTypes.STRING,
 			allowNull: false,
+		},
+		slug: {
+			type: DataTypes.STRING,
+			allowNull: false,
+			unique: true,
 		},
 		tax: {
 			type: DataTypes.DOUBLE,
