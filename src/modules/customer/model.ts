@@ -1,6 +1,7 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { AddressModel } from '../address/model';
+import { QuoteModel } from '../quote/model';
 
 export class CustomerModel extends Model {
 	public id!: string;
@@ -70,6 +71,18 @@ CustomerModel.init(
 	},
 );
 
+// ***** CustomerModel-QuoteModel Relations *****
+CustomerModel.hasMany(QuoteModel, {
+	foreignKey: 'customerId',
+	as: 'quotes',
+});
+
+QuoteModel.belongsTo(CustomerModel, {
+	foreignKey: 'customerId',
+	as: 'customer',
+});
+
+// ***** CustomerModel-AddressModel Relations *****
 CustomerModel.hasMany(AddressModel, {
 	foreignKey: 'customerId',
 	as: 'addresses',

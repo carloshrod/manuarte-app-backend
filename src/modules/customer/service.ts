@@ -54,13 +54,13 @@ export class CustomerService {
 	create = async (customerData: CreateCustomerDto) => {
 		const transaction = await sequelize.transaction();
 		try {
-			const { fullName, dni, email, phoneNumber, city, location } =
-				customerData;
-
+			const { fullName, dni, ...rest } = customerData;
 			const person = await this.personModel.create(
 				{ fullName, dni },
 				{ transaction },
 			);
+
+			const { email, phoneNumber, city, location } = rest;
 			const customer = await this.customerModel.create(
 				{
 					email,
@@ -70,6 +70,7 @@ export class CustomerService {
 				},
 				{ transaction },
 			);
+
 			await this.addressModel.create(
 				{ location, customerId: customer.id },
 				{ transaction },
