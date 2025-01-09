@@ -1,7 +1,9 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 
-export class BillingItemModel extends Model {}
+export class BillingItemModel extends Model {
+	public name!: string;
+}
 
 BillingItemModel.init(
 	{

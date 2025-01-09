@@ -70,11 +70,23 @@ export class BillingItemService {
 		}
 	};
 
-	getTopSalesProducts = async (month: number) => {
+	getTopSalesProducts = async (offset: number = 0) => {
 		try {
+			// const now = new Date();
+			// const startOfMonth = new Date(now.getFullYear(), month, 1);
+			// const endOfMonth = new Date(now.getFullYear(), month + 1, 0);
 			const now = new Date();
-			const startOfMonth = new Date(now.getFullYear(), month, 1);
-			const endOfMonth = new Date(now.getFullYear(), month + 1, 0);
+			const currentMonth = now.getMonth();
+			const currentYear = now.getFullYear();
+
+			// Calcula el mes y el año con el offset
+			const targetDate = new Date(currentYear, currentMonth + offset, 1);
+			console.log(targetDate);
+			const targetMonth = targetDate.getMonth();
+			const targetYear = targetDate.getFullYear();
+
+			const startOfMonth = new Date(targetYear, targetMonth, 1);
+			const endOfMonth = new Date(targetYear, targetMonth + 1, 0);
 
 			const topCOP = await this.billingItemModel.findAll({
 				where: {
@@ -116,16 +128,22 @@ export class BillingItemService {
 				limit: 5,
 			});
 
-			const formatResults = (data: any) =>
-				data.map((item: any) => ({
+			const formatResults = (
+				data: BillingItemModel[],
+			): {
+				name: string;
+				totalSales: number;
+			}[] =>
+				data.map(item => ({
 					name: item.name,
 					totalSales: parseFloat(item.dataValues.totalSales),
 				}));
 
 			return {
+				month: monthNames[targetMonth],
+				year: targetYear,
 				topCOP: formatResults(topCOP),
 				topUSD: formatResults(topUSD),
-				month: monthNames[month],
 			};
 		} catch (error) {
 			console.error(error);

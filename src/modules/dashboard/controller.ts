@@ -17,14 +17,13 @@ export class DashboardController {
 
 	getStats: Handler = async (req, res, next) => {
 		try {
-			const month = parseInt(req.query.month as string);
 			const productVariantsCount = await this.productVariantModel.count();
 			const customersCount = await this.customerModel.count();
 			const sales = await this.billingItemService.getMonthlySales();
 			const topSalesCurrentMonth =
-				await this.billingItemService.getTopSalesProducts(month);
+				await this.billingItemService.getTopSalesProducts(0);
 			const topSalesLastMonth =
-				await this.billingItemService.getTopSalesProducts(month - 1);
+				await this.billingItemService.getTopSalesProducts(-1);
 
 			res.status(200).json({
 				counts: {
