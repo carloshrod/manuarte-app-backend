@@ -83,9 +83,9 @@ QuoteModel.belongsTo(CustomerModel, {
 });
 
 // ***** CustomerModel-AddressModel Relations *****
-CustomerModel.hasMany(AddressModel, {
+CustomerModel.hasOne(AddressModel, {
 	foreignKey: 'customerId',
-	as: 'addresses',
+	as: 'address',
 	onDelete: 'CASCADE',
 });
 

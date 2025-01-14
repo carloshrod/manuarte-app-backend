@@ -56,7 +56,7 @@ CityModel.init(
 
 CityModel.hasMany(AddressModel, {
 	foreignKey: 'cityId',
-	as: 'addresses',
+	as: 'address',
 });
 
 AddressModel.belongsTo(CityModel, {
