@@ -1,12 +1,9 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
-import { StockModel } from '../stock/model';
 
-export class ShopModel extends Model {
-	public id!: string;
-}
+export class StockModel extends Model {}
 
-ShopModel.init(
+StockModel.init(
 	{
 		id: {
 			type: DataTypes.UUID,
@@ -18,15 +15,18 @@ ShopModel.init(
 			type: DataTypes.STRING,
 			allowNull: false,
 		},
-		slug: {
-			type: DataTypes.STRING,
+		shopId: {
+			type: DataTypes.UUID,
 			allowNull: false,
-			unique: true,
+			references: {
+				model: 'shop',
+				key: 'id',
+			},
 		},
-		tax: {
-			type: DataTypes.DOUBLE,
+		isDefault: {
+			type: DataTypes.BOOLEAN,
 			allowNull: false,
-			defaultValue: 0.15,
+			defaultValue: false,
 		},
 		createdDate: {
 			type: DataTypes.DATE,
@@ -45,25 +45,15 @@ ShopModel.init(
 	},
 	{
 		sequelize,
-		tableName: 'shop',
+		tableName: 'stock',
 		schema: 'public',
 		timestamps: false,
 		indexes: [
 			{
-				name: 'PK_ad47b7c6121fe31cb4b05438e44',
+				name: 'PK_092bc1fc7d860426a1dec5aa8e9',
 				unique: true,
 				fields: [{ name: 'id' }],
 			},
 		],
 	},
 );
-
-ShopModel.hasOne(StockModel, {
-	foreignKey: 'shopId',
-	as: 'stock',
-});
-
-StockModel.belongsTo(ShopModel, {
-	foreignKey: 'shopId',
-	as: 'shop',
-});

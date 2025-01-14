@@ -4,16 +4,21 @@ import { ProductModel } from '../product/model';
 import { StockItemModel } from '../stock-item/model';
 import { ProductVariantModel } from './model';
 import { CreateProductVariantDto, UpdateProductVariantDto } from './types';
+import { ShopService } from '../shop/service';
+import { ShopModel } from '../shop/model';
+import { Op } from 'sequelize';
 
 export class ProductVariantService {
 	private productVariantModel;
 	private productModel;
 	private productCategoryModel;
+	private shopService;
 
 	constructor(productVariantModel: typeof ProductVariantModel) {
 		this.productVariantModel = productVariantModel;
 		this.productModel = ProductModel;
 		this.productCategoryModel = ProductCategoryModel;
+		this.shopService = new ShopService(ShopModel);
 	}
 
 	getAll = async () => {
@@ -53,43 +58,6 @@ export class ProductVariantService {
 				'ServiceError obteniendo presentaciones de productos: ',
 				error,
 			);
-			throw error;
-		}
-	};
-
-	getProductVariantStockInfo = async (
-		productVariantId: string,
-		stockId: string,
-	) => {
-		try {
-			const productVariantWithStockInfo =
-				await this.productVariantModel.findByPk(productVariantId, {
-					attributes: [
-						'id',
-						'name',
-						[sequelize.col('product.name'), 'productName'],
-						[sequelize.col('stockItems.price'), 'price'],
-						[sequelize.col('stockItems.currency'), 'currency'],
-					],
-					include: [
-						{
-							model: this.productModel,
-							as: 'product',
-							attributes: [],
-						},
-						{
-							model: StockItemModel,
-							as: 'stockItems',
-							where: { stockId },
-							attributes: ['id', 'stockId'],
-							through: { attributes: [] },
-						},
-					],
-				});
-
-			return { status: 200, productVariantWithStockInfo };
-		} catch (error) {
-			console.error(error);
 			throw error;
 		}
 	};
@@ -155,6 +123,58 @@ export class ProductVariantService {
 				'ServiceError eliminando presentación del producto: ',
 				error,
 			);
+			throw error;
+		}
+	};
+
+	getProductVariantStockInfo = async (search: string, shopSlug: string) => {
+		try {
+			const stockId = await this.shopService.getStockId(shopSlug);
+			if (!stockId) {
+				return { status: 400, message: 'Error obteniendo el id del stock' };
+			}
+
+			const productVariantWithStockInfo =
+				await this.productVariantModel.findAll({
+					where: {
+						[Op.or]: [
+							{ vId: { [Op.iLike]: `%${search}%` } },
+							sequelize.where(
+								sequelize.literal(
+									`concat("product"."name", ' ', "ProductVariantModel"."name")`,
+								),
+								{ [Op.iLike]: `%${search}%` },
+							),
+						],
+					},
+					attributes: [
+						'id',
+						'name',
+						[sequelize.col('product.name'), 'productName'],
+						[sequelize.col('stockItems.id'), 'stockItemId'],
+						[sequelize.col('stockItems.quantity'), 'quantity'],
+						[sequelize.col('stockItems.price'), 'price'],
+						[sequelize.col('stockItems.currency'), 'currency'],
+					],
+					include: [
+						{
+							model: this.productModel,
+							as: 'product',
+							attributes: [],
+						},
+						{
+							model: StockItemModel,
+							as: 'stockItems',
+							where: { stockId },
+							attributes: ['id', 'stockId'],
+							through: { attributes: [] },
+						},
+					],
+				});
+
+			return { status: 200, productVariantWithStockInfo };
+		} catch (error) {
+			console.error(error);
 			throw error;
 		}
 	};

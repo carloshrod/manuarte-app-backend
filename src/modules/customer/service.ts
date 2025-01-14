@@ -1,9 +1,11 @@
+import { Transaction } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { CustomError } from '../../middlewares/errorHandler';
 import { AddressModel } from '../address/model';
 import { PersonModel } from '../person/model';
 import { CustomerModel } from './model';
 import { CreateCustomerDto, UpdateCustomerDto } from './types';
+import { Op } from 'sequelize';
 
 export class CustomerService {
 	private customerModel;
@@ -28,7 +30,7 @@ export class CustomerService {
 					'city',
 					[sequelize.col('person.fullName'), 'fullName'],
 					[sequelize.col('person.dni'), 'dni'],
-					[sequelize.col('addresses.location'), 'location'],
+					[sequelize.col('address.location'), 'location'],
 				],
 				include: [
 					{
@@ -38,7 +40,7 @@ export class CustomerService {
 					},
 					{
 						model: this.addressModel,
-						as: 'addresses',
+						as: 'address',
 						attributes: [],
 					},
 				],
@@ -51,13 +53,16 @@ export class CustomerService {
 		}
 	};
 
-	create = async (customerData: CreateCustomerDto) => {
-		const transaction = await sequelize.transaction();
+	create = async (
+		customerData: CreateCustomerDto,
+		transaction?: Transaction,
+	) => {
+		const localTransaction = transaction || (await sequelize.transaction());
 		try {
 			const { fullName, dni, ...rest } = customerData;
 			const person = await this.personModel.create(
 				{ fullName, dni },
-				{ transaction },
+				{ transaction: localTransaction },
 			);
 
 			const { email, phoneNumber, city, location } = rest;
@@ -68,15 +73,15 @@ export class CustomerService {
 					city,
 					personId: person.id,
 				},
-				{ transaction },
+				{ transaction: localTransaction },
 			);
 
 			await this.addressModel.create(
 				{ location, customerId: customer.id },
-				{ transaction },
+				{ transaction: localTransaction },
 			);
 
-			await transaction.commit();
+			if (!transaction) await localTransaction.commit();
 
 			return {
 				status: 201,
@@ -87,7 +92,7 @@ export class CustomerService {
 				},
 			};
 		} catch (error) {
-			await transaction.rollback();
+			if (!transaction) await localTransaction.rollback();
 			console.error('***************** Error creando customer: ');
 			if (
 				error instanceof Error &&
@@ -154,6 +159,72 @@ export class CustomerService {
 			}
 
 			throw new Error('Usuario no encontrado');
+		} catch (error) {
+			console.error(error);
+			throw error;
+		}
+	};
+
+	getCustomerById = async (id: string) => {
+		try {
+			const customer = await this.customerModel.findByPk(id);
+			if (!customer) throw new Error('Cliente no encontrado');
+
+			return customer;
+		} catch (error) {
+			console.error(error);
+			throw error;
+		}
+	};
+
+	searchCustomer = async (search: string) => {
+		try {
+			const customer = await this.personModel.findAll({
+				where: {
+					[Op.or]: [
+						{ dni: { [Op.iLike]: `%${search}%` } },
+						{ fullName: { [Op.iLike]: `%${search}%` } },
+					],
+				},
+				attributes: [
+					'id',
+					[sequelize.col('customer.id'), 'customerId'],
+					'dni',
+					'fullName',
+					[sequelize.col('customer.email'), 'email'],
+					[sequelize.col('customer.phoneNumber'), 'phoneNumber'],
+					[sequelize.col('customer.address.location'), 'location'],
+					[sequelize.col('customer.city'), 'city'],
+				],
+				include: [
+					{
+						model: this.customerModel,
+						as: 'customer',
+						attributes: [],
+						include: [
+							{
+								model: this.addressModel,
+								as: 'address',
+								attributes: [],
+							},
+						],
+					},
+				],
+			});
+
+			const formattedCustomer = customer.map(item => {
+				const itemFormatted = {
+					personId: item?.id,
+					...item?.dataValues,
+				};
+				delete itemFormatted.id;
+				return itemFormatted;
+			});
+
+			return {
+				status: 200,
+				customer: formattedCustomer,
+			};
 		} catch (error) {
 			console.error(error);
 			throw error;

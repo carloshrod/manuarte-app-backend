@@ -25,12 +25,12 @@ export class ProductVariantController {
 
 	getProductVariantStockInfo: Handler = async (req, res, next) => {
 		try {
-			const { id } = req.params;
-			const stockId = (req.query.stockId as string) || '';
+			const search = (req.query.search as string) || '';
+			const shopSlug = (req.query.shopSlug as string) || '';
 			const result =
 				await this.productVariantService.getProductVariantStockInfo(
-					id,
-					stockId,
+					search,
+					shopSlug,
 				);
 			if (result.status !== 200) {
 				res.sendStatus(400);

@@ -19,7 +19,7 @@ router.get(
 	productVariantController.getAll,
 );
 router.get(
-	'/stock-info/:id',
+	'/stock-info',
 	authorize(ProductPermissions.PRODUCT_READ),
 	productVariantController.getProductVariantStockInfo,
 );

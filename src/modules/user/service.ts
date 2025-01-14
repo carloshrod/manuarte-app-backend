@@ -115,7 +115,8 @@ export class UserService {
 				error instanceof Error &&
 				(error as CustomError).parent?.code === '23505'
 			) {
-				error.message = 'Ya existe un usuario con este número de documento';
+				error.message =
+					'Ya existe un usuario con este email o número de documento';
 			}
 			throw error;
 		}

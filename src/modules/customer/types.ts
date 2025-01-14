@@ -5,6 +5,7 @@ export interface CreateCustomerDto extends PersonDto {
 	phoneNumber: string;
 	location: string;
 	city: string;
+	customerId?: string;
 }
 
 export interface UpdateCustomerDto extends CreateCustomerDto {

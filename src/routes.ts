@@ -7,6 +7,8 @@ import userRouter from './modules/user/routes';
 import customerRouter from './modules/customer/routes';
 import dashboardRouter from './modules/dashboard/routes';
 import authRouter from './modules/auth/routes';
+import quoteRouter from './modules/quote/routes';
+import shopRouter from './modules/shop/routes';
 import { verifyJWT } from './middlewares/verifyJWT';
 
 const router = Router();
@@ -38,5 +40,7 @@ router.use('/api/v1/product-variants', productVariantRouter);
 router.use('/api/v1/product-categories', productCategoryRouter);
 router.use('/api/v1/users', userRouter);
 router.use('/api/v1/customers', customerRouter);
+router.use('/api/v1/quotes', quoteRouter);
+router.use('/api/v1/shops', shopRouter);
 
 export default router;

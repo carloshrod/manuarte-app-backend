@@ -70,4 +70,15 @@ export class CustomerController {
 			next(error);
 		}
 	};
+
+	searchCustomer: Handler = async (req, res, next) => {
+		try {
+			const search = (req.query.search as string) || '';
+			const result = await this.customerService.searchCustomer(search);
+
+			res.status(result.status).json(result.customer);
+		} catch (error) {
+			next(error);
+		}
+	};
 }

@@ -16,6 +16,11 @@ router.get(
 	authorize(CustomerPermissions.CUSTOMER_READ),
 	customerController.getAll,
 );
+router.get(
+	'/search',
+	authorize(CustomerPermissions.CUSTOMER_READ),
+	customerController.searchCustomer,
+);
 router.post(
 	'/',
 	authorize(CustomerPermissions.CUSTOMER_CREATE),
