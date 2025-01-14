@@ -72,16 +72,11 @@ export class BillingItemService {
 
 	getTopSalesProducts = async (offset: number = 0) => {
 		try {
-			// const now = new Date();
-			// const startOfMonth = new Date(now.getFullYear(), month, 1);
-			// const endOfMonth = new Date(now.getFullYear(), month + 1, 0);
 			const now = new Date();
 			const currentMonth = now.getMonth();
 			const currentYear = now.getFullYear();
 
-			// Calcula el mes y el año con el offset
 			const targetDate = new Date(currentYear, currentMonth + offset, 1);
-			console.log(targetDate);
 			const targetMonth = targetDate.getMonth();
 			const targetYear = targetDate.getFullYear();
 
