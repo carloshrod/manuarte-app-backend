@@ -199,7 +199,6 @@ export class QuoteService {
 					customerName: customerData?.fullName ?? null,
 					shopId: shop.id,
 					dueDate,
-					items: quoteItems,
 				},
 			};
 		} catch (error) {
@@ -217,7 +216,6 @@ export class QuoteService {
 		customerData: UpdateCustomerDto;
 	}) => {
 		try {
-			console.log({ customerData });
 			let customerInfo;
 			if (customerData?.personId) {
 				customerInfo = await this.customerService.update(customerData);
