@@ -4,6 +4,7 @@ import { RoleModel } from '../role/model';
 import { PermissionModel } from '../permission/model';
 import { UserPermissionModel } from '../user-permission/model';
 import bcrypt from 'bcrypt';
+import { ShopModel } from '../shop/model';
 
 export class UserModel extends Model {
 	public id!: string;
@@ -60,6 +61,14 @@ UserModel.init(
 				key: 'id',
 			},
 			unique: 'REL_6aac19005cea8e2119cbe7759e',
+		},
+		shopId: {
+			type: DataTypes.UUID,
+			allowNull: true,
+			references: {
+				model: 'shop',
+				key: 'id',
+			},
 		},
 		createdDate: {
 			type: DataTypes.DATE,
@@ -144,4 +153,15 @@ PermissionModel.belongsToMany(UserModel, {
 	as: 'users',
 	foreignKey: 'permissionId',
 	otherKey: 'userId',
+});
+
+// ***** UserModel-ShopModel Relations *****
+UserModel.belongsTo(ShopModel, {
+	foreignKey: 'shopId',
+	as: 'shop',
+});
+
+ShopModel.hasMany(UserModel, {
+	foreignKey: 'shopId',
+	as: 'users',
 });

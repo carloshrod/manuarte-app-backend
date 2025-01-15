@@ -2,6 +2,7 @@ import { PersonDto } from '../person/types';
 
 export interface CreateUserDto extends PersonDto {
 	roleId: string;
+	shopId?: string;
 	email: string;
 	password: string;
 }

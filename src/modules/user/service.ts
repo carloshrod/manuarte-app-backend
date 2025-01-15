@@ -28,6 +28,7 @@ export class UserService {
 					'personId',
 					'email',
 					'roleId',
+					'shopId',
 					'isActive',
 					'createdDate',
 					[sequelize.col('person.fullName'), 'fullName'],
@@ -78,7 +79,8 @@ export class UserService {
 	register = async (userData: CreateUserDto) => {
 		const transaction = await sequelize.transaction();
 		try {
-			const { fullName, dni, roleId, email, password } = userData;
+			const { fullName, dni, roleId, shopId, email, password } = userData;
+
 			const person = await this.personModel.create(
 				{ fullName, dni },
 				{ transaction },
@@ -86,7 +88,7 @@ export class UserService {
 			if (!person) return { status: 500, message: 'Error creando usuario' };
 
 			const user = await this.userModel.create(
-				{ roleId, email, password, personId: person.id },
+				{ roleId, shopId, email, password, personId: person.id },
 				{ transaction },
 			);
 			if (!user) return { status: 500, message: 'Error creando usuario' };
@@ -95,6 +97,7 @@ export class UserService {
 				id: user.id,
 				email,
 				roleId,
+				shopId,
 				roleName: await this.getRoleName(roleId),
 				personId: person.id,
 				fullName,
@@ -135,9 +138,12 @@ export class UserService {
 				return { status: 404, message: 'Usuario no encontrado' };
 			}
 
-			const { fullName, dni, roleId, email, password } = rest;
+			const { fullName, dni, roleId, shopId, email, password } = rest;
 			await personToUpdate.update({ fullName, dni }, { transaction });
-			await userToUpdate.update({ roleId, email, password }, { transaction });
+			await userToUpdate.update(
+				{ roleId, shopId, email, password },
+				{ transaction },
+			);
 
 			const updatedUser = {
 				id: userToUpdate.id,
