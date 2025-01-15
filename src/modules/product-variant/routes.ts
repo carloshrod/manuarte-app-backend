@@ -20,8 +20,8 @@ router.get(
 );
 router.get(
 	'/stock-info',
-	authorize(ProductPermissions.PRODUCT_READ),
-	productVariantController.getProductVariantStockInfo,
+	authorize(ProductPermissions.PRODUCT_SEARCH),
+	productVariantController.searchProductVariantStockInfo,
 );
 router.put(
 	'/:id',

@@ -18,7 +18,7 @@ router.get(
 );
 router.get(
 	'/search',
-	authorize(CustomerPermissions.CUSTOMER_READ),
+	authorize(CustomerPermissions.CUSTOMER_SEARCH),
 	customerController.searchCustomer,
 );
 router.post(
