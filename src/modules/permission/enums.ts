@@ -3,6 +3,7 @@ export enum ProductPermissions {
 	PRODUCT_CREATE = 'product-create',
 	PRODUCT_UPDATE = 'product-update',
 	PRODUCT_DELETE = 'product-delete',
+	PRODUCT_SEARCH = 'product-search',
 }
 
 export enum UserPermissions {
@@ -17,6 +18,7 @@ export enum CustomerPermissions {
 	CUSTOMER_CREATE = 'customer-create',
 	CUSTOMER_UPDATE = 'customer-update',
 	CUSTOMER_DELETE = 'customer-delete',
+	CUSTOMER_SEARCH = 'customer-search',
 }
 
 export enum BillingPermissions {

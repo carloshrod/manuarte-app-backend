@@ -127,7 +127,7 @@ export class ProductVariantService {
 		}
 	};
 
-	getProductVariantStockInfo = async (search: string, shopSlug: string) => {
+	searchProductVariantStockInfo = async (search: string, shopSlug: string) => {
 		try {
 			const stockId = await this.shopService.getStockId(shopSlug);
 			if (!stockId) {

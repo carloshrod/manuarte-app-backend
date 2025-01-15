@@ -23,12 +23,12 @@ export class ProductVariantController {
 		}
 	};
 
-	getProductVariantStockInfo: Handler = async (req, res, next) => {
+	searchProductVariantStockInfo: Handler = async (req, res, next) => {
 		try {
 			const search = (req.query.search as string) || '';
 			const shopSlug = (req.query.shopSlug as string) || '';
 			const result =
-				await this.productVariantService.getProductVariantStockInfo(
+				await this.productVariantService.searchProductVariantStockInfo(
 					search,
 					shopSlug,
 				);
