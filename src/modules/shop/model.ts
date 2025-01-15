@@ -4,6 +4,7 @@ import { StockModel } from '../stock/model';
 
 export class ShopModel extends Model {
 	public id!: string;
+	public slug!: string;
 }
 
 ShopModel.init(

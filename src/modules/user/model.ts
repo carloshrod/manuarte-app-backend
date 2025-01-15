@@ -13,6 +13,7 @@ export class UserModel extends Model {
 	public personId!: string;
 	public password!: string;
 	public refreshToken!: string;
+	public shopId!: string;
 
 	public getExtraPermissions!: () => Promise<PermissionModel[]>;
 	public setExtraPermissions!: (

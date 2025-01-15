@@ -149,6 +149,7 @@ export class UserService {
 				id: userToUpdate.id,
 				email,
 				roleId,
+				shopId,
 				roleName: await this.getRoleName(roleId),
 				personId: personToUpdate.id,
 				fullName,

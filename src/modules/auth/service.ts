@@ -5,6 +5,8 @@ import { ENV } from '../../config/env';
 import { Request } from 'express';
 import { DecodedRefreshToken } from './types';
 import { RoleModel } from '../role/model';
+import { ShopModel } from '../shop/model';
+import { sequelize } from '../../config/database';
 
 export class AuthService {
 	private userModel;
@@ -19,7 +21,14 @@ export class AuthService {
 		try {
 			const foundUser = await this.userModel.findOne({
 				where: { email },
-				attributes: ['id', 'email', 'password', 'roleId'],
+				attributes: [
+					'id',
+					'email',
+					'password',
+					'roleId',
+					[sequelize.col('shop.slug'), 'shopSlug'],
+				],
+				include: [{ model: ShopModel, as: 'shop', attributes: [] }],
 			});
 			if (!foundUser) {
 				return { status: 401, message: 'Invalid credentials' };
@@ -63,7 +72,14 @@ export class AuthService {
 			) as DecodedRefreshToken;
 
 			const foundUser = await this.userModel.findByPk(decodedToken.id, {
-				attributes: ['id', 'email', 'roleId', 'refreshToken'],
+				attributes: [
+					'id',
+					'email',
+					'roleId',
+					'refreshToken',
+					[sequelize.col('shop.slug'), 'shopSlug'],
+				],
+				include: [{ model: ShopModel, as: 'shop', attributes: [] }],
 			});
 			if (!foundUser) {
 				return { status: 401, message: 'User not authenticated' };
@@ -121,6 +137,7 @@ export class AuthService {
 						email: user.email,
 						roleId: user.roleId,
 						roleName: await this.getRoleName(user.roleId),
+						shop: user?.get('shopSlug'),
 						extraPermissions: (await user.getExtraPermissions()).map(
 							permission => permission.name,
 						),
