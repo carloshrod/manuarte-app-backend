@@ -1,15 +1,88 @@
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import { sequelize } from '../../config/database';
-import { MonthlySalesData } from './types';
+import { CreateBillingItemDto, MonthlySalesData } from './types';
 import { BillingItemModel } from './model';
 import { monthNames } from './consts';
+import { StockItemService } from '../stock-item/service';
+import { StockItemModel } from '../stock-item/model';
 
 export class BillingItemService {
 	private billingItemModel;
+	private stockItemService;
 
 	constructor(billingItemModel: typeof BillingItemModel) {
 		this.billingItemModel = billingItemModel;
+		this.stockItemService = new StockItemService(StockItemModel);
 	}
+
+	create = async (
+		billingItemData: CreateBillingItemDto,
+		transaction: Transaction,
+	) => {
+		try {
+			const { quantity, name, productVariantId, shopId } = billingItemData;
+
+			const stockItemToUpdate = await this.stockItemService.getOne(
+				productVariantId,
+				shopId as string,
+			);
+			if (!stockItemToUpdate) {
+				throw new Error(`No fue posible encontrar el producto ${name}`);
+			}
+			if (Number(stockItemToUpdate?.quantity) < quantity) {
+				throw new Error(
+					`No hay suficiente stock (${stockItemToUpdate?.quantity}) para ${name}`,
+				);
+			}
+
+			const newBillingItem = await this.billingItemModel.create(
+				billingItemData,
+				{ transaction },
+			);
+
+			const newQuantity = Number(stockItemToUpdate?.quantity) - quantity;
+			await stockItemToUpdate.update({ quantity: newQuantity });
+
+			return newBillingItem;
+		} catch (error) {
+			console.error('Error creando items de factura');
+			throw error;
+		}
+	};
+
+	cancel = async ({
+		billingItemData,
+		shopId,
+		transaction,
+	}: {
+		billingItemData: CreateBillingItemDto;
+		shopId: string;
+		transaction: Transaction;
+	}) => {
+		try {
+			const { productVariantId, quantity } = billingItemData;
+
+			const stockItemToUpdate = await this.stockItemService.getOne(
+				productVariantId,
+				shopId,
+			);
+
+			if (!stockItemToUpdate) {
+				throw new Error(`No fue posible encontrar el producto`);
+			}
+
+			const newQuantity = Number(stockItemToUpdate?.quantity) + quantity;
+			await stockItemToUpdate.update(
+				{ quantity: newQuantity },
+				{ transaction },
+			);
+
+			return stockItemToUpdate;
+		} catch (error) {
+			console.error('Error cancelando items de factura');
+			throw error;
+		}
+	};
 
 	getMonthlySales = async () => {
 		try {

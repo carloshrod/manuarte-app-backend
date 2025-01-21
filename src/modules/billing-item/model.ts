@@ -13,7 +13,7 @@ BillingItemModel.init(
 			defaultValue: DataTypes.UUIDV4,
 			primaryKey: true,
 		},
-		billId: {
+		billingId: {
 			type: DataTypes.UUID,
 			allowNull: false,
 			references: {
