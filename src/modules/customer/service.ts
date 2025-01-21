@@ -59,13 +59,13 @@ export class CustomerService {
 	) => {
 		const localTransaction = transaction || (await sequelize.transaction());
 		try {
-			const { fullName, dni, ...rest } = customerData;
+			const { fullName, dni, ...restCustomer } = customerData;
 			const person = await this.personModel.create(
 				{ fullName, dni },
 				{ transaction: localTransaction },
 			);
 
-			const { email, phoneNumber, city, location } = rest;
+			const { email, phoneNumber, city } = restCustomer;
 			const customer = await this.customerModel.create(
 				{
 					email,
@@ -76,10 +76,15 @@ export class CustomerService {
 				{ transaction: localTransaction },
 			);
 
-			await this.addressModel.create(
-				{ location, customerId: customer.id },
-				{ transaction: localTransaction },
-			);
+			if (restCustomer?.location) {
+				await this.addressModel.create(
+					{
+						location: restCustomer?.location,
+						customerId: customer.id,
+					},
+					{ transaction: localTransaction },
+				);
+			}
 
 			if (!transaction) await localTransaction.commit();
 
@@ -200,6 +205,7 @@ export class CustomerService {
 					{
 						model: this.customerModel,
 						as: 'customer',
+						required: true,
 						attributes: [],
 						include: [
 							{
