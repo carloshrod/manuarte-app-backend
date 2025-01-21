@@ -170,6 +170,7 @@ export class ProductVariantService {
 							through: { attributes: [] },
 						},
 					],
+					order: [[sequelize.col('stockItems.quantity'), 'DESC']],
 				});
 
 			return { status: 200, productVariantWithStockInfo };
