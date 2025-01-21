@@ -3,7 +3,9 @@ import { sequelize } from '../../config/database';
 import { ProductVariantModel } from '../product-variant/model';
 import { StockItemProductVariantModel } from '../associations/stock-item-product-variant-model';
 
-export class StockItemModel extends Model {}
+export class StockItemModel extends Model {
+	public quantity!: string;
+}
 
 StockItemModel.init(
 	{
