@@ -2,10 +2,37 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { BillingItemModel } from '../billing-item/model';
 import { ShopModel } from '../shop/model';
-import { UserModel } from '../user/model';
 import { CustomerModel } from '../customer/model';
+import { Op } from 'sequelize';
 
-export class BillingModel extends Model {}
+export class BillingModel extends Model {
+	public id!: string;
+	public serialNumber!: string;
+	public updatedDate!: string;
+
+	async generateSerialNumber() {
+		try {
+			const lastBill = await BillingModel.findOne({
+				where: { id: { [Op.not]: null } },
+				order: [['serialNumber', 'DESC']],
+				paranoid: false,
+			});
+
+			if (lastBill) {
+				const numberArr = lastBill.serialNumber.split('-');
+				const lastNumber = parseInt(numberArr[2], 10);
+				const newNumber = lastNumber + 1;
+
+				this.serialNumber = `001-001-${newNumber.toString().padStart(9, '0')}`;
+			} else {
+				this.serialNumber = '001-001-000000001';
+			}
+		} catch (error) {
+			console.error('Error generando número serial de factura');
+			throw error;
+		}
+	}
+}
 
 BillingModel.init(
 	{
@@ -36,7 +63,30 @@ BillingModel.init(
 				key: 'id',
 			},
 		},
-		createdById: {
+		status: {
+			type: DataTypes.ENUM('PAID', 'PENDING_PAYMENT', 'CANCELED'),
+			allowNull: false,
+		},
+		paymentMethod: {
+			type: DataTypes.ENUM(
+				'BANK_TRANSFER',
+				'CASH',
+				'CREDIT_CARD',
+				'DEBIT_CARD',
+				'PAYPAL',
+				'OTHER',
+			),
+			allowNull: false,
+		},
+		total: {
+			type: DataTypes.DOUBLE,
+			allowNull: false,
+		},
+		shipping: {
+			type: DataTypes.INTEGER,
+			allowNull: true,
+		},
+		createdBy: {
 			type: DataTypes.UUID,
 			allowNull: false,
 			references: {
@@ -44,15 +94,7 @@ BillingModel.init(
 				key: 'id',
 			},
 		},
-		status: {
-			type: DataTypes.STRING,
-			allowNull: false,
-		},
-		paymentMethod: {
-			type: DataTypes.STRING,
-			allowNull: false,
-		},
-		updatedById: {
+		updatedBy: {
 			type: DataTypes.UUID,
 			allowNull: true,
 			references: {
@@ -64,10 +106,6 @@ BillingModel.init(
 			type: DataTypes.DATE,
 			allowNull: false,
 			defaultValue: sequelize.fn('now'),
-		},
-		total: {
-			type: DataTypes.DOUBLE,
-			allowNull: false,
 		},
 		updatedDate: {
 			type: DataTypes.DATE,
@@ -101,12 +139,12 @@ BillingModel.init(
 
 // ***** BillingModel-BillingItemModel Relations *****
 BillingModel.hasMany(BillingItemModel, {
-	foreignKey: 'billId',
+	foreignKey: 'billingId',
 	as: 'billingItems',
 });
 
 BillingItemModel.belongsTo(BillingModel, {
-	foreignKey: 'billId',
+	foreignKey: 'billingId',
 	as: 'billing',
 });
 
@@ -119,27 +157,6 @@ BillingModel.belongsTo(ShopModel, {
 ShopModel.hasMany(BillingModel, {
 	foreignKey: 'shopId',
 	as: 'billings',
-});
-
-// ***** BillingModel-UserModel Relations *****
-BillingModel.belongsTo(UserModel, {
-	foreignKey: 'createdById',
-	as: 'createdBy',
-});
-
-UserModel.hasMany(BillingModel, {
-	foreignKey: 'createdById',
-	as: 'createdBillings',
-});
-
-BillingModel.belongsTo(UserModel, {
-	foreignKey: 'updatedById',
-	as: 'updatedBy',
-});
-
-UserModel.hasMany(BillingModel, {
-	foreignKey: 'updatedById',
-	as: 'updatedBillings',
 });
 
 // ***** BillingModel-CustomerModel Relations *****

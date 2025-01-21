@@ -9,6 +9,7 @@ import dashboardRouter from './modules/dashboard/routes';
 import authRouter from './modules/auth/routes';
 import quoteRouter from './modules/quote/routes';
 import shopRouter from './modules/shop/routes';
+import billingRouter from './modules/billing/routes';
 import { verifyJWT } from './middlewares/verifyJWT';
 
 const router = Router();
@@ -42,5 +43,6 @@ router.use('/api/v1/users', userRouter);
 router.use('/api/v1/customers', customerRouter);
 router.use('/api/v1/quotes', quoteRouter);
 router.use('/api/v1/shops', shopRouter);
+router.use('/api/v1/billings', billingRouter);
 
 export default router;
