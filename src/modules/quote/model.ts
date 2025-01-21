@@ -63,7 +63,13 @@ QuoteModel.init(
 			},
 		},
 		status: {
-			type: DataTypes.STRING,
+			type: DataTypes.ENUM(
+				'ACCEPTED',
+				'PENDING',
+				'CANCELED',
+				'REVISION',
+				'OVERDUE',
+			),
 			allowNull: false,
 		},
 		currency: {

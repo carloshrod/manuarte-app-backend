@@ -54,7 +54,7 @@ export class QuoteController {
 
 			res.status(result.status).json({
 				newQuote: result.newQuote,
-				message: 'Cotización creada con éxito',
+				message: 'Cotización generada con éxito',
 			});
 		} catch (error) {
 			next(error);

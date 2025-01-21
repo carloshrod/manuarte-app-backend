@@ -1,6 +1,6 @@
 import { CreateQuoteItemDto } from '../quote-item/types';
 
-export enum EstimateStatus {
+export enum QuoteStatus {
 	ACCEPTED = 'ACCEPTED',
 	PENDING = 'PENDING',
 	CANCELED = 'CANCELED',
@@ -8,17 +8,17 @@ export enum EstimateStatus {
 	OVERDUE = 'OVERDUE',
 }
 
-export interface CreateQuoteData {
+export interface CreateQuoteDto {
 	shopSlug?: string;
 	shopId?: string;
 	items: CreateQuoteItemDto[];
-	status: EstimateStatus;
+	status: QuoteStatus;
 	dueDate: string | null;
 	shipping: string;
 	requestedBy: string;
 	currency?: 'COP' | 'USD';
 }
 
-export interface UpdateQuoteData extends CreateQuoteData {
+export interface UpdateQuoteDto extends CreateQuoteDto {
 	id: string;
 }

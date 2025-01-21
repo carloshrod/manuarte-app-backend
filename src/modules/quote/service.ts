@@ -8,7 +8,7 @@ import { QuoteItemModel } from '../quote-item/model';
 import { QuoteItemService } from '../quote-item/service';
 import { ShopModel } from '../shop/model';
 import { QuoteModel } from './model';
-import { CreateQuoteData, UpdateQuoteData } from './types';
+import { CreateQuoteDto, UpdateQuoteDto } from './types';
 
 export class QuoteService {
 	private quoteModel;
@@ -105,7 +105,14 @@ export class QuoteService {
 					{
 						model: QuoteItemModel,
 						as: 'quoteItems',
-						attributes: ['id', 'name', 'quantity', 'price', 'totalPrice'],
+						attributes: [
+							'id',
+							'productVariantId',
+							'name',
+							'quantity',
+							'price',
+							'totalPrice',
+						],
 					},
 				],
 			});
@@ -132,7 +139,7 @@ export class QuoteService {
 		quoteData,
 		customerData,
 	}: {
-		quoteData: CreateQuoteData;
+		quoteData: CreateQuoteDto;
 		customerData: CreateCustomerDto;
 	}) => {
 		const transaction = await sequelize.transaction();
@@ -173,9 +180,8 @@ export class QuoteService {
 			await newQuote.generateSerialNumber();
 			await newQuote.save({ transaction });
 
-			const quoteItems = [];
 			for (const item of quoteData.items) {
-				const newItem = await this.quoteItemService.create(
+				await this.quoteItemService.create(
 					{
 						...item,
 						id: undefined,
@@ -184,7 +190,6 @@ export class QuoteService {
 					},
 					transaction,
 				);
-				quoteItems.push(newItem);
 			}
 
 			await transaction.commit();
@@ -212,7 +217,7 @@ export class QuoteService {
 		quoteData,
 		customerData,
 	}: {
-		quoteData: UpdateQuoteData;
+		quoteData: UpdateQuoteDto;
 		customerData: UpdateCustomerDto;
 	}) => {
 		try {
