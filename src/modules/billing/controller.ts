@@ -47,15 +47,35 @@ export class BillingController {
 				billingData: { ...req.body?.billingData, requestedBy },
 				customerData: req.body?.customerData,
 			});
-			if (result.status !== 201) {
-				res.sendStatus(500);
+
+			if (result.status === 201) {
+				res.status(result.status).json({
+					newBilling: result.newBilling,
+					message: 'Factura generada con éxito',
+				});
 				return;
 			}
 
-			res.status(result.status).json({
-				newBilling: result.newBilling,
-				message: 'Factura generada con éxito',
-			});
+			res.sendStatus(400);
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	update: Handler = async (req, res, next) => {
+		try {
+			const { id } = req.params;
+
+			const result = await this.billingService.update(req.body, id);
+
+			if (result.status === 200) {
+				res
+					.status(result.status)
+					.json({ message: 'Factura actualizada con éxito' });
+				return;
+			}
+
+			res.sendStatus(400);
 		} catch (error) {
 			next(error);
 		}

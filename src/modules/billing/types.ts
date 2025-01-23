@@ -28,5 +28,6 @@ export interface CreateBillingDto {
 }
 
 export interface UpdateBillingDto extends CreateBillingDto {
-	id: string;
+	status: BillingStatus;
+	paymentMethod: PaymenMethodStatus;
 }

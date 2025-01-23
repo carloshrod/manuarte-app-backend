@@ -1,5 +1,5 @@
 import { CreateCustomerDto } from './../customer/types';
-import { BillingStatus, CreateBillingDto } from './types';
+import { BillingStatus, CreateBillingDto, UpdateBillingDto } from './types';
 import { sequelize } from '../../config/database';
 import { CustomerModel } from '../customer/model';
 import { PersonModel } from '../person/model';
@@ -38,6 +38,7 @@ export class BillingService {
 					'updatedDate',
 					'customerId',
 					[sequelize.col('customer.person.fullName'), 'customerName'],
+					[sequelize.col('customer.person.dni'), 'dni'],
 					'shopId',
 				],
 				include: [
@@ -195,6 +196,7 @@ export class BillingService {
 					paymentMethod,
 					customerId,
 					customerName: customerData?.fullName ?? null,
+					dni: customerData?.dni ?? null,
 					updatedDate: newBilling.updatedDate,
 					shopId,
 				},
@@ -202,6 +204,24 @@ export class BillingService {
 		} catch (error) {
 			await transaction.rollback();
 			console.error('Error creando factura');
+			throw error;
+		}
+	};
+
+	update = async (billingData: UpdateBillingDto, billingId: string) => {
+		try {
+			const billingToUpdate = await this.billingModel.findByPk(billingId);
+			if (!billingToUpdate)
+				return {
+					status: 400,
+					message: 'Factura no encontrada',
+				};
+
+			await billingToUpdate.update(billingData);
+
+			return { status: 200 };
+		} catch (error) {
+			console.error('Error editando factura');
 			throw error;
 		}
 	};
