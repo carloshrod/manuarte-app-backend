@@ -168,10 +168,14 @@ export class BillingItemService {
 				},
 				attributes: [
 					'currency',
-					'name',
+					'productVariantId',
+					[sequelize.fn('MIN', sequelize.col('name')), 'name'],
 					[sequelize.fn('SUM', sequelize.col('totalPrice')), 'totalSales'],
 				],
-				group: ['BillingItemModel.currency', 'BillingItemModel.name'],
+				group: [
+					'BillingItemModel.currency',
+					'BillingItemModel.productVariantId',
+				],
 				order: [[sequelize.fn('SUM', sequelize.col('totalPrice')), 'DESC']],
 				limit: 5,
 			});
@@ -188,10 +192,14 @@ export class BillingItemService {
 				},
 				attributes: [
 					'currency',
-					'name',
+					'productVariantId',
+					[sequelize.fn('MIN', sequelize.col('name')), 'name'],
 					[sequelize.fn('SUM', sequelize.col('totalPrice')), 'totalSales'],
 				],
-				group: ['BillingItemModel.currency', 'BillingItemModel.name'],
+				group: [
+					'BillingItemModel.currency',
+					'BillingItemModel.productVariantId',
+				],
 				order: [[sequelize.fn('SUM', sequelize.col('totalPrice')), 'DESC']],
 				limit: 5,
 			});
@@ -200,10 +208,12 @@ export class BillingItemService {
 				data: BillingItemModel[],
 			): {
 				name: string;
+				productVariantId: string;
 				totalSales: number;
 			}[] =>
 				data.map(item => ({
 					name: item.name,
+					productVariantId: item.productVariantId,
 					totalSales: parseFloat(item.dataValues.totalSales),
 				}));
 
