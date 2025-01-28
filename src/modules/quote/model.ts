@@ -6,6 +6,7 @@ import { QuoteItemModel } from '../quote-item/model';
 export class QuoteModel extends Model {
 	public id!: string;
 	public serialNumber!: string;
+	public updatedDate!: string;
 
 	async generateSerialNumber() {
 		try {
