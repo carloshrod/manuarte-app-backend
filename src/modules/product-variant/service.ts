@@ -127,13 +127,46 @@ export class ProductVariantService {
 		}
 	};
 
-	searchProductVariantStockInfo = async (search: string, shopSlug: string) => {
+	searchByName = async (
+		search: string,
+		shopSlug: string,
+		missingProducts: boolean,
+	) => {
 		try {
 			const stockId = await this.shopService.getStockId(shopSlug);
 			if (!stockId) {
 				return { status: 400, message: 'Error obteniendo el id del stock' };
 			}
 
+			const productVariants = missingProducts
+				? await this.getMissing(search, stockId)
+				: await this.getWithStockInfo(search, stockId);
+
+			return { status: 200, productVariants };
+		} catch (error) {
+			console.error(error);
+			throw error;
+		}
+	};
+
+	count = async (productId: string) => {
+		try {
+			const productVariantsCount = await this.productVariantModel.count({
+				where: { productId },
+			});
+
+			return productVariantsCount;
+		} catch (error) {
+			console.error(
+				'ServiceError en el conteo de presentaciones del producto: ',
+				error,
+			);
+			throw error;
+		}
+	};
+
+	private getWithStockInfo = async (search: string, stockId: string) => {
+		try {
 			const productVariantWithStockInfo =
 				await this.productVariantModel.findAll({
 					where: {
@@ -173,25 +206,52 @@ export class ProductVariantService {
 					order: [[sequelize.col('stockItems.quantity'), 'DESC']],
 				});
 
-			return { status: 200, productVariantWithStockInfo };
+			return productVariantWithStockInfo;
 		} catch (error) {
-			console.error(error);
+			console.error('Error obteniendo productos con información de stock');
 			throw error;
 		}
 	};
 
-	count = async (productId: string) => {
+	private getMissing = async (search: string, stockId: string) => {
 		try {
-			const productVariantsCount = await this.productVariantModel.count({
-				where: { productId },
+			const missingProductVariants = await this.productVariantModel.findAll({
+				where: {
+					[Op.or]: [
+						{ vId: { [Op.iLike]: `%${search}%` } },
+						sequelize.where(
+							sequelize.literal(
+								`concat("product"."name", ' ', "ProductVariantModel"."name")`,
+							),
+							{ [Op.iLike]: `%${search}%` },
+						),
+					],
+					id: {
+						[Op.notIn]: sequelize.literal(`(
+						SELECT sipv."productVariantId"
+						FROM "stock_item_product_variant" AS sipv
+						INNER JOIN "stock_item" AS si ON si."id" = sipv."stockItemId"
+						WHERE si."stockId" = '${stockId}'
+					)`),
+					},
+				},
+				attributes: [
+					'id',
+					'name',
+					[sequelize.col('product.name'), 'productName'],
+				],
+				include: [
+					{
+						model: this.productModel,
+						as: 'product',
+						attributes: [],
+					},
+				],
 			});
 
-			return productVariantsCount;
+			return missingProductVariants;
 		} catch (error) {
-			console.error(
-				'ServiceError en el conteo de presentaciones del producto: ',
-				error,
-			);
+			console.error('Error obteniendo productos faltantes');
 			throw error;
 		}
 	};
