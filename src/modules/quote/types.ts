@@ -13,7 +13,6 @@ export interface CreateQuoteDto {
 	shopId?: string;
 	items: CreateQuoteItemDto[];
 	status: QuoteStatus;
-	dueDate: string | null;
 	shipping: string;
 	requestedBy: string;
 	currency?: 'COP' | 'USD';

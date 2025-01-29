@@ -35,7 +35,7 @@ export class QuoteService {
 					'status',
 					'customerId',
 					[sequelize.col('customer.person.fullName'), 'customerName'],
-					'dueDate',
+					'updatedDate',
 					'shopId',
 				],
 				include: [
@@ -81,7 +81,6 @@ export class QuoteService {
 					[sequelize.col('customer.phoneNumber'), 'phoneNumber'],
 					[sequelize.col('customer.address.location'), 'location'],
 					[sequelize.col('customer.city'), 'city'],
-					'dueDate',
 					'updatedDate',
 				],
 				include: [
@@ -155,11 +154,6 @@ export class QuoteService {
 
 			const { status, shipping, shopSlug, requestedBy } = quoteData;
 
-			const now = new Date();
-			const nowPlus5 = new Date(now);
-			nowPlus5.setDate(nowPlus5.getDate() + 5);
-			const dueDate = quoteData?.dueDate ?? nowPlus5;
-
 			const shop = await ShopModel.findOne({
 				where: { slug: shopSlug },
 				attributes: ['id'],
@@ -174,7 +168,6 @@ export class QuoteService {
 				status,
 				currency: shopSlug?.includes('quito') ? 'USD' : 'COP',
 				shipping,
-				dueDate,
 				createdBy: requestedBy,
 			});
 			await newQuote.generateSerialNumber();
@@ -203,7 +196,7 @@ export class QuoteService {
 					customerId,
 					customerName: customerData?.fullName ?? null,
 					shopId: shop.id,
-					dueDate,
+					updatedDate: newQuote.updatedDate,
 				},
 			};
 		} catch (error) {
@@ -242,7 +235,6 @@ export class QuoteService {
 				customerId: customerData?.customerId,
 				status: quoteData?.status,
 				currency: quoteData?.currency,
-				dueDate: quoteData?.dueDate,
 				shipping: quoteData?.shipping,
 				requestedBy: quoteData?.requestedBy,
 				updatedDate: sequelize.fn('now'),
@@ -266,7 +258,7 @@ export class QuoteService {
 					customerId: customerData?.customerId,
 					customerName: customerData?.fullName,
 					shopId: quoteData?.shopId,
-					dueDate: quoteData?.dueDate,
+					updatedDate: quoteToUpdate?.updatedDate,
 				},
 			};
 		} catch (error) {
