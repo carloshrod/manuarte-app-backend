@@ -19,9 +19,9 @@ router.get(
 	productVariantController.getAll,
 );
 router.get(
-	'/stock-info',
+	'/search',
 	authorize(ProductPermissions.PRODUCT_SEARCH),
-	productVariantController.searchProductVariantStockInfo,
+	productVariantController.searchByName,
 );
 router.put(
 	'/:id',

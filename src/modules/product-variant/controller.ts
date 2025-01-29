@@ -23,20 +23,22 @@ export class ProductVariantController {
 		}
 	};
 
-	searchProductVariantStockInfo: Handler = async (req, res, next) => {
+	searchByName: Handler = async (req, res, next) => {
 		try {
 			const search = (req.query.search as string) || '';
 			const shopSlug = (req.query.shopSlug as string) || '';
-			const result =
-				await this.productVariantService.searchProductVariantStockInfo(
-					search,
-					shopSlug,
-				);
+			const missingProducts = req.query.missingProducts === 'true';
+
+			const result = await this.productVariantService.searchByName(
+				search,
+				shopSlug,
+				missingProducts as boolean,
+			);
 			if (result.status !== 200) {
 				res.sendStatus(400);
 			}
 
-			res.status(result.status).json(result.productVariantWithStockInfo);
+			res.status(result.status).json(result.productVariants);
 		} catch (error) {
 			next(error);
 		}
