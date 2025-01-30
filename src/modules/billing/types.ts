@@ -6,12 +6,20 @@ export enum BillingStatus {
 	CANCELED = 'CANCELED',
 }
 
-export enum PaymenMethodStatus {
-	BANK_TRANSFER = 'BANK_TRANSFER',
+export enum PaymentMethod {
 	CASH = 'CASH',
-	CREDIT_CARD = 'CREDIT_CARD',
+	BANK_TRANSFER = 'BANK_TRANSFER',
+	BANK_TRANSFER_RT = 'BANK_TRANSFER_RT',
+	BANK_TRANSFER_RBT = 'BANK_TRANSFER_RBT',
 	DEBIT_CARD = 'DEBIT_CARD',
+	CREDIT_CARD = 'CREDIT_CARD',
+	NEQUI = 'NEQUI',
+	BOLD = 'BOLD',
+	EFECTY = 'EFECTY',
+	WOMPI = 'WOMPI',
+	PAYPHONE = 'PAYPHONE',
 	PAYPAL = 'PAYPAL',
+	BANK_DEPOSIT = 'BANK_DEPOSIT',
 	OTHER = 'OTHER',
 }
 
@@ -19,7 +27,7 @@ export interface CreateBillingDto {
 	shopSlug?: string;
 	shopId?: string;
 	status: BillingStatus;
-	paymentMethod: PaymenMethodStatus;
+	paymentMethod: PaymentMethod;
 	total: number;
 	shipping: string;
 	currency: string;
@@ -29,5 +37,5 @@ export interface CreateBillingDto {
 
 export interface UpdateBillingDto extends CreateBillingDto {
 	status: BillingStatus;
-	paymentMethod: PaymenMethodStatus;
+	paymentMethod: PaymentMethod;
 }
