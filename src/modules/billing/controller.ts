@@ -91,4 +91,16 @@ export class BillingController {
 			next(error);
 		}
 	};
+
+	delete: Handler = async (req, res, next) => {
+		try {
+			const { id } = req.params;
+
+			const result = await this.billingService.delete(id);
+
+			res.status(result.status).json({ message: result.message });
+		} catch (error) {
+			next(error);
+		}
+	};
 }

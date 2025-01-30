@@ -257,6 +257,21 @@ export class BillingService {
 		}
 	};
 
+	delete = async (id: string) => {
+		try {
+			const result = await this.billingModel.destroy({ where: { id } });
+
+			if (result === 1) {
+				return { status: 200, message: 'Factura eliminada con éxito' };
+			}
+
+			return { status: 404, message: 'Factura no encontrada' };
+		} catch (error) {
+			console.error('Error eliminando factura');
+			throw error;
+		}
+	};
+
 	private getShopId = async (shopSlug: string) => {
 		try {
 			const shop = await ShopModel.findOne({

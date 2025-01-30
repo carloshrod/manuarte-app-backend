@@ -13,6 +13,7 @@ router.get('/', billingController.getAll);
 router.get('/:serialNumber', billingController.getOne);
 router.post('/', billingController.create);
 router.put('/:id', billingController.update);
-router.delete('/:serialNumber', billingController.cancel);
+router.delete('/cancel/:serialNumber', billingController.cancel);
+router.delete('/:id', billingController.delete);
 
 export default router;
