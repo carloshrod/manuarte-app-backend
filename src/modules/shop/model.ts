@@ -33,7 +33,7 @@ ShopModel.init(
 		currency: {
 			type: DataTypes.STRING,
 			allowNull: false,
-			defaultValue: "COP",
+			defaultValue: 'COP',
 		},
 		createdDate: {
 			type: DataTypes.DATE,

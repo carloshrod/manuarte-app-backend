@@ -133,14 +133,14 @@ export class ProductVariantService {
 		missingProducts: boolean,
 	) => {
 		try {
-			const stockId = await this.shopService.getStockId(shopSlug);
-			if (!stockId) {
+			const shop = await this.shopService.getOne(shopSlug);
+			if (!shop) {
 				return { status: 400, message: 'Error obteniendo el id del stock' };
 			}
 
 			const productVariants = missingProducts
-				? await this.getMissing(search, stockId)
-				: await this.getWithStockInfo(search, stockId);
+				? await this.getMissing(search, shop.dataValues?.stockId)
+				: await this.getWithStockInfo(search, shop.dataValues?.stockId);
 
 			return { status: 200, productVariants };
 		} catch (error) {

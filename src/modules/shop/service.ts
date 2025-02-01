@@ -25,11 +25,11 @@ export class ShopService {
 		}
 	};
 
-	getStockId = async (shopSlug: string) => {
+	getOne = async (shopSlug: string) => {
 		try {
 			const shop = await this.shopModel.findOne({
 				where: { slug: shopSlug },
-				attributes: ['id', [sequelize.col('stock.id'), 'stockId']],
+				attributes: ['id', 'currency', [sequelize.col('stock.id'), 'stockId']],
 				include: [
 					{
 						model: StockModel,
@@ -39,7 +39,7 @@ export class ShopService {
 				],
 			});
 
-			return shop?.getDataValue('stockId');
+			return shop;
 		} catch (error) {
 			console.error('Error obteniendo stock id');
 			throw error;
