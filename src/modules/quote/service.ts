@@ -156,7 +156,7 @@ export class QuoteService {
 
 			const shop = await ShopModel.findOne({
 				where: { slug: shopSlug },
-				attributes: ['id'],
+				attributes: ['id', 'currency'],
 			});
 			if (!shop) {
 				return { status: 400, message: 'Parece que la tienda no existe!' };
@@ -166,7 +166,7 @@ export class QuoteService {
 				customerId,
 				shopId: shop.id,
 				status,
-				currency: shopSlug?.includes('quito') ? 'USD' : 'COP',
+				currency: shop.currency,
 				shipping,
 				createdBy: requestedBy,
 			});

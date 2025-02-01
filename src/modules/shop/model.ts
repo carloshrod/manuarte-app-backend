@@ -5,6 +5,7 @@ import { StockModel } from '../stock/model';
 export class ShopModel extends Model {
 	public id!: string;
 	public slug!: string;
+	public currency!: string;
 }
 
 ShopModel.init(
@@ -28,6 +29,11 @@ ShopModel.init(
 			type: DataTypes.DOUBLE,
 			allowNull: false,
 			defaultValue: 0.15,
+		},
+		currency: {
+			type: DataTypes.STRING,
+			allowNull: false,
+			defaultValue: "COP",
 		},
 		createdDate: {
 			type: DataTypes.DATE,
