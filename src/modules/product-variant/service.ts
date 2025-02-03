@@ -113,11 +113,16 @@ export class ProductVariantService {
 
 	delete = async (productVariantId: string) => {
 		try {
-			const deletedCount = await this.productVariantModel.destroy({
-				where: { id: productVariantId },
-			});
+			const productVariantToDelete =
+				await this.productVariantModel.findByPk(productVariantId);
+			if (!productVariantToDelete)
+				throw new Error(
+					'No se encontró la presentación del producto que intentas eliminar',
+				);
 
-			return deletedCount;
+			await productVariantToDelete.destroy();
+
+			return productVariantToDelete;
 		} catch (error) {
 			console.error(
 				'ServiceError eliminando presentación del producto: ',

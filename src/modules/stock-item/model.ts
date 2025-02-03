@@ -93,5 +93,4 @@ ProductVariantModel.belongsToMany(StockItemModel, {
 	as: 'stockItems',
 	foreignKey: 'productVariantId',
 	otherKey: 'stockItemId',
-	onDelete: 'CASCADE',
 });

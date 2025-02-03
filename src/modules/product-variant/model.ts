@@ -3,6 +3,7 @@ import { sequelize } from '../../config/database';
 import { ProductModel } from '../product/model';
 import { Op } from 'sequelize';
 import { BillingItemModel } from '../billing-item/model';
+import { StockItemProductVariantModel } from '../associations/stock-item-product-variant-model';
 
 export class ProductVariantModel extends Model {
 	public id!: string;
@@ -122,6 +123,19 @@ ProductVariantModel.init(
 				fields: [{ name: 'vId' }],
 			},
 		],
+		hooks: {
+			beforeDestroy: async productVariant => {
+				const count = await StockItemProductVariantModel.count({
+					where: { productVariantId: productVariant.id },
+				});
+
+				if (count > 0) {
+					throw new Error(
+						'No se puede borrar la presentación del producto, porque se encuentra en stock',
+					);
+				}
+			},
+		},
 	},
 );
 
