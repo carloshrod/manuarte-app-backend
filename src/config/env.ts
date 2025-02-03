@@ -2,6 +2,9 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const env = process.env.NODE_ENV || 'development';
+dotenv.config({ path: `.env.${env}` });
+
 export const ENV = {
 	PORT: process.env.PORT,
 	DB_NAME: process.env.DB_NAME ?? '',
