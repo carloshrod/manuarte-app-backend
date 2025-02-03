@@ -12,7 +12,20 @@ export class ShopService {
 	getAll = async () => {
 		try {
 			const shops = await this.shopModel.findAll({
-				attributes: ['id', 'name', 'slug'],
+				attributes: [
+					'id',
+					'name',
+					'slug',
+					[sequelize.col('stock.isMain'), 'mainStock'],
+				],
+				include: [
+					{
+						model: StockModel,
+						as: 'stock',
+						attributes: [],
+					},
+				],
+				order: [['name', 'ASC']],
 			});
 			if (shops.length === 0) {
 				return { status: 204 };
@@ -29,7 +42,12 @@ export class ShopService {
 		try {
 			const shop = await this.shopModel.findOne({
 				where: { slug: shopSlug },
-				attributes: ['id', 'currency', [sequelize.col('stock.id'), 'stockId']],
+				attributes: [
+					'id',
+					'currency',
+					[sequelize.col('stock.id'), 'stockId'],
+					[sequelize.col('stock.isMain'), 'mainStock'],
+				],
 				include: [
 					{
 						model: StockModel,
@@ -39,9 +57,11 @@ export class ShopService {
 				],
 			});
 
+			if (!shop) throw new Error('Tienda no encontrada');
+
 			return shop;
 		} catch (error) {
-			console.error('Error obteniendo stock id');
+			console.error('Error obteniendo tienda');
 			throw error;
 		}
 	};
