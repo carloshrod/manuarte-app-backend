@@ -1,10 +1,15 @@
-import { DataTypes, Model } from 'sequelize';
+import { DataTypes, Model, Transaction } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { ProductVariantModel } from '../product-variant/model';
 import { StockItemProductVariantModel } from '../associations/stock-item-product-variant-model';
 
 export class StockItemModel extends Model {
 	public quantity!: string;
+
+	public addProductVariant!: (
+		productVariant: ProductVariantModel | string,
+		options?: { transaction: Transaction },
+	) => Promise<ProductVariantModel>;
 }
 
 StockItemModel.init(
@@ -80,6 +85,7 @@ StockItemModel.belongsToMany(ProductVariantModel, {
 	as: 'productVariants',
 	foreignKey: 'stockItemId',
 	otherKey: 'productVariantId',
+	onDelete: 'CASCADE',
 });
 
 ProductVariantModel.belongsToMany(StockItemModel, {
@@ -87,4 +93,5 @@ ProductVariantModel.belongsToMany(StockItemModel, {
 	as: 'stockItems',
 	foreignKey: 'productVariantId',
 	otherKey: 'stockItemId',
+	onDelete: 'CASCADE',
 });
