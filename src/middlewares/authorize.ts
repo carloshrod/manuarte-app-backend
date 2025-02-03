@@ -30,11 +30,10 @@ export const authorize = (permissionName: string) => {
 			const allowed = await hasPermission(roleId, userId, permissionName);
 
 			if (!allowed) {
-				const isGet = req.method === 'GET';
-
-				const message = isGet
-					? 'No tienes permisos para acceder a este recurso'
-					: 'No tienes permisos para realizar esta acción';
+				const message =
+					req.method === 'GET'
+						? 'No tienes permisos para acceder a este recurso'
+						: 'No tienes permisos para realizar esta acción';
 				res.status(403).json({ message });
 				return;
 			}

@@ -28,6 +28,11 @@ StockModel.init(
 			allowNull: false,
 			defaultValue: false,
 		},
+		isMain: {
+			type: DataTypes.BOOLEAN,
+			allowNull: false,
+			defaultValue: false,
+		},
 		createdDate: {
 			type: DataTypes.DATE,
 			allowNull: false,

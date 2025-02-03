@@ -6,6 +6,7 @@ import { Request } from 'express';
 import { DecodedRefreshToken } from './types';
 import { RoleModel } from '../role/model';
 import { ShopModel } from '../shop/model';
+import { StockModel } from '../stock/model';
 import { sequelize } from '../../config/database';
 
 export class AuthService {
@@ -27,8 +28,22 @@ export class AuthService {
 					'password',
 					'roleId',
 					[sequelize.col('shop.slug'), 'shopSlug'],
+					[sequelize.col('shop.stock.isMain'), 'isMain'],
 				],
-				include: [{ model: ShopModel, as: 'shop', attributes: [] }],
+				include: [
+					{
+						model: ShopModel,
+						as: 'shop',
+						attributes: [],
+						include: [
+							{
+								model: StockModel,
+								as: 'stock',
+								attributes: [],
+							},
+						],
+					},
+				],
 			});
 			if (!foundUser) {
 				return { status: 401, message: 'Invalid credentials' };
@@ -78,8 +93,22 @@ export class AuthService {
 					'roleId',
 					'refreshToken',
 					[sequelize.col('shop.slug'), 'shopSlug'],
+					[sequelize.col('shop.stock.isMain'), 'isMain'],
 				],
-				include: [{ model: ShopModel, as: 'shop', attributes: [] }],
+				include: [
+					{
+						model: ShopModel,
+						as: 'shop',
+						attributes: [],
+						include: [
+							{
+								model: StockModel,
+								as: 'stock',
+								attributes: [],
+							},
+						],
+					},
+				],
 			});
 			if (!foundUser) {
 				return { status: 401, message: 'User not authenticated' };
@@ -137,7 +166,8 @@ export class AuthService {
 						email: user.email,
 						roleId: user.roleId,
 						roleName: await this.getRoleName(user.roleId),
-						shop: user?.get('shopSlug'),
+						shop: user?.dataValues?.shopSlug,
+						mainStock: user?.dataValues?.isMain,
 						extraPermissions: (await user.getExtraPermissions()).map(
 							permission => permission.name,
 						),
