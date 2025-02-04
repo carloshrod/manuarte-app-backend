@@ -26,26 +26,16 @@ PersonModel.init(
 			allowNull: false,
 			unique: 'UQ_4f83f47c3d77d87ccb066c91af6',
 		},
-		createdDate: {
-			type: DataTypes.DATE,
-			allowNull: false,
-			defaultValue: sequelize.fn('now'),
-		},
-		updatedDate: {
-			type: DataTypes.DATE,
-			allowNull: false,
-			defaultValue: sequelize.fn('now'),
-		},
-		deletedDate: {
-			type: DataTypes.DATE,
-			allowNull: true,
-		},
 	},
 	{
 		sequelize,
 		tableName: 'person',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		paranoid: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_5fdaf670315c4b7e70cce85daa3',

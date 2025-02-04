@@ -154,17 +154,23 @@ export class CustomerService {
 	};
 
 	delete = async (personId: string) => {
+		const transaction = await sequelize.transaction();
 		try {
-			const customerDeleted = await this.personModel.destroy({
-				where: { id: personId },
+			await this.personModel.destroy({ where: { id: personId }, transaction });
+
+			const customerDeleted = await this.customerModel.destroy({
+				where: { personId },
+				transaction,
 			});
 
 			if (customerDeleted === 1) {
+				await transaction.commit();
 				return { status: 200, message: 'Cliente eliminado con éxito' };
 			}
 
 			throw new Error('Usuario no encontrado');
 		} catch (error) {
+			await transaction.rollback();
 			console.error(error);
 			throw error;
 		}
@@ -173,7 +179,6 @@ export class CustomerService {
 	getCustomerById = async (id: string) => {
 		try {
 			const customer = await this.customerModel.findByPk(id);
-			if (!customer) throw new Error('Cliente no encontrado');
 
 			return customer;
 		} catch (error) {

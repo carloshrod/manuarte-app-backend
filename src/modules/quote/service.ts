@@ -48,8 +48,10 @@ export class QuoteService {
 								model: PersonModel,
 								as: 'person',
 								attributes: [],
+								paranoid: false,
 							},
 						],
+						paranoid: false,
 					},
 				],
 				order: [['createdDate', 'DESC']],
@@ -93,6 +95,7 @@ export class QuoteService {
 								model: PersonModel,
 								as: 'person',
 								attributes: [],
+								paranoid: false,
 							},
 							{
 								model: AddressModel,
@@ -100,6 +103,7 @@ export class QuoteService {
 								attributes: [],
 							},
 						],
+						paranoid: false,
 					},
 					{
 						model: QuoteItemModel,

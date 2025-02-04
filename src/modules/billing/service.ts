@@ -51,8 +51,10 @@ export class BillingService {
 								model: PersonModel,
 								as: 'person',
 								attributes: [],
+								paranoid: false,
 							},
 						],
+						paranoid: false,
 					},
 				],
 				order: [['createdDate', 'DESC']],
@@ -96,6 +98,7 @@ export class BillingService {
 								model: PersonModel,
 								as: 'person',
 								attributes: [],
+								paranoid: false,
 							},
 							{
 								model: AddressModel,
@@ -103,6 +106,7 @@ export class BillingService {
 								attributes: [],
 							},
 						],
+						paranoid: false,
 					},
 					{
 						model: BillingItemModel,
@@ -147,12 +151,16 @@ export class BillingService {
 		const transaction = await sequelize.transaction();
 		try {
 			let customerId = customerData?.customerId ?? null;
+
 			if (customerData?.fullName && !customerData?.customerId) {
 				const result = await this.customerService.create(
 					customerData,
 					transaction,
 				);
 				customerId = result.customer.id;
+			} else if (customerId) {
+				const result = await this.customerService.getCustomerById(customerId);
+				if (!result) throw new Error('El cliente está inactivo');
 			}
 
 			const { shopSlug, status, paymentMethod, shipping, total, requestedBy } =

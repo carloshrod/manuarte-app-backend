@@ -32,20 +32,6 @@ CustomerModel.init(
 			type: DataTypes.STRING,
 			allowNull: true,
 		},
-		createdDate: {
-			type: DataTypes.DATE,
-			allowNull: false,
-			defaultValue: sequelize.fn('now'),
-		},
-		updatedDate: {
-			type: DataTypes.DATE,
-			allowNull: false,
-			defaultValue: sequelize.fn('now'),
-		},
-		deletedDate: {
-			type: DataTypes.DATE,
-			allowNull: true,
-		},
 		city: {
 			type: DataTypes.STRING,
 			allowNull: true,
@@ -55,7 +41,11 @@ CustomerModel.init(
 		sequelize,
 		tableName: 'customer',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		paranoid: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_a7a13f4cacb744524e44dfdad32',
