@@ -9,6 +9,12 @@ module.exports = {
 			allowNull: false,
 			defaultValue: false,
 		});
+
+		await queryInterface.bulkUpdate(
+			'stock',
+			{ isMain: true },
+			{ name: 'Fabrica Cascajal' },
+		);
 	},
 
 	async down(queryInterface) {

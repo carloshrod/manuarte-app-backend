@@ -12,6 +12,12 @@ module.exports = {
 			['id'],
 		);
 
+		await queryInterface.bulkDelete(
+			'role_permission',
+			{ roleId: adminRoleId },
+			{},
+		);
+
 		const permissions = await queryInterface.sequelize.query(
 			'SELECT id FROM permission',
 			{

@@ -12,6 +12,12 @@ module.exports = {
 			['id'],
 		);
 
+		await queryInterface.bulkDelete(
+			'role_permission',
+			{ roleId: cajeroRoleId },
+			{},
+		);
+
 		const permissionNames = [
 			'estimate-read',
 			'estimate-create',

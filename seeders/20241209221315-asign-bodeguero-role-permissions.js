@@ -12,6 +12,12 @@ module.exports = {
 			['id'],
 		);
 
+		await queryInterface.bulkDelete(
+			'role_permission',
+			{ roleId: bodegueroRoleId },
+			{},
+		);
+
 		const permissionNames = [
 			'product-read',
 			'product-create',

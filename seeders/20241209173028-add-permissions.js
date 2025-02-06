@@ -4,6 +4,8 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
 	async up(queryInterface) {
+		await queryInterface.bulkDelete('permission', null, {});
+		
 		const items = [
 			'product',
 			'user',
