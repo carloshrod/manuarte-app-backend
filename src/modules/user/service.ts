@@ -228,13 +228,14 @@ export class UserService {
 			}
 
 			const ITEMS_PERMISSIONS_BY_ROLE = {
-				cajero: ['product', 'customer'], // Items por los que se le puede asignar permisos al usuario con rol = cajero
+				cajero: ['product', 'customer'], // Items asignables a usuario con rol = cajero
 			};
 
 			const permissionConditions =
 				ITEMS_PERMISSIONS_BY_ROLE[roleName].length > 0
 					? ITEMS_PERMISSIONS_BY_ROLE[roleName].map(permission => ({
 							[Op.iLike]: `%${permission}%`,
+							[Op.notILike]: '%search%',
 						}))
 					: null;
 
