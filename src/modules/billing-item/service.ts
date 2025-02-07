@@ -5,6 +5,7 @@ import { BillingItemModel } from './model';
 import { monthNames } from './consts';
 import { StockItemService } from '../stock-item/service';
 import { StockItemModel } from '../stock-item/model';
+import { BillingModel } from '../billing/model';
 
 export class BillingItemService {
 	private billingItemModel;
@@ -90,21 +91,45 @@ export class BillingItemService {
 			const startOfYear = new Date(currentYear, 0, 1);
 			const endOfYear = new Date(currentYear + 1, 0, 0);
 
-			const rawSales = await this.billingItemModel.findAll({
+			const rawSales = await BillingModel.findAll({
 				attributes: [
 					[
-						sequelize.fn('DATE_PART', 'month', sequelize.col('createdDate')),
+						sequelize.fn(
+							'DATE_PART',
+							'month',
+							sequelize.col('billingItems.createdDate'),
+						),
 						'month',
 					],
-					'currency',
-					[sequelize.fn('SUM', sequelize.col('totalPrice')), 'totalSales'],
+					[sequelize.col('billingItems.currency'), 'currency'],
+					[
+						sequelize.fn('SUM', sequelize.col('billingItems.totalPrice')),
+						'totalSales',
+					],
 				],
 				where: {
 					createdDate: {
 						[Op.between]: [startOfYear, endOfYear],
 					},
+					status: 'PAID',
 				},
-				group: ['month', 'currency'],
+				include: [
+					{
+						model: this.billingItemModel,
+						as: 'billingItems',
+						attributes: [],
+						required: true,
+					},
+				],
+				group: [
+					sequelize.fn(
+						'DATE_PART',
+						'month',
+						sequelize.col('billingItems.createdDate'),
+					),
+					'month',
+					'currency',
+				],
 				order: [[sequelize.literal('month'), 'ASC']],
 				raw: true,
 			});
@@ -172,6 +197,16 @@ export class BillingItemService {
 					[sequelize.fn('MIN', sequelize.col('name')), 'name'],
 					[sequelize.fn('SUM', sequelize.col('totalPrice')), 'totalSales'],
 				],
+				include: [
+					{
+						model: BillingModel,
+						as: 'billing',
+						attributes: [],
+						where: {
+							status: 'PAID',
+						},
+					},
+				],
 				group: [
 					'BillingItemModel.currency',
 					'BillingItemModel.productVariantId',
@@ -195,6 +230,16 @@ export class BillingItemService {
 					'productVariantId',
 					[sequelize.fn('MIN', sequelize.col('name')), 'name'],
 					[sequelize.fn('SUM', sequelize.col('totalPrice')), 'totalSales'],
+				],
+				include: [
+					{
+						model: BillingModel,
+						as: 'billing',
+						attributes: [],
+						where: {
+							status: 'PAID',
+						},
+					},
 				],
 				group: [
 					'BillingItemModel.currency',
