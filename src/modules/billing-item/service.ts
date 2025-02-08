@@ -6,6 +6,7 @@ import { monthNames } from './consts';
 import { StockItemService } from '../stock-item/service';
 import { StockItemModel } from '../stock-item/model';
 import { BillingModel } from '../billing/model';
+import { BillingStatus } from '../billing/types';
 
 export class BillingItemService {
 	private billingItemModel;
@@ -111,7 +112,7 @@ export class BillingItemService {
 					createdDate: {
 						[Op.between]: [startOfYear, endOfYear],
 					},
-					status: 'PAID',
+					status: BillingStatus.PAID,
 				},
 				include: [
 					{
@@ -203,7 +204,7 @@ export class BillingItemService {
 						as: 'billing',
 						attributes: [],
 						where: {
-							status: 'PAID',
+							status: BillingStatus.PAID,
 						},
 					},
 				],
@@ -237,7 +238,7 @@ export class BillingItemService {
 						as: 'billing',
 						attributes: [],
 						where: {
-							status: 'PAID',
+							status: BillingStatus.PAID,
 						},
 					},
 				],
