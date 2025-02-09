@@ -1,5 +1,6 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
+import { StockItemModel } from '../stock-item/model';
 
 export class StockModel extends Model {}
 
@@ -62,3 +63,13 @@ StockModel.init(
 		],
 	},
 );
+
+StockModel.hasMany(StockItemModel, {
+	foreignKey: 'stockId',
+	as: 'stockItems',
+});
+
+StockItemModel.belongsTo(StockModel, {
+	foreignKey: 'stockId',
+	as: 'stock',
+});

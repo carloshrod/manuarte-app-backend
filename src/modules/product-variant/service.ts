@@ -140,7 +140,7 @@ export class ProductVariantService {
 		try {
 			const shop = await this.shopService.getOne(shopSlug);
 			if (!shop) {
-				return { status: 400, message: 'Error obteniendo el id del stock' };
+				return { status: 400, message: 'Tienda no encontrada' };
 			}
 
 			const productVariants = missingProducts
@@ -170,9 +170,9 @@ export class ProductVariantService {
 		}
 	};
 
-	private getWithStockInfo = async (search: string, stockId: string) => {
+	private getWithStockInfo = async (search: string, stockId?: string) => {
 		try {
-			const productVariantWithStockInfo =
+			const productVariantsWithStockInfo =
 				await this.productVariantModel.findAll({
 					where: {
 						[Op.or]: [
@@ -204,14 +204,32 @@ export class ProductVariantService {
 							model: StockItemModel,
 							as: 'stockItems',
 							where: { stockId },
-							attributes: ['id', 'stockId'],
+							attributes: [],
 							through: { attributes: [] },
 						},
 					],
 					order: [[sequelize.col('stockItems.quantity'), 'DESC']],
 				});
 
-			return productVariantWithStockInfo;
+			const productVariantsResult = [];
+			for (const productVariant of productVariantsWithStockInfo) {
+				const stockItems = await StockItemModel.findAll({
+					include: [
+						{
+							model: this.productVariantModel,
+							as: 'productVariants',
+							where: { id: productVariant.dataValues.id },
+							through: { attributes: [] },
+						},
+					],
+				});
+				productVariantsResult.push({
+					...productVariant.dataValues,
+					stocks: stockItems.map(item => item.dataValues.stockId),
+				});
+			}
+
+			return productVariantsResult;
 		} catch (error) {
 			console.error('Error obteniendo productos con información de stock');
 			throw error;

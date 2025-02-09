@@ -16,6 +16,7 @@ export class ShopService {
 					'id',
 					'name',
 					'slug',
+					[sequelize.col('stock.id'), 'stockId'],
 					[sequelize.col('stock.isMain'), 'mainStock'],
 				],
 				include: [
@@ -56,8 +57,6 @@ export class ShopService {
 					},
 				],
 			});
-
-			if (!shop) throw new Error('Tienda no encontrada');
 
 			return shop;
 		} catch (error) {
