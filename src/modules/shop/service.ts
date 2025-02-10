@@ -17,6 +17,7 @@ export class ShopService {
 					'name',
 					'slug',
 					[sequelize.col('stock.id'), 'stockId'],
+					[sequelize.col('stock.name'), 'stockName'],
 					[sequelize.col('stock.isMain'), 'mainStock'],
 				],
 				include: [

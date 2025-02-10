@@ -20,7 +20,7 @@ export class StockItemService {
 		try {
 			const shop = await this.shopService.getOne(shopSlug);
 			if (!shop) {
-				return { status: 400, message: 'Error obteniendo el id del stock' };
+				return { status: 400, message: 'Tienda no encontrada' };
 			}
 
 			const stockItems = await this.stockItemModel.findAll({
@@ -103,6 +103,9 @@ export class StockItemService {
 		try {
 			const { shopSlug, productVariantId, ...stockItemRest } = stockItemData;
 			const shop = await this.shopService.getOne(shopSlug);
+			if (!shop) {
+				return { status: 400, message: 'Tienda no encontrada' };
+			}
 
 			const newStockItem = await this.stockItemModel.create(
 				{
@@ -169,6 +172,9 @@ export class StockItemService {
 			}
 
 			const shop = await this.shopService.getOne(shopSlug);
+			if (!shop) {
+				return { status: 400, message: 'Tienda no encontrada' };
+			}
 
 			await stockItemToUpdate.update({
 				...stockItemRest,
