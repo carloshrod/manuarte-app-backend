@@ -1,12 +1,18 @@
 import { Handler } from 'express';
 import { TransactionService } from './service';
 import { TransactionType } from './types';
+import { TransactionItemService } from '../transaction-item/service';
+import { TransactionItemModel } from '../transaction-item/model';
 
 export class TransactionController {
 	private transactionService;
+	private transactionItemService;
 
 	constructor(transactionService: TransactionService) {
 		this.transactionService = transactionService;
+		this.transactionItemService = new TransactionItemService(
+			TransactionItemModel,
+		);
 	}
 
 	getAll: Handler = async (_req, res, next) => {
@@ -14,6 +20,21 @@ export class TransactionController {
 			const result = await this.transactionService.getAll();
 			if (result.status === 200) {
 				res.status(200).json(result.transactions);
+				return;
+			}
+
+			res.sendStatus(result.status);
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	getItems: Handler = async (req, res, next) => {
+		try {
+			const { id } = req.params;
+			const result = await this.transactionItemService.getByTransactionId(id);
+			if (result.status === 200) {
+				res.status(200).json(result.transactionItems);
 				return;
 			}
 

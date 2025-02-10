@@ -1,5 +1,6 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
+import { ProductVariantModel } from '../product-variant/model';
 
 export class TransactionItemModel extends Model {}
 
@@ -82,3 +83,13 @@ TransactionItemModel.init(
 		],
 	},
 );
+
+TransactionItemModel.belongsTo(ProductVariantModel, {
+	foreignKey: 'productVariantId',
+	as: 'productVariants',
+});
+
+ProductVariantModel.belongsTo(TransactionItemModel, {
+	foreignKey: 'productVariantId',
+	as: 'transactionItems',
+});

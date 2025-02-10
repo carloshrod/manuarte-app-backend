@@ -32,6 +32,7 @@ export class TransactionService {
 					[sequelize.col('stockFrom.name'), 'fromName'],
 					'toId',
 					[sequelize.col('stockTo.name'), 'toName'],
+					'supplierId',
 					'description',
 					'createdDate',
 				],

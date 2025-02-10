@@ -10,6 +10,7 @@ const transactionService = new TransactionService(TransactionModel);
 const transactionController = new TransactionController(transactionService);
 
 router.get('/', transactionController.getAll);
+router.get('/items/:id', transactionController.getItems);
 router.post('/', transactionController.create);
 
 export default router;
