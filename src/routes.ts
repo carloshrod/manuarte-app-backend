@@ -11,6 +11,7 @@ import quoteRouter from './modules/quote/routes';
 import shopRouter from './modules/shop/routes';
 import billingRouter from './modules/billing/routes';
 import stockItemRouter from './modules/stock-item/routes';
+import transactionRouter from './modules/transaction/routes';
 import { verifyJWT } from './middlewares/verifyJWT';
 
 const router = Router();
@@ -46,5 +47,6 @@ router.use('/api/v1/quotes', quoteRouter);
 router.use('/api/v1/shops', shopRouter);
 router.use('/api/v1/billings', billingRouter);
 router.use('/api/v1/stock-items', stockItemRouter);
+router.use('/api/v1/transactions', transactionRouter);
 
 export default router;
