@@ -62,19 +62,10 @@ export class TransactionService {
 		try {
 			const { items, ...transactionDataRest } = transactionData;
 
-			const currentDate = new Date();
-			const timestamp = currentDate.getTime();
-			const formattedDate = new Date(timestamp).toLocaleDateString('es-EC', {
-				day: 'numeric',
-				month: 'long',
-				year: 'numeric',
-			});
-			const name = `${transactionData?.type}_${formattedDate}_${timestamp}`;
-
 			const newTransaction = await this.transactionModel.create(
 				{
 					...transactionDataRest,
-					name,
+					name: this.generateName(transactionData?.type),
 					state:
 						transactionData?.type !== TransactionType.TRANSFER
 							? TransactionStatus.SUCCESS
@@ -100,5 +91,17 @@ export class TransactionService {
 			console.error('Error creando transacción');
 			throw error;
 		}
+	};
+
+	private generateName = (transactionType: TransactionType) => {
+		const currentDate = new Date();
+		const timestamp = currentDate.getTime();
+		const formattedDate = new Date(timestamp).toLocaleDateString('es-EC', {
+			day: 'numeric',
+			month: 'long',
+			year: 'numeric',
+		});
+
+		return `${transactionType}_${formattedDate}_${timestamp}`;
 	};
 }

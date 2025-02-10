@@ -4,6 +4,7 @@ import { TransactionItemModel } from '../transaction-item/model';
 import { StockModel } from '../stock/model';
 
 export class TransactionModel extends Model {
+	public type!: string;
 	public supplierId!: string;
 }
 

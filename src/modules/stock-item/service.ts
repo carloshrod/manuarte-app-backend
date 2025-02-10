@@ -98,6 +98,38 @@ export class StockItemService {
 		}
 	};
 
+	getOneById = async (id: string) => {
+		try {
+			const stockItem = await StockItemModel.findByPk(id, {
+				attributes: [
+					'id',
+					'quantity',
+					[sequelize.col('productVariants.name'), 'productVariantName'],
+					[sequelize.col('productVariants.product.name'), 'productName'],
+				],
+				include: [
+					{
+						model: ProductVariantModel,
+						as: 'productVariants',
+						attributes: [],
+						include: [
+							{
+								model: ProductModel,
+								as: 'product',
+								attributes: [],
+							},
+						],
+					},
+				],
+			});
+
+			return stockItem;
+		} catch (error) {
+			console.error('Error obteniendo item de stock por id');
+			throw error;
+		}
+	};
+
 	create = async (stockItemData: CreateStockItemDto) => {
 		const transaction = await sequelize.transaction();
 		try {

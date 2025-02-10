@@ -2,12 +2,15 @@ import { Transaction } from 'sequelize';
 import { StockItemModel } from '../stock-item/model';
 import { TransactionItemModel } from './model';
 import { CreateTransactionItemDto } from './types';
+import { StockItemService } from '../stock-item/service';
 
 export class TransactionItemService {
 	private transactionItemModel;
+	private stockItemService;
 
 	constructor(transactionItemModel: typeof TransactionItemModel) {
 		this.transactionItemModel = transactionItemModel;
+		this.stockItemService = new StockItemService(StockItemModel);
 	}
 
 	create = async (
@@ -17,11 +20,22 @@ export class TransactionItemService {
 	) => {
 		try {
 			const { stockItemId, ...restItem } = transactionItemData;
-			console.log(restItem, stockItemId);
 
-			const stockItemToUpdate = await StockItemModel.findByPk(stockItemId);
+			const stockItemToUpdate =
+				await this.stockItemService.getOneById(stockItemId);
 			if (!stockItemToUpdate) {
-				throw new Error(`No fue posible encontrar el producto ${name}`);
+				throw new Error('No fue posible encontrar el item de stock');
+			}
+
+			if (
+				!isEnter &&
+				Number(restItem.quantity) > Number(stockItemToUpdate?.quantity)
+			) {
+				const { productName, productVariantName } =
+					stockItemToUpdate.dataValues ?? {};
+				throw new Error(
+					`La cantidad a egresar de ${productName} ${productVariantName}, es mayor a la cantidad en stock`,
+				);
 			}
 
 			const newTransactionItem = await this.transactionItemModel.create(

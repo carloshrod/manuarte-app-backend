@@ -1,5 +1,6 @@
 import { Handler } from 'express';
 import { TransactionService } from './service';
+import { TransactionType } from './types';
 
 export class TransactionController {
 	private transactionService;
@@ -31,6 +32,10 @@ export class TransactionController {
 
 				if (result.newTransaction?.supplierId) {
 					message = 'Ingreso por proveedor realizado con éxito';
+				}
+
+				if (result.newTransaction?.type === TransactionType.EXIT) {
+					message = 'Egreso realizado con éxito';
 				}
 
 				res.status(200).json({
