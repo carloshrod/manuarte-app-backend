@@ -2,7 +2,6 @@ import { StockItemModel } from './model';
 import { ProductVariantModel } from '../product-variant/model';
 import { sequelize } from '../../config/database';
 import { ShopModel } from '../shop/model';
-import { StockModel } from '../stock/model';
 import { ProductModel } from '../product/model';
 import { ShopService } from '../shop/service';
 import { CreateStockItemDto } from './types';
@@ -18,7 +17,7 @@ export class StockItemService {
 
 	getAll = async (shopSlug: string) => {
 		try {
-			const shop = await this.shopService.getOne(shopSlug);
+			const shop = await this.shopService.getOneBySlug(shopSlug);
 			if (!shop) {
 				return { status: 400, message: 'Tienda no encontrada' };
 			}
@@ -63,20 +62,8 @@ export class StockItemService {
 		}
 	};
 
-	getOne = async (productVariantId: string, shopId: string) => {
+	getOne = async (productVariantId: string, stockId: string) => {
 		try {
-			const shop = await ShopModel.findByPk(shopId, {
-				attributes: ['id', [sequelize.col('stock.id'), 'stockId']],
-				include: [
-					{
-						model: StockModel,
-						as: 'stock',
-						attributes: [],
-					},
-				],
-			});
-			const stockId = shop?.getDataValue('stockId');
-
 			const stockItem = await this.stockItemModel.findOne({
 				where: { stockId },
 				attributes: ['id', 'quantity'],
@@ -134,7 +121,7 @@ export class StockItemService {
 		const transaction = await sequelize.transaction();
 		try {
 			const { shopSlug, productVariantId, ...stockItemRest } = stockItemData;
-			const shop = await this.shopService.getOne(shopSlug);
+			const shop = await this.shopService.getOneBySlug(shopSlug);
 			if (!shop) {
 				return { status: 400, message: 'Tienda no encontrada' };
 			}
@@ -203,7 +190,7 @@ export class StockItemService {
 				throw new Error('Stock de producto no encontrado');
 			}
 
-			const shop = await this.shopService.getOne(shopSlug);
+			const shop = await this.shopService.getOneBySlug(shopSlug);
 			if (!shop) {
 				return { status: 400, message: 'Tienda no encontrada' };
 			}

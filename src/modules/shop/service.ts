@@ -40,7 +40,7 @@ export class ShopService {
 		}
 	};
 
-	getOne = async (shopSlug: string) => {
+	getOneBySlug = async (shopSlug: string) => {
 		try {
 			const shop = await this.shopModel.findOne({
 				where: { slug: shopSlug },

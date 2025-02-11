@@ -138,7 +138,7 @@ export class ProductVariantService {
 		missingProducts: boolean,
 	) => {
 		try {
-			const shop = await this.shopService.getOne(shopSlug);
+			const shop = await this.shopService.getOneBySlug(shopSlug);
 			if (!shop) {
 				return { status: 400, message: 'Tienda no encontrada' };
 			}

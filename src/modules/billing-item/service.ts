@@ -22,11 +22,11 @@ export class BillingItemService {
 		transaction: Transaction,
 	) => {
 		try {
-			const { quantity, name, productVariantId, shopId } = billingItemData;
+			const { quantity, name, productVariantId, stockId } = billingItemData;
 
 			const stockItemToUpdate = await this.stockItemService.getOne(
 				productVariantId,
-				shopId as string,
+				stockId as string,
 			);
 			if (!stockItemToUpdate) {
 				throw new Error(`No fue posible encontrar el producto ${name}`);
@@ -54,11 +54,11 @@ export class BillingItemService {
 
 	cancel = async ({
 		billingItemData,
-		shopId,
+		stockId,
 		transaction,
 	}: {
 		billingItemData: CreateBillingItemDto;
-		shopId: string;
+		stockId: string;
 		transaction: Transaction;
 	}) => {
 		try {
@@ -66,7 +66,7 @@ export class BillingItemService {
 
 			const stockItemToUpdate = await this.stockItemService.getOne(
 				productVariantId,
-				shopId,
+				stockId,
 			);
 
 			if (!stockItemToUpdate) {

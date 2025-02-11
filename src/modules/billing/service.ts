@@ -9,17 +9,20 @@ import { CustomerService } from '../customer/service';
 import { BillingItemService } from '../billing-item/service';
 import { BillingItemModel } from '../billing-item/model';
 import { AddressModel } from '../address/model';
+import { ShopService } from '../shop/service';
 import { StockModel } from '../stock/model';
 
 export class BillingService {
 	private billingModel;
 	private billingItemService;
 	private customerService;
+	private shopService;
 
 	constructor(billingModel: typeof BillingModel) {
 		this.billingModel = billingModel;
 		this.billingItemService = new BillingItemService(BillingItemModel);
 		this.customerService = new CustomerService(CustomerModel);
+		this.shopService = new ShopService(ShopModel);
 	}
 
 	getAll = async (shopSlug: string) => {
@@ -86,6 +89,7 @@ export class BillingService {
 					[sequelize.col('customer.phoneNumber'), 'phoneNumber'],
 					[sequelize.col('customer.address.location'), 'location'],
 					[sequelize.col('customer.city'), 'city'],
+					[sequelize.col('shop.stock.id'), 'stockId'],
 					'updatedDate',
 				],
 				include: [
@@ -118,6 +122,18 @@ export class BillingService {
 							'quantity',
 							'price',
 							'totalPrice',
+						],
+					},
+					{
+						model: ShopModel,
+						as: 'shop',
+						attributes: [],
+						include: [
+							{
+								model: StockModel,
+								as: 'stock',
+								attributes: [],
+							},
 						],
 					},
 				],
@@ -165,11 +181,15 @@ export class BillingService {
 
 			const { shopSlug, status, paymentMethod, shipping, total, requestedBy } =
 				billingData;
-			const shopId = shopSlug && (await this.getShopId(shopSlug));
+
+			const shop = shopSlug && (await this.shopService.getOneBySlug(shopSlug));
+			if (!shop) {
+				return { status: 400, message: 'Tienda no encontrada' };
+			}
 
 			const newBilling = this.billingModel.build({
 				customerId,
-				shopId,
+				shopId: shop?.dataValues?.id,
 				status,
 				paymentMethod,
 				shipping,
@@ -186,7 +206,7 @@ export class BillingService {
 						id: undefined,
 						productVariantId: item?.productVariantId,
 						billingId: newBilling.id,
-						shopId,
+						stockId: shop?.dataValues?.stockId,
 						currency: item.currency ?? billingData.currency,
 					},
 					transaction,
@@ -206,7 +226,7 @@ export class BillingService {
 					customerName: customerData?.fullName ?? null,
 					dni: customerData?.dni ?? null,
 					updatedDate: newBilling.updatedDate,
-					shopId,
+					shopId: shop?.dataValues?.id,
 				},
 			};
 		} catch (error) {
@@ -242,7 +262,7 @@ export class BillingService {
 			for (const item of result.billing.items) {
 				await this.billingItemService.cancel({
 					billingItemData: item,
-					shopId: result.billing.shopId,
+					stockId: result.billing.stockId,
 					transaction,
 				});
 			}
@@ -276,30 +296,6 @@ export class BillingService {
 			return { status: 404, message: 'Factura no encontrada' };
 		} catch (error) {
 			console.error('Error eliminando factura');
-			throw error;
-		}
-	};
-
-	private getShopId = async (shopSlug: string) => {
-		try {
-			const shop = await ShopModel.findOne({
-				where: { slug: shopSlug },
-				attributes: ['id', [sequelize.col('stock.id'), 'stockId']],
-				include: [
-					{
-						model: StockModel,
-						as: 'stock',
-						attributes: [],
-					},
-				],
-			});
-			if (!shop) {
-				throw new Error('Parece que la tienda no existe');
-			}
-
-			return shop.id;
-		} catch (error) {
-			console.error('Error obteniendo id de la tienda');
 			throw error;
 		}
 	};

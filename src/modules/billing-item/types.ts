@@ -20,6 +20,7 @@ interface BillingItemDto {
 	createdDate: string;
 	updatedDate: string;
 	deletedDate: string;
+	stockId?: string;
 	shopId?: string;
 }
 
