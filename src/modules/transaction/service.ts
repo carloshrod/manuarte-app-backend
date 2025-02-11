@@ -5,8 +5,9 @@ import { TransactionItemService } from '../transaction-item/service';
 import { TransactionModel } from './model';
 import {
 	CreateTransactionDto,
-	TransactionStatus,
+	TransactionState,
 	TransactionType,
+	UpdateTransactionDto,
 } from './types';
 
 export class TransactionService {
@@ -20,9 +21,16 @@ export class TransactionService {
 		);
 	}
 
-	getAll = async () => {
+	getAll = async (toId?: string) => {
 		try {
 			const transactions = await this.transactionModel.findAll({
+				where: toId
+					? {
+							state: TransactionState.PROGRESS,
+							type: TransactionType.TRANSFER,
+							toId,
+						}
+					: undefined,
 				attributes: [
 					'id',
 					'name',
@@ -69,8 +77,8 @@ export class TransactionService {
 					name: this.generateName(transactionData?.type),
 					state:
 						transactionData?.type !== TransactionType.TRANSFER
-							? TransactionStatus.SUCCESS
-							: TransactionStatus.PROGRESS,
+							? TransactionState.SUCCESS
+							: TransactionState.PROGRESS,
 					shippingDate: sequelize.fn('now'),
 				},
 				{ transaction: sqlTransaction },
@@ -78,9 +86,21 @@ export class TransactionService {
 
 			for (const item of items) {
 				await this.transactionItemService.create(
-					{ ...item, transactionId: newTransaction.dataValues.id },
-					transactionData?.type === TransactionType.ENTER,
+					{
+						transactionItemData: {
+							...item,
+							transactionId: newTransaction.dataValues.id,
+						},
+						isEnter: transactionData?.type === TransactionType.ENTER,
+					},
 					sqlTransaction,
+				);
+			}
+
+			if (transactionData?.transferId) {
+				await this.update(
+					{ state: TransactionState.SUCCESS },
+					transactionData?.transferId,
 				);
 			}
 
@@ -90,6 +110,20 @@ export class TransactionService {
 		} catch (error) {
 			await sqlTransaction.rollback();
 			console.error('Error creando transacción');
+			throw error;
+		}
+	};
+
+	update = async (transactionData: UpdateTransactionDto, id: string) => {
+		try {
+			const updatedTransaction = await this.transactionModel.update(
+				{ ...transactionData, updatedDate: sequelize.fn('now') },
+				{ where: { id } },
+			);
+
+			return updatedTransaction;
+		} catch (error) {
+			console.error('Error actualizando transacción');
 			throw error;
 		}
 	};

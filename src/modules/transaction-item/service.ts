@@ -6,6 +6,7 @@ import { StockItemService } from '../stock-item/service';
 import { ProductVariantModel } from '../product-variant/model';
 import { ProductModel } from '../product/model';
 import { sequelize } from '../../config/database';
+import { TransactionModel } from '../transaction/model';
 
 export class TransactionItemService {
 	private transactionItemModel;
@@ -44,7 +45,24 @@ export class TransactionItemService {
 				],
 			});
 
-			return { status: 200, transactionItems };
+			const transaction = await TransactionModel.findByPk(transactionId, {
+				attributes: ['toId'],
+			});
+
+			const formattedItems = [];
+			for (const item of transactionItems) {
+				const stockItem = await this.stockItemService.getOne(
+					item?.dataValues?.productVariantId,
+					transaction?.dataValues?.toId,
+				);
+
+				formattedItems.push({
+					...item.dataValues,
+					stockItemId: stockItem?.dataValues?.id,
+				});
+			}
+
+			return { status: 200, transactionItems: formattedItems };
 		} catch (error) {
 			console.error('Error obteniendo items de transacción');
 			throw error;
@@ -52,8 +70,13 @@ export class TransactionItemService {
 	};
 
 	create = async (
-		transactionItemData: CreateTransactionItemDto,
-		isEnter: boolean,
+		{
+			transactionItemData,
+			isEnter,
+		}: {
+			transactionItemData: CreateTransactionItemDto;
+			isEnter: boolean;
+		},
 		sqlTransaction: Transaction,
 	) => {
 		try {

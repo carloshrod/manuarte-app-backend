@@ -6,7 +6,7 @@ export enum TransactionType {
 	EXIT = 'EXIT',
 }
 
-export enum TransactionStatus {
+export enum TransactionState {
 	SUCCESS = 'SUCCESS',
 	PROGRESS = 'PROGRESS',
 }
@@ -17,6 +17,9 @@ export interface CreateTransactionDto {
 	toId: string;
 	description: string;
 	type: TransactionType;
-	state: TransactionStatus;
+	state: TransactionState;
 	items: CreateTransactionItemDto[];
+	transferId?: string;
 }
+
+export type UpdateTransactionDto = Partial<CreateTransactionDto>;

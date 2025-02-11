@@ -15,9 +15,10 @@ export class TransactionController {
 		);
 	}
 
-	getAll: Handler = async (_req, res, next) => {
+	getAll: Handler = async (req, res, next) => {
 		try {
-			const result = await this.transactionService.getAll();
+			const toId = (req.query.toId as string) || undefined;
+			const result = await this.transactionService.getAll(toId);
 			if (result.status === 200) {
 				res.status(200).json(result.transactions);
 				return;
@@ -57,6 +58,10 @@ export class TransactionController {
 
 				if (result.newTransaction?.type === TransactionType.EXIT) {
 					message = 'Egreso realizado con éxito';
+				}
+
+				if (result.newTransaction?.type === TransactionType.TRANSFER) {
+					message = 'Transferencia en progreso';
 				}
 
 				res.status(200).json({
