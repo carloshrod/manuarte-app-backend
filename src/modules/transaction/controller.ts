@@ -33,7 +33,11 @@ export class TransactionController {
 	getItems: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
-			const result = await this.transactionItemService.getByTransactionId(id);
+			const stockId = (req.query.stockId as string) || '';
+			const result = await this.transactionItemService.getByTransactionId(
+				id,
+				stockId,
+			);
 			if (result.status === 200) {
 				res.status(200).json(result.transactionItems);
 				return;
@@ -64,9 +68,25 @@ export class TransactionController {
 					message = 'Transferencia en progreso';
 				}
 
-				res.status(200).json({
+				res.status(201).json({
 					newTransaction: result.newTransaction,
 					message,
+				});
+			}
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	updateTransfer: Handler = async (req, res, next) => {
+		try {
+			const { id } = req.params;
+			const result = await this.transactionService.update(req.body, id);
+
+			if (result.status === 200) {
+				res.status(200).json({
+					updatedTransaction: result.updatedTransaction,
+					message: 'Transferencia actualizada con éxito',
 				});
 			}
 		} catch (error) {

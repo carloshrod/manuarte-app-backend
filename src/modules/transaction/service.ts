@@ -1,3 +1,4 @@
+import { Transaction } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { StockModel } from '../stock/model';
 import { TransactionItemModel } from '../transaction-item/model';
@@ -101,6 +102,7 @@ export class TransactionService {
 				await this.update(
 					{ state: TransactionState.SUCCESS },
 					transactionData?.transferId,
+					sqlTransaction,
 				);
 			}
 
@@ -114,15 +116,47 @@ export class TransactionService {
 		}
 	};
 
-	update = async (transactionData: UpdateTransactionDto, id: string) => {
+	update = async (
+		transactionData: UpdateTransactionDto,
+		id: string,
+		sqlTransaction?: Transaction,
+	) => {
+		const localSqlTransaction = await sequelize.transaction();
+		const mainSqlTransaction = sqlTransaction ?? localSqlTransaction;
 		try {
-			const updatedTransaction = await this.transactionModel.update(
+			const transactionToUpdate = await this.transactionModel.findByPk(id);
+			if (!transactionToUpdate) {
+				return {
+					status: 400,
+					message: 'Transacción no encontrada',
+				};
+			}
+
+			await transactionToUpdate.update(
 				{ ...transactionData, updatedDate: sequelize.fn('now') },
-				{ where: { id } },
+				{
+					transaction: mainSqlTransaction,
+				},
 			);
 
-			return updatedTransaction;
+			if (
+				transactionData?.items &&
+				transactionToUpdate?.dataValues?.state === TransactionState.PROGRESS
+			) {
+				for (const item of transactionData.items) {
+					await this.transactionItemService.update(item, mainSqlTransaction);
+				}
+			}
+
+			if (!sqlTransaction) {
+				await mainSqlTransaction.commit();
+			}
+
+			return { status: 200, updatedTransaction: transactionToUpdate };
 		} catch (error) {
+			if (!sqlTransaction) {
+				await mainSqlTransaction.rollback();
+			}
 			console.error('Error actualizando transacción');
 			throw error;
 		}

@@ -1,4 +1,5 @@
 export interface TransactionItem {
+	id: string;
 	transactionId: string;
 	productVariantId: string;
 	stockItemId: string;
@@ -8,3 +9,4 @@ export interface TransactionItem {
 }
 
 export type CreateTransactionItemDto = TransactionItem;
+export type UpdateTransactionItemDto = TransactionItem;

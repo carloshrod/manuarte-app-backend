@@ -1,12 +1,11 @@
 import { Transaction } from 'sequelize';
 import { StockItemModel } from '../stock-item/model';
 import { TransactionItemModel } from './model';
-import { CreateTransactionItemDto } from './types';
+import { CreateTransactionItemDto, UpdateTransactionItemDto } from './types';
 import { StockItemService } from '../stock-item/service';
 import { ProductVariantModel } from '../product-variant/model';
 import { ProductModel } from '../product/model';
 import { sequelize } from '../../config/database';
-import { TransactionModel } from '../transaction/model';
 
 export class TransactionItemService {
 	private transactionItemModel;
@@ -17,7 +16,7 @@ export class TransactionItemService {
 		this.stockItemService = new StockItemService(StockItemModel);
 	}
 
-	getByTransactionId = async (transactionId: string) => {
+	getByTransactionId = async (transactionId: string, stockId: string) => {
 		try {
 			const transactionItems = await this.transactionItemModel.findAll({
 				where: { transactionId },
@@ -45,15 +44,11 @@ export class TransactionItemService {
 				],
 			});
 
-			const transaction = await TransactionModel.findByPk(transactionId, {
-				attributes: ['toId'],
-			});
-
 			const formattedItems = [];
 			for (const item of transactionItems) {
 				const stockItem = await this.stockItemService.getOne(
 					item?.dataValues?.productVariantId,
-					transaction?.dataValues?.toId,
+					stockId,
 				);
 
 				formattedItems.push({
@@ -112,13 +107,63 @@ export class TransactionItemService {
 				: Number(stockItemToUpdate?.quantity) - Number(restItem.quantity);
 
 			await stockItemToUpdate.update(
-				{ quantity: newQuantity },
+				{ quantity: newQuantity, updatedDate: sequelize.fn('now') },
 				{ transaction: sqlTransaction },
 			);
 
 			return newTransactionItem;
 		} catch (error) {
 			console.error('Error creando items de transascción');
+			throw error;
+		}
+	};
+
+	update = async (
+		transactionItemData: UpdateTransactionItemDto,
+		sqlTransaction: Transaction,
+	) => {
+		try {
+			const { stockItemId, id, ...restItem } = transactionItemData;
+
+			const stockItemToUpdate =
+				await this.stockItemService.getOneById(stockItemId);
+			if (!stockItemToUpdate) {
+				throw new Error('No fue posible encontrar item de stock');
+			}
+
+			if (Number(restItem.quantity) > Number(restItem.totalQuantity)) {
+				const { productName, productVariantName } =
+					stockItemToUpdate.dataValues ?? {};
+				throw new Error(
+					`La cantidad a transferir de ${productName} ${productVariantName}, es mayor a la cantidad en stock`,
+				);
+			}
+
+			const transactionItemToUpdate =
+				await this.transactionItemModel.findByPk(id);
+			if (!transactionItemToUpdate) {
+				throw new Error('No fue posible encontrar item de transacción');
+			}
+
+			await transactionItemToUpdate.update(
+				{
+					quantity: restItem?.quantity,
+					updatedDate: sequelize.fn('now'),
+				},
+				{ transaction: sqlTransaction },
+			);
+
+			const newQuantity =
+				Number(transactionItemData?.totalQuantity) - Number(restItem.quantity);
+
+			await stockItemToUpdate.update(
+				{ quantity: newQuantity, updatedDate: sequelize.fn('now') },
+				{ transaction: sqlTransaction },
+			);
+
+			return transactionItemToUpdate;
+		} catch (error) {
+			console.error('Error actualizando items de transascción');
 			throw error;
 		}
 	};
