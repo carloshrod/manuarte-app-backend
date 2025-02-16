@@ -7,6 +7,10 @@ import { StockItemService } from '../stock-item/service';
 import { StockItemModel } from '../stock-item/model';
 import { BillingModel } from '../billing/model';
 import { BillingStatus } from '../billing/types';
+import { ProductVariantModel } from '../product-variant/model';
+import { ProductModel } from '../product/model';
+import { ProductCategoryModel } from '../product-category/model';
+import { ProductCategoryGroupModel } from '../product-category-group/model';
 
 export class BillingItemService {
 	private billingItemModel;
@@ -176,99 +180,135 @@ export class BillingItemService {
 			const currentYear = now.getFullYear();
 
 			const targetDate = new Date(currentYear, currentMonth + offset, 1);
-			const targetMonth = targetDate.getMonth();
 			const targetYear = targetDate.getFullYear();
+			const targetMonth = targetDate.getMonth();
 
-			const startOfMonth = new Date(targetYear, targetMonth, 1);
-			const endOfMonth = new Date(targetYear, targetMonth + 1, 0);
+			const topCOP = await this.getGroupByCurrencyAndProductCategoryGroup(
+				'COP',
+				targetYear,
+				targetMonth,
+			);
 
-			const topCOP = await this.billingItemModel.findAll({
-				where: {
-					currency: 'COP',
-					createdDate: {
-						[Op.between]: [startOfMonth, endOfMonth],
-					},
-					name: {
-						[Op.notILike]: '%flete%',
-					},
-				},
-				attributes: [
-					'currency',
-					'productVariantId',
-					[sequelize.fn('MIN', sequelize.col('name')), 'name'],
-					[sequelize.fn('SUM', sequelize.col('totalPrice')), 'totalSales'],
-				],
-				include: [
-					{
-						model: BillingModel,
-						as: 'billing',
-						attributes: [],
-						where: {
-							status: BillingStatus.PAID,
-						},
-					},
-				],
-				group: [
-					'BillingItemModel.currency',
-					'BillingItemModel.productVariantId',
-				],
-				order: [[sequelize.fn('SUM', sequelize.col('totalPrice')), 'DESC']],
-				limit: 5,
-			});
-
-			const topUSD = await this.billingItemModel.findAll({
-				where: {
-					currency: 'USD',
-					createdDate: {
-						[Op.between]: [startOfMonth, endOfMonth],
-					},
-					name: {
-						[Op.notILike]: '%flete%',
-					},
-				},
-				attributes: [
-					'currency',
-					'productVariantId',
-					[sequelize.fn('MIN', sequelize.col('name')), 'name'],
-					[sequelize.fn('SUM', sequelize.col('totalPrice')), 'totalSales'],
-				],
-				include: [
-					{
-						model: BillingModel,
-						as: 'billing',
-						attributes: [],
-						where: {
-							status: BillingStatus.PAID,
-						},
-					},
-				],
-				group: [
-					'BillingItemModel.currency',
-					'BillingItemModel.productVariantId',
-				],
-				order: [[sequelize.fn('SUM', sequelize.col('totalPrice')), 'DESC']],
-				limit: 5,
-			});
+			const topUSD = await this.getGroupByCurrencyAndProductCategoryGroup(
+				'USD',
+				targetYear,
+				targetMonth,
+			);
 
 			const formatResults = (
 				data: BillingItemModel[],
 			): {
-				name: string;
-				productVariantId: string;
-				totalSales: number;
+				productCategoryGroupId: string;
+				productCategoryGroupName: string;
+				totalQuantity: number;
 			}[] =>
 				data.map(item => ({
-					name: item.name,
-					productVariantId: item.productVariantId,
-					totalSales: parseFloat(item.dataValues.totalSales),
+					productCategoryGroupId: item.dataValues.productCategoryGroupId,
+					productCategoryGroupName: item.dataValues.productCategoryGroupName,
+					totalQuantity: parseFloat(item.dataValues.totalQuantity),
 				}));
 
 			return {
 				month: monthNames[targetMonth],
 				year: targetYear,
-				topCOP: formatResults(topCOP),
-				topUSD: formatResults(topUSD),
+				topCOP: topCOP && formatResults(topCOP),
+				topUSD: topUSD && formatResults(topUSD),
 			};
+		} catch (error) {
+			console.error(error);
+			throw error;
+		}
+	};
+
+	private getGroupByCurrencyAndProductCategoryGroup = async (
+		currency: string,
+		targetYear: number,
+		targetMonth: number,
+	) => {
+		try {
+			const startOfMonth = new Date(targetYear, targetMonth, 1);
+			const endOfMonth = new Date(targetYear, targetMonth + 1, 0);
+
+			const result = await this.billingItemModel.findAll({
+				where: {
+					currency,
+					createdDate: {
+						[Op.between]: [startOfMonth, endOfMonth],
+					},
+					name: {
+						[Op.notILike]: '%flete%',
+					},
+				},
+				attributes: [
+					'currency',
+					[
+						sequelize.col(
+							'productVariant.product.productCategory.productCategoryGroup.id',
+						),
+						'productCategoryGroupId',
+					],
+					[
+						sequelize.col(
+							'productVariant.product.productCategory.productCategoryGroup.name',
+						),
+						'productCategoryGroupName',
+					],
+					[
+						sequelize.fn('SUM', sequelize.col('BillingItemModel.quantity')),
+						'totalQuantity',
+					],
+				],
+				include: [
+					{
+						model: BillingModel,
+						as: 'billing',
+						attributes: [],
+						where: {
+							status: BillingStatus.PAID,
+						},
+					},
+					{
+						model: ProductVariantModel,
+						as: 'productVariant',
+						attributes: [],
+						include: [
+							{
+								model: ProductModel,
+								as: 'product',
+								attributes: [],
+								include: [
+									{
+										model: ProductCategoryModel,
+										as: 'productCategory',
+										attributes: [],
+										include: [
+											{
+												model: ProductCategoryGroupModel,
+												as: 'productCategoryGroup',
+												attributes: [],
+											},
+										],
+									},
+								],
+							},
+						],
+					},
+				],
+				group: [
+					'currency',
+					'productVariant.product.productCategory.productCategoryGroup.id',
+					'productVariant.product.productCategory.productCategoryGroup.name',
+				],
+				order: [
+					[
+						sequelize.fn('SUM', sequelize.col('BillingItemModel.quantity')),
+						'DESC',
+					],
+				],
+				limit: 5,
+			});
+
+			return result;
 		} catch (error) {
 			console.error(error);
 			throw error;
