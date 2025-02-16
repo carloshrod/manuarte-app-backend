@@ -66,6 +66,14 @@ ProductCategoryModel.init(
 			allowNull: false,
 			unique: 'UQ_5fd8cbca48258162717427d403a',
 		},
+		productCategoryGroupId: {
+			type: DataTypes.UUID,
+			allowNull: true,
+			references: {
+				model: 'product_category_group',
+				key: 'id',
+			},
+		},
 		createdBy: {
 			type: DataTypes.STRING,
 			allowNull: false,

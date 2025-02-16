@@ -12,6 +12,17 @@ export class ProductCategoryService {
 		this.productModel = ProductModel;
 	}
 
+	getAll = async () => {
+		try {
+			const categories = await this.productCategoryModel.findAll();
+
+			return categories;
+		} catch (error) {
+			console.error('ServiceError obteniendo categorías de producto: ', error);
+			throw error;
+		}
+	};
+
 	create = async ({ name, requestedBy }: CreateProductCategoryDto) => {
 		try {
 			const newProductCategory = this.productCategoryModel.build({
@@ -27,17 +38,6 @@ export class ProductCategoryService {
 			return newProductCategory.dataValues;
 		} catch (error) {
 			console.error('ServiceError creando categoría de producto: ', error);
-			throw error;
-		}
-	};
-
-	getAll = async () => {
-		try {
-			const categories = await this.productCategoryModel.findAll();
-
-			return categories;
-		} catch (error) {
-			console.error('ServiceError obteniendo categorías de producto: ', error);
 			throw error;
 		}
 	};
