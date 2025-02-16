@@ -36,7 +36,6 @@ module.exports = {
 			deletedDate: {
 				type: Sequelize.DATE,
 				allowNull: true,
-				defaultValue: Sequelize.literal('NOW()'),
 			},
 		});
 
@@ -55,6 +54,11 @@ module.exports = {
 	},
 
 	async down(queryInterface) {
+		await queryInterface.removeColumn(
+			'product_category',
+			'productCategoryGroupId',
+		);
+
 		await queryInterface.dropTable('product_category_group');
 	},
 };
