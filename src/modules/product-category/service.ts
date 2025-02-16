@@ -1,4 +1,5 @@
 import { sequelize } from '../../config/database';
+import { ProductCategoryGroupModel } from '../product-category-group/model';
 import { ProductModel } from '../product/model';
 import { ProductCategoryModel } from './model';
 import { CreateProductCategoryDto, UpdateProductCategoryDto } from './types';
@@ -14,7 +15,18 @@ export class ProductCategoryService {
 
 	getAll = async () => {
 		try {
-			const categories = await this.productCategoryModel.findAll();
+			const categories = await this.productCategoryModel.findAll({
+				attributes: {
+					include: [[sequelize.col('productCategoryGroup.name'), 'groupName']],
+				},
+				include: [
+					{
+						model: ProductCategoryGroupModel,
+						as: 'productCategoryGroup',
+						attributes: [],
+					},
+				],
+			});
 
 			return categories;
 		} catch (error) {
