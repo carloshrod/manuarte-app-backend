@@ -2,9 +2,9 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { RoleModel } from '../role/model';
 import { PermissionModel } from '../permission/model';
-import { UserPermissionModel } from '../user-permission/model';
 import bcrypt from 'bcrypt';
 import { ShopModel } from '../shop/model';
+import { UserPermissionModel } from '../associations/user-permission-model';
 
 export class UserModel extends Model {
 	public id!: string;
