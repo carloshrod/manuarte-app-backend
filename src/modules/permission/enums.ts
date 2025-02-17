@@ -28,11 +28,11 @@ export enum BillingPermissions {
 	BILLING_DELETE = 'billing-delete',
 }
 
-export enum EstimatePermissions {
-	ESTIMATE_READ = 'estimate-read',
-	ESTIMATE_CREATE = 'estimate-create',
-	ESTIMATE_UPDATE = 'estimate-update',
-	ESTIMATE_DELETE = 'estimate-delete',
+export enum QuotePermissions {
+	QUOTE_READ = 'quote-read',
+	QUOTE_CREATE = 'quote-create',
+	QUOTE_UPDATE = 'quote-update',
+	QUOTE_DELETE = 'quote-delete',
 }
 
 export enum PermissionPermissions {
@@ -42,11 +42,11 @@ export enum PermissionPermissions {
 	PERMISSION_DELETE = 'permission-delete',
 }
 
-export enum StockPermissions {
-	STOCK_READ = 'stock-read',
-	STOCK_CREATE = 'stock-create',
-	STOCK_UPDATE = 'stock-update',
-	STOCK_DELETE = 'stock-delete',
+export enum StockItemPermissions {
+	STOCK_ITEM_READ = 'stock-item-read',
+	STOCK_ITEM_CREATE = 'stock-item-create',
+	STOCK_ITEM_UPDATE = 'stock-item-update',
+	STOCK_ITEM_DELETE = 'stock-item-delete',
 }
 
 export enum TransactionPermissions {
