@@ -5,17 +5,18 @@
 module.exports = {
 	async up(queryInterface) {
 		await queryInterface.bulkDelete('permission', null, {});
-		
+
 		const items = [
 			'product',
 			'user',
 			'customer',
 			'billing',
-			'estimate',
+			'quote',
 			'permission',
-			'stock',
+			'stock-item',
 			'transaction',
 			'dashboard',
+			'shop',
 		];
 
 		await queryInterface.bulkInsert(
