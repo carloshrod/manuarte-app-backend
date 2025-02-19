@@ -29,6 +29,7 @@ export class StockItemService {
 					[sequelize.col('productVariants.product.name'), 'productName'],
 					[sequelize.col('productVariants.name'), 'productVariantName'],
 					[sequelize.col('productVariants.id'), 'productVariantId'],
+					[sequelize.col('productVariants.vId'), 'vId'],
 					'currency',
 					'price',
 					'quantity',
