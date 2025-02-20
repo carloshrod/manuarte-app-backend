@@ -8,7 +8,7 @@ module.exports = {
 			'permission',
 			[
 				{
-					name: 'transaction-production',
+					name: 'transaction-supplier',
 					createdDate: new Date(),
 					updatedDate: new Date(),
 				},
@@ -20,7 +20,7 @@ module.exports = {
 	async down(queryInterface) {
 		await queryInterface.bulkDelete(
 			'permission',
-			{ name: ['transaction-production'] },
+			{ name: ['transaction-supplier'] },
 			{},
 		);
 	},
