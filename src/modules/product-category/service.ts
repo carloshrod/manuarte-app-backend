@@ -26,6 +26,7 @@ export class ProductCategoryService {
 						attributes: [],
 					},
 				],
+				order: [['cId', 'ASC']],
 			});
 
 			return categories;
