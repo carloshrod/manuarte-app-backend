@@ -40,6 +40,7 @@ export class ProductVariantService {
 						model: this.productModel,
 						as: 'product',
 						attributes: [],
+						where: { deletedDate: null },
 						include: [
 							{
 								model: this.productCategoryModel,
@@ -199,6 +200,7 @@ export class ProductVariantService {
 							model: this.productModel,
 							as: 'product',
 							attributes: [],
+							where: { deletedDate: null },
 						},
 						{
 							model: StockItemModel,
@@ -268,6 +270,7 @@ export class ProductVariantService {
 						model: this.productModel,
 						as: 'product',
 						attributes: [],
+						where: { deletedDate: null },
 					},
 				],
 			});

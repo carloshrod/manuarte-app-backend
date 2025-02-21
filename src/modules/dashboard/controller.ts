@@ -17,8 +17,12 @@ export class DashboardController {
 
 	getStats: Handler = async (req, res, next) => {
 		try {
-			const productVariantsCount = await this.productVariantModel.count();
-			const customersCount = await this.customerModel.count();
+			const productVariantsCount = await this.productVariantModel.count({
+				where: { deletedDate: null },
+			});
+			const customersCount = await this.customerModel.count({
+				where: { deletedDate: null },
+			});
 			const sales = await this.billingItemService.getMonthlySales();
 			const topSalesCurrentMonth =
 				await this.billingItemService.getTopSalesProducts(0);

@@ -124,6 +124,14 @@ export class BillingItemService {
 						as: 'billingItems',
 						attributes: [],
 						required: true,
+						include: [
+							{
+								model: ProductVariantModel,
+								as: 'productVariant',
+								attributes: [],
+								where: { deletedDate: null },
+							},
+						],
 					},
 				],
 				group: [

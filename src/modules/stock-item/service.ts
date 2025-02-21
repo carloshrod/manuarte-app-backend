@@ -41,6 +41,7 @@ export class StockItemService {
 						model: ProductVariantModel,
 						as: 'productVariants',
 						attributes: [],
+						where: { deletedDate: null },
 						required: true,
 						through: { attributes: [] },
 						include: [
