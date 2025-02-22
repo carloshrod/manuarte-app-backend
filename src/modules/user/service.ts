@@ -180,6 +180,7 @@ export class UserService {
 		try {
 			const userDeleted = await this.personModel.destroy({
 				where: { id: personId },
+				force: true,
 			});
 
 			if (userDeleted === 1) {
