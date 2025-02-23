@@ -177,18 +177,23 @@ export class UserService {
 	};
 
 	delete = async (personId: string) => {
+		const transaction = await sequelize.transaction();
 		try {
-			const userDeleted = await this.personModel.destroy({
-				where: { id: personId },
-				force: true,
+			await this.personModel.destroy({ where: { id: personId }, transaction });
+
+			const userDeleted = await this.userModel.destroy({
+				where: { personId },
+				transaction,
 			});
 
 			if (userDeleted === 1) {
+				await transaction.commit();
 				return { status: 200, message: 'Usuario eliminado con éxito' };
 			}
 
 			return { status: 404, message: 'Usuario no encontrado' };
 		} catch (error) {
+			await transaction.rollback();
 			console.error(error);
 			throw error;
 		}

@@ -94,7 +94,11 @@ UserModel.init(
 		sequelize,
 		tableName: 'user',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		paranoid: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_cace4a159ff9f2512dd42373760',
