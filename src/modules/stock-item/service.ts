@@ -54,7 +54,7 @@ export class StockItemService {
 						],
 					},
 				],
-				order: [['updatedDate', 'DESC']],
+				order: [['productName', 'ASC']],
 			});
 
 			return { status: 200, stockItems };
