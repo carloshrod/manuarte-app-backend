@@ -68,7 +68,7 @@ export class CustomerService {
 			const { email, phoneNumber, city } = restCustomer;
 			const customer = await this.customerModel.create(
 				{
-					email,
+					email: email?.length > 0 ? email : undefined,
 					phoneNumber,
 					city,
 					personId: person.id,
@@ -126,7 +126,11 @@ export class CustomerService {
 
 			await personToUpdate.update({ fullName, dni }, { transaction });
 			await customerToUpdate.update(
-				{ email, phoneNumber, city },
+				{
+					email: email?.length > 0 ? email : undefined,
+					phoneNumber,
+					city,
+				},
 				{ transaction },
 			);
 			await this.addressModel.update(
