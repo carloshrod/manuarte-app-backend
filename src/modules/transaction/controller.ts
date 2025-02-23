@@ -18,7 +18,9 @@ export class TransactionController {
 	getAll: Handler = async (req, res, next) => {
 		try {
 			const toId = (req.query.toId as string) || undefined;
-			const result = await this.transactionService.getAll(toId);
+			const stockId = (req.query.stockId as string) || undefined;
+
+			const result = await this.transactionService.getAll(toId, stockId);
 			if (result.status === 200) {
 				res.status(200).json(result.transactions);
 				return;

@@ -10,6 +10,7 @@ import {
 	TransactionType,
 	UpdateTransactionDto,
 } from './types';
+import { Op } from 'sequelize';
 
 export class TransactionService {
 	private transactionModel;
@@ -22,16 +23,26 @@ export class TransactionService {
 		);
 	}
 
-	getAll = async (toId?: string) => {
+	getAll = async (toId?: string, stockId?: string) => {
 		try {
+			let condition = undefined;
+
+			if (toId) {
+				condition = {
+					state: TransactionState.PROGRESS,
+					type: TransactionType.TRANSFER,
+					toId,
+				};
+			}
+
+			if (stockId) {
+				condition = {
+					[Op.or]: [{ fromId: stockId }, { toId: stockId }],
+				};
+			}
+
 			const transactions = await this.transactionModel.findAll({
-				where: toId
-					? {
-							state: TransactionState.PROGRESS,
-							type: TransactionType.TRANSFER,
-							toId,
-						}
-					: undefined,
+				where: condition,
 				attributes: [
 					'id',
 					'name',
