@@ -38,6 +38,7 @@ export class BillingService {
 					'serialNumber',
 					'status',
 					'paymentMethod',
+					'total',
 					'updatedDate',
 					'customerId',
 					[sequelize.col('customer.person.fullName'), 'customerName'],
@@ -193,7 +194,7 @@ export class BillingService {
 				status,
 				paymentMethod,
 				shipping,
-				total,
+				total: Number(total) - Number(shipping),
 				createdBy: requestedBy,
 			});
 			await newBilling.generateSerialNumber();
@@ -222,6 +223,7 @@ export class BillingService {
 					serialNumber: newBilling.serialNumber,
 					status,
 					paymentMethod,
+					total: newBilling.total,
 					customerId,
 					customerName: customerData?.fullName ?? null,
 					dni: customerData?.dni ?? null,

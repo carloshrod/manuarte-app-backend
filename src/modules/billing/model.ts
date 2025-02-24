@@ -8,6 +8,7 @@ import { Op } from 'sequelize';
 export class BillingModel extends Model {
 	public id!: string;
 	public serialNumber!: string;
+	public total!: number;
 	public updatedDate!: string;
 
 	async generateSerialNumber() {
