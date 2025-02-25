@@ -39,6 +39,7 @@ export class BillingService {
 					'status',
 					'paymentMethod',
 					'total',
+					'createdDate',
 					'updatedDate',
 					'customerId',
 					[sequelize.col('customer.person.fullName'), 'customerName'],
