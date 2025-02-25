@@ -78,7 +78,7 @@ QuoteModel.init(
 			allowNull: false,
 		},
 		shipping: {
-			type: DataTypes.INTEGER,
+			type: DataTypes.DOUBLE,
 			allowNull: true,
 		},
 		createdBy: {
