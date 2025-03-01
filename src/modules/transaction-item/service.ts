@@ -54,6 +54,7 @@ export class TransactionItemService {
 				formattedItems.push({
 					...item.dataValues,
 					stockItemId: stockItem?.dataValues?.id,
+					stockItemQuantity: stockItem?.dataValues?.quantity,
 				});
 			}
 
@@ -131,7 +132,17 @@ export class TransactionItemService {
 				throw new Error('No fue posible encontrar item de stock');
 			}
 
-			if (Number(restItem.quantity) > Number(restItem.totalQuantity)) {
+			const transactionItemToUpdate =
+				await this.transactionItemModel.findByPk(id);
+			if (!transactionItemToUpdate) {
+				throw new Error('No fue posible encontrar item de transacción');
+			}
+
+			if (
+				Number(restItem.quantity) >
+				Number(transactionItemToUpdate?.dataValues?.quantity) +
+					Number(stockItemToUpdate?.dataValues?.quantity)
+			) {
 				const { productName, productVariantName } =
 					stockItemToUpdate.dataValues ?? {};
 				throw new Error(
@@ -139,11 +150,10 @@ export class TransactionItemService {
 				);
 			}
 
-			const transactionItemToUpdate =
-				await this.transactionItemModel.findByPk(id);
-			if (!transactionItemToUpdate) {
-				throw new Error('No fue posible encontrar item de transacción');
-			}
+			const newStockItemQuantity =
+				Number(transactionItemToUpdate?.dataValues?.quantity) +
+				Number(stockItemToUpdate?.dataValues?.quantity) -
+				Number(restItem?.quantity);
 
 			await transactionItemToUpdate.update(
 				{
@@ -153,11 +163,11 @@ export class TransactionItemService {
 				{ transaction: sqlTransaction },
 			);
 
-			const newQuantity =
-				Number(transactionItemData?.totalQuantity) - Number(restItem.quantity);
-
 			await stockItemToUpdate.update(
-				{ quantity: newQuantity, updatedDate: sequelize.fn('now') },
+				{
+					quantity: newStockItemQuantity,
+					updatedDate: sequelize.fn('now'),
+				},
 				{ transaction: sqlTransaction },
 			);
 

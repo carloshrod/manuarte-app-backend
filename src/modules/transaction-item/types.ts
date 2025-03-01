@@ -6,6 +6,7 @@ export interface TransactionItem {
 	quantity: number;
 	success: boolean;
 	totalQuantity: number;
+	stockItemQuantity: number;
 }
 
 export type CreateTransactionItemDto = TransactionItem;
