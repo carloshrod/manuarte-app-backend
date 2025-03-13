@@ -109,43 +109,55 @@ export class CustomerService {
 		}
 	};
 
-	update = async (customerData: UpdateCustomerDto) => {
-		const transaction = await sequelize.transaction();
+	update = async (
+		customerData: UpdateCustomerDto,
+		transaction?: Transaction,
+	) => {
+		const localTransaction = transaction || (await sequelize.transaction());
 		try {
 			const { personId, ...rest } = customerData;
 
-			const personToUpdate = await this.personModel.findByPk(personId);
+			const personToUpdate = await this.personModel.findByPk(personId, {
+				transaction: localTransaction,
+			});
 			const customerToUpdate = await this.customerModel.findOne({
 				where: { personId },
+				transaction: localTransaction,
 			});
 			if (!personToUpdate || !customerToUpdate) {
-				return { status: 404, message: 'Usuario no encontrado' };
+				throw new Error('Usuario no encontrado');
 			}
 
 			const { fullName, dni, email, phoneNumber, city, location } = rest;
 
-			await personToUpdate.update({ fullName, dni }, { transaction });
+			await personToUpdate.update(
+				{ fullName, dni },
+				{ transaction: localTransaction },
+			);
 			await customerToUpdate.update(
 				{
 					email: email?.length > 0 ? email : undefined,
 					phoneNumber,
 					city,
 				},
-				{ transaction },
+				{ transaction: localTransaction },
 			);
 			await this.addressModel.update(
 				{ location },
-				{ where: { customerId: customerToUpdate.id }, transaction },
+				{
+					where: { customerId: customerToUpdate.id },
+					transaction: localTransaction,
+				},
 			);
 
-			await transaction.commit();
+			if (!transaction) await localTransaction.commit();
 
 			return {
 				status: 200,
 				updatedCustomer: { ...customerData, id: customerToUpdate.id },
 			};
 		} catch (error) {
-			await transaction.rollback();
+			if (!transaction) await localTransaction.rollback();
 			console.error('***************** Error editando customer: ');
 			if (
 				error instanceof Error &&

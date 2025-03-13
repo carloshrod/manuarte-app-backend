@@ -38,32 +38,38 @@ export class QuoteItemService {
 		}
 	};
 
-	updateItems = async (items: CreateQuoteItemDto[], quoteId: string) => {
+	updateItems = async (
+		items: CreateQuoteItemDto[],
+		quoteId: string,
+		transaction: Transaction,
+	) => {
 		try {
 			const existingItems = await this.getItemsByQuoteId(quoteId);
-			const itemIds = [];
+			const existingItemIds = new Set(existingItems.map(item => item.id));
+			const itemIds = new Set();
 
 			for (const item of items) {
-				if (item?.id) {
+				if (item?.id && existingItemIds.has(item.id)) {
 					await this.quoteItemModel.update(
 						{ ...item },
-						{ where: { id: item.id } },
+						{ where: { id: item.id }, transaction },
 					);
-					itemIds.push(item.id);
+					itemIds.add(item.id);
 				} else {
-					const newItem = await this.quoteItemModel.create({
-						...item,
-						quoteId,
-					});
-					itemIds.push(newItem.id);
+					const newItem = await this.quoteItemModel.create(
+						{
+							...item,
+							quoteId,
+						},
+						{ transaction },
+					);
+					itemIds.add(newItem.id);
 				}
 			}
 
-			if (itemIds?.length > 0 && existingItems?.length > 0) {
-				for (const existingItem of existingItems) {
-					if (!itemIds.includes(existingItem.id)) {
-						await existingItem.destroy();
-					}
+			for (const existingItem of existingItems) {
+				if (!itemIds.has(existingItem.id)) {
+					await existingItem.destroy({ transaction });
 				}
 			}
 		} catch (error) {

@@ -6,7 +6,7 @@ export type MonthlySalesData = {
 	totalSales: number;
 };
 
-interface BillingItemDto {
+export interface BillingItemDto {
 	id: string;
 	billingId: string;
 	productVariantId: string;

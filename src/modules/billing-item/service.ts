@@ -47,7 +47,10 @@ export class BillingItemService {
 			);
 
 			const newQuantity = Number(stockItemToUpdate?.quantity) - quantity;
-			await stockItemToUpdate.update({ quantity: newQuantity });
+			await stockItemToUpdate.update(
+				{ quantity: newQuantity },
+				{ transaction },
+			);
 
 			return newBillingItem;
 		} catch (error) {

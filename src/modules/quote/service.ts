@@ -154,6 +154,8 @@ export class QuoteService {
 					transaction,
 				);
 				customerId = result.customer.id;
+			} else if (customerData?.personId) {
+				await this.customerService.update(customerData, transaction);
 			}
 
 			const { status, shipping, shopSlug, requestedBy } = quoteData;
@@ -217,41 +219,49 @@ export class QuoteService {
 		quoteData: UpdateQuoteDto;
 		customerData: UpdateCustomerDto;
 	}) => {
+		const transaction = await sequelize.transaction();
 		try {
 			let customerInfo;
 			if (customerData?.personId) {
-				customerInfo = await this.customerService.update(customerData);
-				if (!customerInfo)
-					return {
-						status: 400,
-						message: 'Cliente no encontrado',
-					};
+				customerInfo = await this.customerService.update(
+					customerData,
+					transaction,
+				);
+				if (!customerInfo) {
+					throw new Error('Cliente no encontrado');
+				}
 			}
 
-			const quoteToUpdate = await this.quoteModel.findByPk(quoteData.id);
-			if (!quoteToUpdate)
-				return {
-					status: 400,
-					message: 'Cotización no encontrada',
-				};
-
-			await quoteToUpdate.update({
-				customerId: customerData?.customerId,
-				status: quoteData?.status,
-				currency: quoteData?.currency,
-				shipping: quoteData?.shipping,
-				requestedBy: quoteData?.requestedBy,
-				updatedDate: sequelize.fn('now'),
+			const quoteToUpdate = await this.quoteModel.findByPk(quoteData.id, {
+				transaction,
 			});
+			if (!quoteToUpdate) {
+				throw new Error('Cotización no encontrada');
+			}
+
+			await quoteToUpdate.update(
+				{
+					customerId: customerData?.customerId,
+					status: quoteData?.status,
+					currency: quoteData?.currency,
+					shipping: quoteData?.shipping,
+					requestedBy: quoteData?.requestedBy,
+					updatedDate: sequelize.fn('now'),
+				},
+				{ transaction },
+			);
 
 			if (quoteData?.items?.length > 0) {
-				await this.quoteItemService.updateItems(quoteData?.items, quoteData.id);
+				await this.quoteItemService.updateItems(
+					quoteData?.items,
+					quoteData.id,
+					transaction,
+				);
 			} else {
-				return {
-					status: 400,
-					message: 'La cotización debe tener al menos 1 item',
-				};
+				throw new Error('La cotización debe tener al menos 1 item');
 			}
+
+			await transaction.commit();
 
 			return {
 				status: 200,
@@ -266,6 +276,7 @@ export class QuoteService {
 				},
 			};
 		} catch (error) {
+			await transaction.rollback();
 			console.error('Error actualizando cotización');
 			throw error;
 		}

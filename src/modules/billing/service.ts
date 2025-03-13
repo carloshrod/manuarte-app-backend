@@ -186,6 +186,7 @@ export class BillingService {
 
 			const shop = shopSlug && (await this.shopService.getOneBySlug(shopSlug));
 			if (!shop) {
+				await transaction.rollback();
 				return { status: 400, message: 'Tienda no encontrada' };
 			}
 
@@ -261,6 +262,13 @@ export class BillingService {
 		const transaction = await sequelize.transaction();
 		try {
 			const result = await this.getOne(serialNumber);
+
+			if (
+				!Array.isArray(result.billing.items) ||
+				result.billing.items.length === 0
+			) {
+				throw new Error('No hay ítems en la factura');
+			}
 
 			for (const item of result.billing.items) {
 				await this.billingItemService.cancel({

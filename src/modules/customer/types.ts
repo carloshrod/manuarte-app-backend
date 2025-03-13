@@ -6,8 +6,7 @@ export interface CreateCustomerDto extends PersonDto {
 	location: string;
 	city: string;
 	customerId?: string;
+	personId?: string;
 }
 
-export interface UpdateCustomerDto extends CreateCustomerDto {
-	personId: string;
-}
+export type UpdateCustomerDto = CreateCustomerDto;
