@@ -132,8 +132,8 @@ export class TransactionService {
 		id: string,
 		sqlTransaction?: Transaction,
 	) => {
-		const localSqlTransaction = await sequelize.transaction();
-		const mainSqlTransaction = sqlTransaction ?? localSqlTransaction;
+		const mainSqlTransaction =
+			sqlTransaction || (await sequelize.transaction());
 		try {
 			const transactionToUpdate = await this.transactionModel.findByPk(id, {
 				transaction: mainSqlTransaction,
