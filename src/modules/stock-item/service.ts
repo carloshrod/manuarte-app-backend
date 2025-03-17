@@ -5,6 +5,7 @@ import { ShopModel } from '../shop/model';
 import { ProductModel } from '../product/model';
 import { ShopService } from '../shop/service';
 import { CreateStockItemDto } from './types';
+import { Transaction } from 'sequelize';
 
 export class StockItemService {
 	private stockItemModel;
@@ -87,7 +88,7 @@ export class StockItemService {
 		}
 	};
 
-	getOneById = async (id: string) => {
+	getOneById = async (id: string, transaction?: Transaction) => {
 		try {
 			const stockItem = await StockItemModel.findByPk(id, {
 				attributes: [
@@ -110,6 +111,7 @@ export class StockItemService {
 						],
 					},
 				],
+				transaction,
 			});
 
 			return stockItem;
@@ -123,9 +125,10 @@ export class StockItemService {
 		const transaction = await sequelize.transaction();
 		try {
 			const { shopSlug, productVariantId, ...stockItemRest } = stockItemData;
+
 			const shop = await this.shopService.getOneBySlug(shopSlug);
 			if (!shop) {
-				return { status: 400, message: 'Tienda no encontrada' };
+				throw new Error('Tienda no encontrada');
 			}
 
 			const newStockItem = await this.stockItemModel.create(
@@ -137,9 +140,6 @@ export class StockItemService {
 				},
 				{ transaction },
 			);
-			if (!newStockItem) {
-				throw new Error('Falló la creación del stock de producto');
-			}
 
 			const productVariant = await ProductVariantModel.findByPk(
 				productVariantId,
@@ -156,11 +156,13 @@ export class StockItemService {
 							attributes: [],
 						},
 					],
+					transaction,
 				},
 			);
-
 			if (!productVariant) {
-				throw new Error('El ProductVariant con el ID proporcionado no existe');
+				throw new Error(
+					'La presentación de producto con el ID proporcionado no existe',
+				);
 			}
 
 			await newStockItem.addProductVariant(productVariantId, { transaction });
@@ -194,7 +196,7 @@ export class StockItemService {
 
 			const shop = await this.shopService.getOneBySlug(shopSlug);
 			if (!shop) {
-				return { status: 400, message: 'Tienda no encontrada' };
+				throw new Error('Tienda no encontrada');
 			}
 
 			await stockItemToUpdate.update({
@@ -219,9 +221,10 @@ export class StockItemService {
 					],
 				},
 			);
-
 			if (!productVariant) {
-				throw new Error('El ProductVariant con el ID proporcionado no existe');
+				throw new Error(
+					'La presentación de producto con el ID proporcionado no existe',
+				);
 			}
 
 			return {

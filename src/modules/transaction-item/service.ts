@@ -78,8 +78,10 @@ export class TransactionItemService {
 		try {
 			const { stockItemId, ...restItem } = transactionItemData;
 
-			const stockItemToUpdate =
-				await this.stockItemService.getOneById(stockItemId);
+			const stockItemToUpdate = await this.stockItemService.getOneById(
+				stockItemId,
+				sqlTransaction,
+			);
 			if (!stockItemToUpdate) {
 				throw new Error('No fue posible encontrar el item de stock');
 			}
@@ -114,7 +116,7 @@ export class TransactionItemService {
 
 			return newTransactionItem;
 		} catch (error) {
-			console.error('Error creando items de transascción');
+			console.error('Error creando items de transacción');
 			throw error;
 		}
 	};
@@ -126,14 +128,18 @@ export class TransactionItemService {
 		try {
 			const { stockItemId, id, ...restItem } = transactionItemData;
 
-			const stockItemToUpdate =
-				await this.stockItemService.getOneById(stockItemId);
+			const stockItemToUpdate = await this.stockItemService.getOneById(
+				stockItemId,
+				sqlTransaction,
+			);
 			if (!stockItemToUpdate) {
 				throw new Error('No fue posible encontrar item de stock');
 			}
 
-			const transactionItemToUpdate =
-				await this.transactionItemModel.findByPk(id);
+			const transactionItemToUpdate = await this.transactionItemModel.findByPk(
+				id,
+				{ transaction: sqlTransaction },
+			);
 			if (!transactionItemToUpdate) {
 				throw new Error('No fue posible encontrar item de transacción');
 			}

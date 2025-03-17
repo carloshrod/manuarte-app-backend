@@ -110,7 +110,7 @@ export class TransactionService {
 			}
 
 			if (transactionData?.transferId) {
-				await this.update(
+				await this.updateTransfer(
 					{ state: TransactionState.SUCCESS },
 					transactionData?.transferId,
 					sqlTransaction,
@@ -127,7 +127,7 @@ export class TransactionService {
 		}
 	};
 
-	update = async (
+	updateTransfer = async (
 		transactionData: UpdateTransactionDto,
 		id: string,
 		sqlTransaction?: Transaction,
@@ -135,12 +135,11 @@ export class TransactionService {
 		const localSqlTransaction = await sequelize.transaction();
 		const mainSqlTransaction = sqlTransaction ?? localSqlTransaction;
 		try {
-			const transactionToUpdate = await this.transactionModel.findByPk(id);
+			const transactionToUpdate = await this.transactionModel.findByPk(id, {
+				transaction: mainSqlTransaction,
+			});
 			if (!transactionToUpdate) {
-				return {
-					status: 400,
-					message: 'Transacción no encontrada',
-				};
+				throw new Error('Transferencia no encontrada');
 			}
 
 			await transactionToUpdate.update(

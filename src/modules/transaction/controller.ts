@@ -56,7 +56,7 @@ export class TransactionController {
 			const result = await this.transactionService.create(req.body);
 
 			if (result.status === 200) {
-				let message;
+				let message = 'Ingreso realizado con éxito';
 
 				if (result.newTransaction?.supplierId) {
 					message = 'Ingreso por proveedor realizado con éxito';
@@ -83,7 +83,7 @@ export class TransactionController {
 	updateTransfer: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
-			const result = await this.transactionService.update(req.body, id);
+			const result = await this.transactionService.updateTransfer(req.body, id);
 
 			if (result.status === 200) {
 				res.status(200).json({
