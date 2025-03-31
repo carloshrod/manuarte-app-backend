@@ -36,6 +36,20 @@ CustomerModel.init(
 			type: DataTypes.STRING,
 			allowNull: true,
 		},
+		createdDate: {
+			type: DataTypes.DATE,
+			allowNull: false,
+			defaultValue: sequelize.fn('now'),
+		},
+		updatedDate: {
+			type: DataTypes.DATE,
+			allowNull: false,
+			defaultValue: sequelize.fn('now'),
+		},
+		deletedDate: {
+			type: DataTypes.DATE,
+			allowNull: true,
+		},
 	},
 	{
 		sequelize,

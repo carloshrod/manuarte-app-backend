@@ -54,7 +54,10 @@ ShopModel.init(
 		sequelize,
 		tableName: 'shop',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_ad47b7c6121fe31cb4b05438e44',

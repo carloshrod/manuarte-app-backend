@@ -44,7 +44,10 @@ RoleModel.init(
 		sequelize,
 		tableName: 'role',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_58888debdf048d2dfe459aa59da',

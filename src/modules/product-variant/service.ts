@@ -99,7 +99,6 @@ export class ProductVariantService {
 			await productVariantToUpdate.update({
 				name,
 				updatedBy: requestedBy,
-				updatedDate: sequelize.fn('now'),
 			});
 
 			return productVariantToUpdate.dataValues;

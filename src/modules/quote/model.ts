@@ -120,7 +120,10 @@ QuoteModel.init(
 		sequelize,
 		tableName: 'quote',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_75c20205845608fdb6725d7b130',

@@ -143,7 +143,7 @@ export class TransactionService {
 			}
 
 			await transactionToUpdate.update(
-				{ ...transactionData, updatedDate: sequelize.fn('now') },
+				{ ...transactionData },
 				{
 					transaction: mainSqlTransaction,
 				},

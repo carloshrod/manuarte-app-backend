@@ -58,7 +58,10 @@ AddressModel.init(
 		sequelize,
 		tableName: 'address',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_d92de1f82754668b5f5f5dd4fd5',

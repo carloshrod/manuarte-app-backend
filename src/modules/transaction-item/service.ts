@@ -110,7 +110,7 @@ export class TransactionItemService {
 				: Number(stockItemToUpdate?.quantity) - Number(restItem.quantity);
 
 			await stockItemToUpdate.update(
-				{ quantity: newQuantity, updatedDate: sequelize.fn('now') },
+				{ quantity: newQuantity },
 				{ transaction: sqlTransaction },
 			);
 
@@ -162,18 +162,12 @@ export class TransactionItemService {
 				Number(restItem?.quantity);
 
 			await transactionItemToUpdate.update(
-				{
-					quantity: restItem?.quantity,
-					updatedDate: sequelize.fn('now'),
-				},
+				{ quantity: restItem?.quantity },
 				{ transaction: sqlTransaction },
 			);
 
 			await stockItemToUpdate.update(
-				{
-					quantity: newStockItemQuantity,
-					updatedDate: sequelize.fn('now'),
-				},
+				{ quantity: newStockItemQuantity },
 				{ transaction: sqlTransaction },
 			);
 

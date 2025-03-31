@@ -42,7 +42,10 @@ PermissionModel.init(
 		sequelize,
 		tableName: 'permission',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_2391da0f3ffdb3315e96908b776',

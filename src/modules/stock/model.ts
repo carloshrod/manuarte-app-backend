@@ -53,7 +53,10 @@ StockModel.init(
 		sequelize,
 		tableName: 'stock',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_092bc1fc7d860426a1dec5aa8e9',

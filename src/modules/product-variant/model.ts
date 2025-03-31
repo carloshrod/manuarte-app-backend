@@ -110,7 +110,10 @@ ProductVariantModel.init(
 		sequelize,
 		tableName: 'product_variant',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_738bfa62f918ad1436cb5c8ee5b',

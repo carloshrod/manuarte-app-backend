@@ -43,7 +43,10 @@ ProvinceModel.init(
 		sequelize,
 		tableName: 'province',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_4f461cb46f57e806516b7073659',

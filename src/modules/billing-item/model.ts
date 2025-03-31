@@ -73,7 +73,10 @@ BillingItemModel.init(
 		sequelize,
 		tableName: 'billing_item',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_cd7d33c1c91b479709adc5328b2',

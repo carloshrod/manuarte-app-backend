@@ -73,7 +73,10 @@ TransactionItemModel.init(
 		sequelize,
 		tableName: 'transaction_item',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_b40595241a69876722f692d041f',

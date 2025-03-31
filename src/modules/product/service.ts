@@ -91,7 +91,6 @@ export class ProductService {
 			await productToUpdate.update({
 				...productData,
 				updatedBy: requestedBy,
-				updatedDate: sequelize.fn('now'),
 			});
 
 			const updatedProductVariant = await this.productVariantService.update({

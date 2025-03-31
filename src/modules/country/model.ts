@@ -58,7 +58,10 @@ CountryModel.init(
 		sequelize,
 		tableName: 'country',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_bf6e37c231c4f4ea56dcd887269',

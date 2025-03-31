@@ -68,7 +68,6 @@ export class ProductCategoryService {
 			await productCategoryToUpdate.update({
 				name,
 				updatedBy: requestedBy,
-				updatedDate: sequelize.fn('now'),
 			});
 
 			return productCategoryToUpdate.dataValues;

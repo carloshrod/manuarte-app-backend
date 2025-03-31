@@ -43,7 +43,10 @@ ProductCategoryGroupModel.init(
 		sequelize,
 		tableName: 'product_category_group',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 	},
 );
 

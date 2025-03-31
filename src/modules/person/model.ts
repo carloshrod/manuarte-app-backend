@@ -26,6 +26,20 @@ PersonModel.init(
 			allowNull: false,
 			unique: 'UQ_4f83f47c3d77d87ccb066c91af6',
 		},
+		createdDate: {
+			type: DataTypes.DATE,
+			allowNull: false,
+			defaultValue: sequelize.fn('now'),
+		},
+		updatedDate: {
+			type: DataTypes.DATE,
+			allowNull: false,
+			defaultValue: sequelize.fn('now'),
+		},
+		deletedDate: {
+			type: DataTypes.DATE,
+			allowNull: true,
+		},
 	},
 	{
 		sequelize,

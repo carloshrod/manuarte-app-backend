@@ -43,7 +43,10 @@ CityModel.init(
 		sequelize,
 		tableName: 'city',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_b222f51ce26f7e5ca86944a6739',

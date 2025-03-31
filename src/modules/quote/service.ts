@@ -246,7 +246,6 @@ export class QuoteService {
 					currency: quoteData?.currency,
 					shipping: quoteData?.shipping,
 					requestedBy: quoteData?.requestedBy,
-					updatedDate: sequelize.fn('now'),
 				},
 				{ transaction },
 			);

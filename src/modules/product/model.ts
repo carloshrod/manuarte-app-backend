@@ -126,7 +126,10 @@ ProductModel.init(
 		sequelize,
 		tableName: 'product',
 		schema: 'public',
-		timestamps: false,
+		timestamps: true,
+		createdAt: 'createdDate',
+		updatedAt: 'updatedDate',
+		deletedAt: 'deletedDate',
 		indexes: [
 			{
 				name: 'PK_bebc9158e480b949565b4dc7a82',
