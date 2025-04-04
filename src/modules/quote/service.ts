@@ -35,6 +35,7 @@ export class QuoteService {
 					'status',
 					'customerId',
 					[sequelize.col('customer.person.fullName'), 'customerName'],
+					'createdDate',
 					'updatedDate',
 					'shopId',
 				],
