@@ -38,7 +38,10 @@ export class StockItemController {
 	update: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
-			const result = await this.stockItemService.update(req.body, id);
+			const result = await this.stockItemService.update({
+				id,
+				stockItemData: req.body,
+			});
 
 			if (result.status === 200) {
 				res.status(result.status).json({

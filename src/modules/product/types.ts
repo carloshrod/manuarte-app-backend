@@ -1,3 +1,5 @@
+import { PartialStockItem } from '../stock-item/types';
+
 export interface ProductAttr {
 	id?: string;
 	name: string;
@@ -13,7 +15,8 @@ export interface ProductAttr {
 
 export interface CreateProductDto {
 	productData: Partial<ProductAttr>;
-	productVariants: string[];
+	productVariants: (PartialStockItem & { name: string })[];
+	stocks: { id: string; currency: 'COP' | 'USD' }[];
 	requestedBy: string;
 }
 
@@ -29,6 +32,7 @@ export interface UpdateProductDto {
 
 export interface AddProductVariantDto {
 	productId: string;
-	name: string;
+	productVariant: PartialStockItem & { name: string };
+	stocks: { id: string; currency: 'COP' | 'USD' }[];
 	requestedBy: string;
 }

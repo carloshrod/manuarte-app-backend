@@ -9,25 +9,6 @@ export class ProductController {
 		this.productService = productService;
 	}
 
-	create: Handler = async (req, res, next) => {
-		try {
-			const { productVariants, ...rest } = req.body;
-			const requestedBy = (req as CustomRequest).requestedBy;
-
-			const newProduct = await this.productService.create({
-				productData: rest,
-				productVariants,
-				requestedBy,
-			});
-
-			res
-				.status(201)
-				.json({ newProduct, message: 'Producto agregado con éxito' });
-		} catch (error) {
-			next(error);
-		}
-	};
-
 	getAll: Handler = async (_req, res, next) => {
 		try {
 			const products = await this.productService.getAll();
@@ -37,6 +18,26 @@ export class ProductController {
 			} else {
 				res.sendStatus(204);
 			}
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	create: Handler = async (req, res, next) => {
+		try {
+			const { productVariants, stocks, ...rest } = req.body;
+			const requestedBy = (req as CustomRequest).requestedBy;
+
+			const newProduct = await this.productService.create({
+				productData: rest,
+				productVariants,
+				stocks,
+				requestedBy,
+			});
+
+			res
+				.status(201)
+				.json({ newProduct, message: 'Producto agregado con éxito' });
 		} catch (error) {
 			next(error);
 		}
@@ -65,10 +66,12 @@ export class ProductController {
 		try {
 			const { id } = req.params;
 			const requestedBy = (req as CustomRequest).requestedBy;
+			const { stocks, ...restBody } = req.body;
 
 			const newProductVariant = await this.productService.addVariant({
 				productId: id,
-				name: req.body.name,
+				productVariant: restBody,
+				stocks,
 				requestedBy,
 			});
 

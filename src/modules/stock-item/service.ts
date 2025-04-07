@@ -4,7 +4,11 @@ import { sequelize } from '../../config/database';
 import { ShopModel } from '../shop/model';
 import { ProductModel } from '../product/model';
 import { ShopService } from '../shop/service';
-import { CreateStockItemDto } from './types';
+import {
+	CreateStockItemDto,
+	PartialStockItem,
+	UpdateStockItemDto,
+} from './types';
 import { Transaction } from 'sequelize';
 
 export class StockItemService {
@@ -35,6 +39,8 @@ export class StockItemService {
 					'price',
 					'quantity',
 					'cost',
+					'minQty',
+					'maxQty',
 					'updatedDate',
 				],
 				include: [
@@ -121,49 +127,46 @@ export class StockItemService {
 		}
 	};
 
+	createMultiple = async (
+		productVariantId: string,
+		stockItemData: PartialStockItem,
+		stocks: { id: string; currency: 'COP' | 'USD' }[],
+	) => {
+		try {
+			const { priceCop, costCop, priceUsd, costUsd, ...rest } = stockItemData;
+
+			for (const stock of stocks) {
+				await this.create({
+					productVariantId,
+					stockId: stock.id,
+					currency: stock.currency,
+					price: stock.currency === 'COP' ? priceCop : priceUsd,
+					cost: stock.currency === 'COP' ? costCop : costUsd,
+					...rest,
+				});
+			}
+
+			return { status: 201 };
+		} catch (error) {
+			console.error('Error creating stock items');
+			throw error;
+		}
+	};
+
 	create = async (stockItemData: CreateStockItemDto) => {
 		const transaction = await sequelize.transaction();
 		try {
-			const { shopSlug, productVariantId, ...stockItemRest } = stockItemData;
-
-			const shop = await this.shopService.getOneBySlug(shopSlug);
-			if (!shop) {
-				throw new Error('Tienda no encontrada');
-			}
+			const { productVariantId, ...stockItemRest } = stockItemData;
 
 			const newStockItem = await this.stockItemModel.create(
-				{
-					...stockItemRest,
-					stockId: shop?.dataValues?.stockId,
-					currency: shop?.currency,
-					quantity: shop?.dataValues?.mainStock ? stockItemRest?.quantity : 0,
-				},
+				{ ...stockItemRest },
 				{ transaction },
 			);
 
-			const productVariant = await ProductVariantModel.findByPk(
+			const productVariant = await this.getProductAttrs(
 				productVariantId,
-				{
-					attributes: [
-						'id',
-						'name',
-						[sequelize.col('product.name'), 'productName'],
-					],
-					include: [
-						{
-							model: ProductModel,
-							as: 'product',
-							attributes: [],
-						},
-					],
-					transaction,
-				},
+				transaction,
 			);
-			if (!productVariant) {
-				throw new Error(
-					'La presentación de producto con el ID proporcionado no existe',
-				);
-			}
 
 			await newStockItem.addProductVariant(productVariantId, { transaction });
 
@@ -185,47 +188,18 @@ export class StockItemService {
 		}
 	};
 
-	update = async (stockItemData: CreateStockItemDto, id: string) => {
+	update = async ({ id, stockItemData }: UpdateStockItemDto) => {
 		try {
-			const { shopSlug, productVariantId, ...stockItemRest } = stockItemData;
+			const { productVariantId, ...stockItemRest } = stockItemData;
 
 			const stockItemToUpdate = await this.stockItemModel.findByPk(id);
 			if (!stockItemToUpdate) {
 				throw new Error('Stock de producto no encontrado');
 			}
 
-			const shop = await this.shopService.getOneBySlug(shopSlug);
-			if (!shop) {
-				throw new Error('Tienda no encontrada');
-			}
+			await stockItemToUpdate.update({ ...stockItemRest });
 
-			await stockItemToUpdate.update({
-				...stockItemRest,
-				quantity: shop?.dataValues?.mainStock ? stockItemRest?.quantity : 0,
-			});
-
-			const productVariant = await ProductVariantModel.findByPk(
-				productVariantId,
-				{
-					attributes: [
-						'id',
-						'name',
-						[sequelize.col('product.name'), 'productName'],
-					],
-					include: [
-						{
-							model: ProductModel,
-							as: 'product',
-							attributes: [],
-						},
-					],
-				},
-			);
-			if (!productVariant) {
-				throw new Error(
-					'La presentación de producto con el ID proporcionado no existe',
-				);
-			}
+			const productVariant = await this.getProductAttrs(productVariantId);
 
 			return {
 				status: 200,
@@ -256,6 +230,43 @@ export class StockItemService {
 			return { status: 404, message: 'Stock de producto no encontrado' };
 		} catch (error) {
 			console.error('Error deleting stock item');
+			throw error;
+		}
+	};
+
+	private getProductAttrs = async (
+		productVariantId: string,
+		transaction?: Transaction,
+	) => {
+		try {
+			const productVariant = await ProductVariantModel.findByPk(
+				productVariantId,
+				{
+					attributes: [
+						'id',
+						'name',
+						[sequelize.col('product.name'), 'productName'],
+					],
+					include: [
+						{
+							model: ProductModel,
+							as: 'product',
+							attributes: [],
+						},
+					],
+					transaction,
+				},
+			);
+
+			if (!productVariant) {
+				throw new Error(
+					'La presentación de producto con el ID proporcionado no existe',
+				);
+			}
+
+			return productVariant;
+		} catch (error) {
+			console.error('Error getting product info');
 			throw error;
 		}
 	};

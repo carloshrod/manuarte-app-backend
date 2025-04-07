@@ -31,6 +31,7 @@ StockItemModel.init(
 		quantity: {
 			type: DataTypes.INTEGER,
 			allowNull: false,
+			defaultValue: 0,
 		},
 		isSubjectToVAT: {
 			type: DataTypes.BOOLEAN,
@@ -61,6 +62,16 @@ StockItemModel.init(
 		},
 		cost: {
 			type: DataTypes.DECIMAL,
+			allowNull: false,
+			defaultValue: 0,
+		},
+		minQty: {
+			type: DataTypes.INTEGER,
+			allowNull: false,
+			defaultValue: 0,
+		},
+		maxQty: {
+			type: DataTypes.INTEGER,
 			allowNull: false,
 			defaultValue: 0,
 		},
@@ -96,4 +107,5 @@ ProductVariantModel.belongsToMany(StockItemModel, {
 	as: 'stockItems',
 	foreignKey: 'productVariantId',
 	otherKey: 'stockItemId',
+	onDelete: 'CASCADE',
 });

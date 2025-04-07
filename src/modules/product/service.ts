@@ -1,4 +1,3 @@
-import { sequelize } from '../../config/database';
 import { ProductModel } from './model';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductVariantService } from '../product-variant/service';
@@ -8,16 +7,20 @@ import {
 	CreateProductDto,
 	UpdateProductDto,
 } from './types';
+import { StockItemService } from '../stock-item/service';
+import { StockItemModel } from '../stock-item/model';
 
 export class ProductService {
 	private productModel;
 	private productCategoryModel;
 	private productVariantService;
+	private stockItemService;
 
 	constructor(productModel: typeof ProductModel) {
 		this.productModel = productModel;
 		this.productCategoryModel = ProductCategoryModel;
 		this.productVariantService = new ProductVariantService(ProductVariantModel);
+		this.stockItemService = new StockItemService(StockItemModel);
 	}
 
 	getAll = async () => {
@@ -37,6 +40,7 @@ export class ProductService {
 	create = async ({
 		productData,
 		productVariants,
+		stocks,
 		requestedBy,
 	}: CreateProductDto) => {
 		try {
@@ -51,14 +55,23 @@ export class ProductService {
 
 			const newProductVariants = [];
 			if (productVariants?.length > 0) {
-				for (const name of productVariants) {
+				for (const pv of productVariants) {
+					const { name, ...stockItemData } = pv;
+
 					const newProductVariant = await this.productVariantService.create({
 						name,
 						productId: newProduct.id,
 						requestedBy,
 					});
-
 					newProductVariants.push(newProductVariant);
+
+					if (stocks?.length > 0) {
+						await this.stockItemService.createMultiple(
+							newProductVariant.id,
+							stockItemData,
+							stocks,
+						);
+					}
 				}
 			}
 
@@ -116,15 +129,26 @@ export class ProductService {
 
 	addVariant = async ({
 		productId,
-		name,
+		productVariant,
+		stocks,
 		requestedBy,
 	}: AddProductVariantDto) => {
 		try {
-			const productVariantToUpdate = await this.productVariantService.create({
+			const { name, ...pvRest } = productVariant;
+
+			const newProductVariant = await this.productVariantService.create({
 				name,
 				productId,
 				requestedBy,
 			});
+
+			if (stocks?.length > 0) {
+				await this.stockItemService.createMultiple(
+					newProductVariant.id,
+					pvRest,
+					stocks,
+				);
+			}
 
 			const product = await this.productModel.findByPk(productId);
 			let productCategoryName;
@@ -135,7 +159,7 @@ export class ProductService {
 			}
 
 			return {
-				...productVariantToUpdate,
+				...newProductVariant,
 				productId,
 				productName: product?.name,
 				productDescription: product?.description,

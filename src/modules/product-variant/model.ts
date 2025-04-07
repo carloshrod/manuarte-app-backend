@@ -51,6 +51,21 @@ export class ProductVariantModel extends Model {
 			);
 		}
 	}
+
+	async validateProductVariantName() {
+		const existingProductVariant = await ProductVariantModel.findOne({
+			where: sequelize.where(
+				sequelize.fn('LOWER', sequelize.col('name')),
+				this.name.toLowerCase(),
+			),
+		});
+
+		if (existingProductVariant && existingProductVariant.id !== this.id) {
+			throw new Error(
+				'Ya existe una presentación del producto con este nombre (Ten en cuenta mayúsculas y minúsculas)',
+			);
+		}
+	}
 }
 
 ProductVariantModel.init(
@@ -127,6 +142,14 @@ ProductVariantModel.init(
 			},
 		],
 		hooks: {
+			beforeCreate: async productVariant => {
+				productVariant.name = productVariant.name.trim();
+				await productVariant.validateProductVariantName();
+			},
+			beforeUpdate: async productVariant => {
+				productVariant.name = productVariant.name.trim();
+				await productVariant.validateProductVariantName();
+			},
 			beforeDestroy: async productVariant => {
 				const count = await StockItemProductVariantModel.count({
 					where: { productVariantId: productVariant.id },
