@@ -100,19 +100,36 @@ export class TransactionItemService {
 			const newTransactionItem = await this.transactionItemModel.create(
 				{
 					...restItem,
-					totalQuantity: stockItemToUpdate?.dataValues?.quantity,
+					totalQuantity: stockItemToUpdate?.quantity,
 				},
 				{ transaction: sqlTransaction },
 			);
 
-			const newQuantity = isEnter
-				? Number(stockItemToUpdate?.quantity) + Number(restItem.quantity)
-				: Number(stockItemToUpdate?.quantity) - Number(restItem.quantity);
+			const currentQty = Number(stockItemToUpdate.quantity);
+			const delta = Number(restItem.quantity);
+
+			if (isNaN(currentQty) || isNaN(delta)) {
+				throw new Error(
+					`Ocurrió un error con las cantidades del item ${stockItemToUpdate.dataValues.productName} - ${stockItemToUpdate.dataValues.productVariantName}`,
+				);
+			}
+
+			const newQuantity = isEnter ? currentQty + delta : currentQty - delta;
 
 			await stockItemToUpdate.update(
 				{ quantity: newQuantity },
 				{ transaction: sqlTransaction },
 			);
+
+			const stockItemCheck = await StockItemModel.findByPk(stockItemId, {
+				transaction: sqlTransaction,
+			});
+
+			if (Number(stockItemCheck?.quantity) !== newQuantity) {
+				throw new Error(
+					`Cantidad a actualizar era ${newQuantity}, pero se encontró ${stockItemCheck?.quantity}`,
+				);
+			}
 
 			return newTransactionItem;
 		} catch (error) {
