@@ -6,7 +6,7 @@ import { QuoteItemModel } from '../quote-item/model';
 export class QuoteModel extends Model {
 	public id!: string;
 	public serialNumber!: string;
-	public updatedDate!: string;
+	public createdDate!: string;
 
 	async generateSerialNumber() {
 		try {
@@ -80,6 +80,7 @@ QuoteModel.init(
 		shipping: {
 			type: DataTypes.DOUBLE,
 			allowNull: true,
+			defaultValue: 0,
 		},
 		createdBy: {
 			type: DataTypes.UUID,

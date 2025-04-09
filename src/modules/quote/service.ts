@@ -203,7 +203,7 @@ export class QuoteService {
 					customerId,
 					customerName: customerData?.fullName ?? null,
 					shopId: shop.id,
-					updatedDate: newQuote.updatedDate,
+					createdDate: newQuote.createdDate,
 				},
 			};
 		} catch (error) {
@@ -272,7 +272,7 @@ export class QuoteService {
 					customerId: customerData?.customerId,
 					customerName: customerData?.fullName,
 					shopId: quoteData?.shopId,
-					updatedDate: quoteToUpdate?.updatedDate,
+					createdDate: quoteToUpdate?.createdDate,
 				},
 			};
 		} catch (error) {

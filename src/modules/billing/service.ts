@@ -196,7 +196,7 @@ export class BillingService {
 				status,
 				paymentMethod,
 				shipping,
-				total: Number(total) - Number(shipping),
+				total: Number(total) - Number(shipping ?? 0),
 				createdBy: requestedBy,
 			});
 			await newBilling.generateSerialNumber();
@@ -229,7 +229,7 @@ export class BillingService {
 					customerId,
 					customerName: customerData?.fullName ?? null,
 					dni: customerData?.dni ?? null,
-					updatedDate: newBilling.updatedDate,
+					createdDate: newBilling.createdDate,
 					shopId: shop?.dataValues?.id,
 				},
 			};

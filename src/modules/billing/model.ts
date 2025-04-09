@@ -9,7 +9,7 @@ export class BillingModel extends Model {
 	public id!: string;
 	public serialNumber!: string;
 	public total!: number;
-	public updatedDate!: string;
+	public createdDate!: string;
 
 	async generateSerialNumber() {
 		try {
@@ -94,6 +94,7 @@ BillingModel.init(
 		shipping: {
 			type: DataTypes.DOUBLE,
 			allowNull: true,
+			defaultValue: 0,
 		},
 		createdBy: {
 			type: DataTypes.UUID,
