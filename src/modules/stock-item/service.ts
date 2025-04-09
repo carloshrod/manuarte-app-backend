@@ -131,19 +131,23 @@ export class StockItemService {
 		productVariantId: string,
 		stockItemData: PartialStockItem,
 		stocks: { id: string; currency: 'COP' | 'USD' }[],
+		transaction: Transaction,
 	) => {
 		try {
 			const { priceCop, costCop, priceUsd, costUsd, ...rest } = stockItemData;
 
 			for (const stock of stocks) {
-				await this.create({
-					productVariantId,
-					stockId: stock.id,
-					currency: stock.currency,
-					price: stock.currency === 'COP' ? priceCop : priceUsd,
-					cost: stock.currency === 'COP' ? costCop : costUsd,
-					...rest,
-				});
+				await this.create(
+					{
+						productVariantId,
+						stockId: stock.id,
+						currency: stock.currency,
+						price: stock.currency === 'COP' ? priceCop : priceUsd,
+						cost: stock.currency === 'COP' ? costCop : costUsd,
+						...rest,
+					},
+					transaction,
+				);
 			}
 
 			return { status: 201 };
@@ -153,8 +157,11 @@ export class StockItemService {
 		}
 	};
 
-	create = async (stockItemData: CreateStockItemDto) => {
-		const transaction = await sequelize.transaction();
+	create = async (
+		stockItemData: CreateStockItemDto,
+		externalTransaction?: Transaction,
+	) => {
+		const transaction = externalTransaction ?? (await sequelize.transaction());
 		try {
 			const { productVariantId, ...stockItemRest } = stockItemData;
 
@@ -168,9 +175,13 @@ export class StockItemService {
 				transaction,
 			);
 
-			await newStockItem.addProductVariant(productVariantId, { transaction });
+			await newStockItem.addProductVariant(productVariantId, {
+				transaction,
+			});
 
-			await transaction.commit();
+			if (!externalTransaction) {
+				await transaction.commit();
+			}
 
 			return {
 				status: 201,
@@ -182,7 +193,9 @@ export class StockItemService {
 				},
 			};
 		} catch (error) {
-			await transaction.rollback();
+			if (!externalTransaction) {
+				await transaction.rollback();
+			}
 			console.error('Error creating stock item');
 			throw error;
 		}

@@ -9,6 +9,7 @@ import {
 } from './types';
 import { StockItemService } from '../stock-item/service';
 import { StockItemModel } from '../stock-item/model';
+import { sequelize } from '../../config/database';
 
 export class ProductService {
 	private productModel;
@@ -43,6 +44,7 @@ export class ProductService {
 		stocks,
 		requestedBy,
 	}: CreateProductDto) => {
+		const transaction = await sequelize.transaction();
 		try {
 			const newProduct = this.productModel.build({
 				...productData,
@@ -51,18 +53,21 @@ export class ProductService {
 			});
 
 			await newProduct.generatePId();
-			await newProduct.save();
+			await newProduct.save({ transaction });
 
 			const newProductVariants = [];
 			if (productVariants?.length > 0) {
 				for (const pv of productVariants) {
 					const { name, ...stockItemData } = pv;
 
-					const newProductVariant = await this.productVariantService.create({
-						name,
-						productId: newProduct.id,
-						requestedBy,
-					});
+					const newProductVariant = await this.productVariantService.create(
+						{
+							name,
+							productId: newProduct.id,
+							requestedBy,
+						},
+						transaction,
+					);
 					newProductVariants.push(newProductVariant);
 
 					if (stocks?.length > 0) {
@@ -70,6 +75,7 @@ export class ProductService {
 							newProductVariant.id,
 							stockItemData,
 							stocks,
+							transaction,
 						);
 					}
 				}
@@ -79,12 +85,15 @@ export class ProductService {
 				newProduct?.productCategoryId,
 			);
 
+			await transaction.commit();
+
 			return {
 				...newProduct.dataValues,
 				productCategoryName: categoryName,
 				productVariants: newProductVariants,
 			};
 		} catch (error) {
+			await transaction.rollback();
 			console.error('ServiceError creando producto: ', error);
 			throw error;
 		}
@@ -133,20 +142,25 @@ export class ProductService {
 		stocks,
 		requestedBy,
 	}: AddProductVariantDto) => {
+		const transaction = await sequelize.transaction();
 		try {
 			const { name, ...pvRest } = productVariant;
 
-			const newProductVariant = await this.productVariantService.create({
-				name,
-				productId,
-				requestedBy,
-			});
+			const newProductVariant = await this.productVariantService.create(
+				{
+					name,
+					productId,
+					requestedBy,
+				},
+				transaction,
+			);
 
 			if (stocks?.length > 0) {
 				await this.stockItemService.createMultiple(
 					newProductVariant.id,
 					pvRest,
 					stocks,
+					transaction,
 				);
 			}
 
@@ -158,6 +172,8 @@ export class ProductService {
 				);
 			}
 
+			await transaction.commit();
+
 			return {
 				...newProductVariant,
 				productId,
@@ -167,6 +183,7 @@ export class ProductService {
 				productCategoryName,
 			};
 		} catch (error) {
+			await transaction.rollback();
 			console.error('ServiceError agregando presentación de producto: ', error);
 			throw error;
 		}

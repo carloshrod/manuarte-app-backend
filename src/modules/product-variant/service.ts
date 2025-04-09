@@ -6,7 +6,7 @@ import { ProductVariantModel } from './model';
 import { CreateProductVariantDto, UpdateProductVariantDto } from './types';
 import { ShopService } from '../shop/service';
 import { ShopModel } from '../shop/model';
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 
 export class ProductVariantService {
 	private productVariantModel;
@@ -63,11 +63,10 @@ export class ProductVariantService {
 		}
 	};
 
-	create = async ({
-		name,
-		productId,
-		requestedBy,
-	}: CreateProductVariantDto) => {
+	create = async (
+		{ name, productId, requestedBy }: CreateProductVariantDto,
+		transaction: Transaction,
+	) => {
 		try {
 			const newProductVariant = this.productVariantModel.build({
 				name,
@@ -76,8 +75,8 @@ export class ProductVariantService {
 				updatedBy: requestedBy,
 			});
 
-			await newProductVariant.generateVId();
-			await newProductVariant.save();
+			await newProductVariant.generateVId(transaction);
+			await newProductVariant.save({ transaction });
 
 			return newProductVariant.dataValues;
 		} catch (error) {

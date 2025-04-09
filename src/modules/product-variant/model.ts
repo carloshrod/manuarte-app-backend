@@ -1,4 +1,4 @@
-import { DataTypes, Model } from 'sequelize';
+import { DataTypes, Model, Transaction } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { ProductModel } from '../product/model';
 import { Op } from 'sequelize';
@@ -13,9 +13,11 @@ export class ProductVariantModel extends Model {
 	public createdBy!: string;
 	public updatedBy!: string;
 
-	async generateVId() {
+	async generateVId(transaction: Transaction) {
 		try {
-			const associatedProduct = await ProductModel.findByPk(this.productId);
+			const associatedProduct = await ProductModel.findByPk(this.productId, {
+				transaction,
+			});
 
 			if (!associatedProduct) {
 				throw new Error(`Producto con ID ${this.productId} no encontrado`);
@@ -26,6 +28,7 @@ export class ProductVariantModel extends Model {
 			const maxItem = await ProductVariantModel.findOne({
 				where: { vId: { [Op.like]: `${pId}%` } },
 				order: [['vId', 'DESC']],
+				transaction,
 			});
 
 			let nextVId = `${pId}0001`;
@@ -52,12 +55,22 @@ export class ProductVariantModel extends Model {
 		}
 	}
 
-	async validateProductVariantName() {
+	async validateProductVariantName(transaction?: Transaction) {
+		if (!this.name || !this.productId) {
+			throw new Error('El nombre y el productId son requeridos para validar');
+		}
+
 		const existingProductVariant = await ProductVariantModel.findOne({
-			where: sequelize.where(
-				sequelize.fn('LOWER', sequelize.col('name')),
-				this.name.toLowerCase(),
-			),
+			where: {
+				[Op.and]: [
+					sequelize.where(
+						sequelize.fn('LOWER', sequelize.col('name')),
+						this.name.toLowerCase(),
+					),
+					{ productId: this.productId },
+				],
+			},
+			transaction,
 		});
 
 		if (existingProductVariant && existingProductVariant.id !== this.id) {
@@ -142,9 +155,12 @@ ProductVariantModel.init(
 			},
 		],
 		hooks: {
-			beforeCreate: async productVariant => {
+			beforeCreate: async (productVariant, options) => {
 				productVariant.name = productVariant.name.trim();
-				await productVariant.validateProductVariantName();
+				if (!options.transaction) {
+					throw new Error('Transaction is required in beforeCreate');
+				}
+				await productVariant.validateProductVariantName(options.transaction);
 			},
 			beforeUpdate: async productVariant => {
 				productVariant.name = productVariant.name.trim();
