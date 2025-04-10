@@ -84,6 +84,7 @@ export class QuoteService {
 					[sequelize.col('customer.phoneNumber'), 'phoneNumber'],
 					[sequelize.col('customer.address.location'), 'location'],
 					[sequelize.col('customer.city'), 'city'],
+					'createdDate',
 					'updatedDate',
 				],
 				include: [

@@ -92,6 +92,7 @@ export class BillingService {
 					[sequelize.col('customer.address.location'), 'location'],
 					[sequelize.col('customer.city'), 'city'],
 					[sequelize.col('shop.stock.id'), 'stockId'],
+					'createdDate',
 					'updatedDate',
 				],
 				include: [
