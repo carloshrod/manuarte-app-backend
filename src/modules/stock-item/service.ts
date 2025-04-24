@@ -237,12 +237,24 @@ export class StockItemService {
 
 	delete = async (id: string) => {
 		try {
+			const stockItem = await this.stockItemModel.findByPk(id);
+			if (!stockItem)
+				throw new Error(
+					'No existe en el stock el producto que estás intentando eliminar',
+				);
+
+			if (Number(stockItem?.quantity) > 0) {
+				throw new Error(
+					`No puedes eliminar un item con cantidad en stock (${stockItem?.quantity} unds)`,
+				);
+			}
+
 			const result = await this.stockItemModel.destroy({ where: { id } });
 
 			if (result === 1) {
 				return {
 					status: 200,
-					message: 'Stock de producto eliminado con éxito',
+					message: 'Producto eliminado del stock con éxito',
 				};
 			}
 
