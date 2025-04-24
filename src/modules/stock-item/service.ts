@@ -75,7 +75,12 @@ export class StockItemService {
 		try {
 			const stockItem = await this.stockItemModel.findOne({
 				where: { stockId },
-				attributes: ['id', 'quantity'],
+				attributes: [
+					'id',
+					'quantity',
+					[sequelize.col('productVariants.name'), 'productVariantName'],
+					[sequelize.col('productVariants.product.name'), 'productName'],
+				],
 				include: [
 					{
 						model: ProductVariantModel,
@@ -83,6 +88,13 @@ export class StockItemService {
 						where: { id: productVariantId },
 						attributes: [],
 						through: { attributes: [] },
+						include: [
+							{
+								model: ProductModel,
+								as: 'product',
+								attributes: [],
+							},
+						],
 					},
 				],
 			});
@@ -166,7 +178,7 @@ export class StockItemService {
 			const { productVariantId, ...stockItemRest } = stockItemData;
 
 			const newStockItem = await this.stockItemModel.create(
-				{ ...stockItemRest },
+				{ ...stockItemRest, quantity: 0 },
 				{ transaction },
 			);
 
@@ -204,6 +216,12 @@ export class StockItemService {
 	update = async ({ id, stockItemData }: UpdateStockItemDto) => {
 		try {
 			const { productVariantId, ...stockItemRest } = stockItemData;
+
+			if ('quantity' in stockItemData) {
+				throw new Error(
+					'No se puede modificar directamente la cantidad en stock',
+				);
+			}
 
 			const stockItemToUpdate = await this.stockItemModel.findByPk(id);
 			if (!stockItemToUpdate) {

@@ -31,7 +31,6 @@ StockItemModel.init(
 		quantity: {
 			type: DataTypes.INTEGER,
 			allowNull: false,
-			defaultValue: 0,
 		},
 		isSubjectToVAT: {
 			type: DataTypes.BOOLEAN,
