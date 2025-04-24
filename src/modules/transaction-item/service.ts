@@ -173,13 +173,25 @@ export class TransactionItemService {
 				);
 			}
 
+			const currentTransactionItemQty = Number(
+				transactionItemToUpdate?.dataValues?.quantity,
+			);
+			const currentStockItemQty = Number(
+				stockItemToUpdate?.dataValues?.quantity,
+			);
+			const delta = Number(restItem?.quantity);
+
+			if (isNaN(currentTransactionItemQty) || isNaN(currentStockItemQty) || isNaN(delta)) {
+				throw new Error(
+					`Ocurrió un error con las cantidades del item ${stockItemToUpdate.dataValues.productName} - ${stockItemToUpdate.dataValues.productVariantName}`,
+				);
+			}
+
 			const newStockItemQuantity =
-				Number(transactionItemToUpdate?.dataValues?.quantity) +
-				Number(stockItemToUpdate?.dataValues?.quantity) -
-				Number(restItem?.quantity);
+				currentTransactionItemQty + currentStockItemQty - delta;
 
 			await transactionItemToUpdate.update(
-				{ quantity: restItem?.quantity },
+				{ quantity: delta },
 				{ transaction: sqlTransaction },
 			);
 

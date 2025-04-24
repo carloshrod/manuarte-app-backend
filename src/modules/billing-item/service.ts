@@ -46,7 +46,15 @@ export class BillingItemService {
 				{ transaction },
 			);
 
-			const newQuantity = Number(stockItemToUpdate?.quantity) - quantity;
+			const currentQty = Number(stockItemToUpdate?.quantity);
+			const delta = Number(quantity);
+
+			if (isNaN(currentQty) || isNaN(delta)) {
+				throw new Error(`Ocurrió un error con las cantidades del item ${name}`);
+			}
+
+			const newQuantity = currentQty - delta;
+
 			await stockItemToUpdate.update(
 				{ quantity: newQuantity },
 				{ transaction },
@@ -80,7 +88,17 @@ export class BillingItemService {
 				throw new Error(`No fue posible encontrar el producto`);
 			}
 
-			const newQuantity = Number(stockItemToUpdate?.quantity) + quantity;
+			const currentQty = Number(stockItemToUpdate?.quantity);
+			const delta = Number(quantity);
+
+			if (isNaN(currentQty) || isNaN(delta)) {
+				throw new Error(
+					`Ocurrió un error con las cantidades del item ${stockItemToUpdate.dataValues.productName} - ${stockItemToUpdate.dataValues.productVariantName}`,
+				);
+			}
+
+			const newQuantity = currentQty + delta;
+			
 			await stockItemToUpdate.update(
 				{ quantity: newQuantity },
 				{ transaction },
