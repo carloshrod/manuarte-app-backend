@@ -77,7 +77,7 @@ export class BillingItemService {
 		transaction: Transaction;
 	}) => {
 		try {
-			const { productVariantId, quantity } = billingItemData;
+			const { productVariantId, quantity, name } = billingItemData;
 
 			const stockItemToUpdate = await this.stockItemService.getOne(
 				productVariantId,
@@ -92,13 +92,11 @@ export class BillingItemService {
 			const delta = Number(quantity);
 
 			if (isNaN(currentQty) || isNaN(delta)) {
-				throw new Error(
-					`Ocurrió un error con las cantidades del item ${stockItemToUpdate.dataValues.productName} - ${stockItemToUpdate.dataValues.productVariantName}`,
-				);
+				throw new Error(`Ocurrió un error con las cantidades del item ${name}`);
 			}
 
 			const newQuantity = currentQty + delta;
-			
+
 			await stockItemToUpdate.update(
 				{ quantity: newQuantity },
 				{ transaction },
