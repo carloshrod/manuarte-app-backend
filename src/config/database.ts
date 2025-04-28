@@ -33,12 +33,12 @@ export async function connectToDatabase(retries = 5, delay = 5000) {
 			} else {
 				console.error('Unknown error:', error);
 			}
-			
+
 			retries--;
 			await new Promise(res => setTimeout(res, delay));
 		}
 	}
-	
+
 	if (!dbReady) {
 		console.error(
 			'🚨 Failed to connect to the database after multiple attempts.',

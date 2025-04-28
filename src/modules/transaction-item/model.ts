@@ -2,7 +2,11 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { ProductVariantModel } from '../product-variant/model';
 
-export class TransactionItemModel extends Model {}
+export class TransactionItemModel extends Model {
+	public quantity!: number;
+	public stockBefore!: number;
+	public createdDate!: string;
+}
 
 TransactionItemModel.init(
 	{
@@ -63,7 +67,7 @@ TransactionItemModel.init(
 			allowNull: true,
 			defaultValue: true,
 		},
-		totalQuantity: {
+		stockBefore: {
 			type: DataTypes.INTEGER,
 			allowNull: true,
 			defaultValue: 0,

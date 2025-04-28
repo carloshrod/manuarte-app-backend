@@ -23,7 +23,7 @@ export class TransactionItemService {
 				attributes: [
 					'id',
 					'quantity',
-					'totalQuantity',
+					'stockBefore',
 					'productVariantId',
 					[sequelize.col('productVariants.name'), 'productVariantName'],
 					[sequelize.col('productVariants.product.name'), 'productName'],
@@ -100,7 +100,7 @@ export class TransactionItemService {
 			const newTransactionItem = await this.transactionItemModel.create(
 				{
 					...restItem,
-					totalQuantity: stockItemToUpdate?.quantity,
+					stockBefore: stockItemToUpdate?.quantity,
 				},
 				{ transaction: sqlTransaction },
 			);

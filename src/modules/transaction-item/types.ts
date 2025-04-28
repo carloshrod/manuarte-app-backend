@@ -5,7 +5,7 @@ export interface TransactionItem {
 	stockItemId: string;
 	quantity: number;
 	success: boolean;
-	totalQuantity: number;
+	stockBefore: number;
 	stockItemQuantity: number;
 }
 
