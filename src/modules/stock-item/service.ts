@@ -1,15 +1,21 @@
+import { Op, Transaction } from 'sequelize';
+import { sequelize } from '../../config/database';
 import { StockItemModel } from './model';
 import { ProductVariantModel } from '../product-variant/model';
-import { sequelize } from '../../config/database';
 import { ShopModel } from '../shop/model';
 import { ProductModel } from '../product/model';
 import { ShopService } from '../shop/service';
+import { TransactionItemModel } from '../transaction-item/model';
+import { TransactionModel } from '../transaction/model';
+import { BillingItemModel } from '../billing-item/model';
+import { BillingModel } from '../billing/model';
+import { StockModel } from '../stock/model';
 import {
 	CreateStockItemDto,
 	PartialStockItem,
 	UpdateStockItemDto,
 } from './types';
-import { Transaction } from 'sequelize';
+import { BillingStatus } from '../billing/types';
 
 export class StockItemService {
 	private stockItemModel;
@@ -35,6 +41,7 @@ export class StockItemService {
 					[sequelize.col('productVariants.name'), 'productVariantName'],
 					[sequelize.col('productVariants.id'), 'productVariantId'],
 					[sequelize.col('productVariants.vId'), 'vId'],
+					'stockId',
 					'currency',
 					'price',
 					'quantity',
@@ -123,6 +130,169 @@ export class StockItemService {
 			return stockItem;
 		} catch (error) {
 			console.error('Error obteniendo item de stock por id');
+			throw error;
+		}
+	};
+
+	getHistory = async (productVariantId: string, stockId: string) => {
+		try {
+			const stock = await StockModel.findOne({
+				where: { id: stockId },
+				attributes: ['id', 'shopId'],
+			});
+
+			const enters = await TransactionItemModel.findAll({
+				where: { productVariantId },
+				attributes: [
+					'id',
+					'transactionId',
+					'quantity',
+					'stockBefore',
+					'createdDate',
+					[sequelize.col('transaction.type'), 'type'],
+					[sequelize.col('transaction.fromId'), 'stockFromId'],
+					[sequelize.col('transaction.stockFrom.name'), 'stockFromName'],
+					[sequelize.col('transaction.toId'), 'stockToId'],
+					[sequelize.col('transaction.stockTo.name'), 'stockToName'],
+					[sequelize.col('transaction.description'), 'description'],
+				],
+				include: [
+					{
+						model: TransactionModel,
+						as: 'transaction',
+						where: { type: 'ENTER', toId: stockId },
+						attributes: [],
+						include: [
+							{
+								model: StockModel,
+								as: 'stockFrom',
+								attributes: [],
+							},
+							{
+								model: StockModel,
+								as: 'stockTo',
+								attributes: [],
+							},
+						],
+					},
+				],
+				order: [['createdDate', 'DESC']],
+			});
+
+			const exits = await TransactionItemModel.findAll({
+				where: { productVariantId },
+				attributes: [
+					'id',
+					'transactionId',
+					'quantity',
+					'stockBefore',
+					'createdDate',
+					[sequelize.col('transaction.type'), 'type'],
+					[sequelize.col('transaction.fromId'), 'stockFromId'],
+					[sequelize.col('transaction.stockFrom.name'), 'stockFromName'],
+					[sequelize.col('transaction.toId'), 'stockToId'],
+					[sequelize.col('transaction.stockTo.name'), 'stockToName'],
+					[sequelize.col('transaction.description'), 'description'],
+				],
+				include: [
+					{
+						model: TransactionModel,
+						as: 'transaction',
+						where: { type: { [Op.in]: ['EXIT', 'TRANSFER'] }, fromId: stockId },
+						attributes: [],
+						include: [
+							{
+								model: StockModel,
+								as: 'stockFrom',
+								attributes: [],
+							},
+							{
+								model: StockModel,
+								as: 'stockTo',
+								attributes: [],
+							},
+						],
+					},
+				],
+				order: [['createdDate', 'DESC']],
+			});
+
+			const billings = await BillingItemModel.findAll({
+				where: { productVariantId },
+				attributes: [
+					'id',
+					'billingId',
+					'currency',
+					'quantity',
+					'createdDate',
+					[sequelize.literal(`'BILLING'`), 'type'],
+					[sequelize.col('billing.serialNumber'), 'description'],
+					[sequelize.col('billing.shopId'), 'shopId'],
+				],
+				include: [
+					{
+						model: BillingModel,
+						as: 'billing',
+						where: {
+							status: BillingStatus.PAID,
+							shopId: stock?.dataValues?.shopId,
+						},
+						attributes: [],
+					},
+				],
+				order: [['createdDate', 'DESC']],
+			});
+
+			const historyAsc = [...enters, ...exits, ...billings].sort(
+				(a, b) =>
+					new Date(a.createdDate).getTime() - new Date(b.createdDate).getTime(),
+			);
+
+			let lastTransactionStockAfter = null;
+			let lastBillingStockBefore = null;
+
+			for (const item of historyAsc) {
+				const type = item.getDataValue('type');
+
+				if (['ENTER', 'EXIT', 'TRANSFER'].includes(type)) {
+					const stockBefore = 'stockBefore' in item && item.stockBefore;
+					const quantity = item.getDataValue('quantity');
+
+					const delta = type === 'ENTER' ? quantity : -quantity;
+					lastTransactionStockAfter = stockBefore + delta;
+
+					lastBillingStockBefore = null;
+				}
+
+				if (type === 'BILLING') {
+					const quantity = item.getDataValue('quantity');
+
+					if (
+						lastBillingStockBefore === null &&
+						lastTransactionStockAfter !== null
+					) {
+						item.setDataValue('stockBefore', lastTransactionStockAfter);
+						lastBillingStockBefore = lastTransactionStockAfter - quantity;
+					} else if (lastBillingStockBefore !== null) {
+						item.setDataValue('stockBefore', lastBillingStockBefore);
+						lastBillingStockBefore -= quantity;
+					} else {
+						item.setDataValue('stockBefore', 0);
+						lastBillingStockBefore = -quantity;
+					}
+				}
+			}
+
+			const history = historyAsc.sort(
+				(a, b) =>
+					new Date(b.createdDate).getTime() - new Date(a.createdDate).getTime(),
+			);
+
+			if (history.length > 0) {
+				return { status: 200, history };
+			}
+		} catch (error) {
+			console.error('Error getting stock item history');
 			throw error;
 		}
 	};

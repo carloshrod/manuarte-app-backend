@@ -16,6 +16,11 @@ router.get(
 	authorize(StockItemPermissions.STOCK_ITEM_READ),
 	stockItemController.getAll,
 );
+router.get(
+	'/:productVariantId/:stockId',
+	authorize(StockItemPermissions.STOCK_ITEM_READ),
+	stockItemController.getHistory,
+);
 router.post(
 	'/',
 	authorize(StockItemPermissions.STOCK_ITEM_CREATE),

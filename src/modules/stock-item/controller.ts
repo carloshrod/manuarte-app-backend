@@ -65,4 +65,24 @@ export class StockItemController {
 			next(error);
 		}
 	};
+
+	getHistory: Handler = async (req, res, next) => {
+		try {
+			const { productVariantId, stockId } = req.params;
+
+			const result = await this.stockItemService.getHistory(
+				productVariantId,
+				stockId,
+			);
+
+			if (result?.status === 200) {
+				res.status(result.status).json(result.history);
+				return;
+			}
+
+			res.sendStatus(204);
+		} catch (error) {
+			next(error);
+		}
+	};
 }

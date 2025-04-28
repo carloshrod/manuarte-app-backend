@@ -4,6 +4,8 @@ import { sequelize } from '../../config/database';
 export class BillingItemModel extends Model {
 	public name!: string;
 	public productVariantId!: string;
+	public quantity!: number;
+	public createdDate!: string;
 }
 
 BillingItemModel.init(
