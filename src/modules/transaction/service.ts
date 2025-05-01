@@ -83,6 +83,12 @@ export class TransactionService {
 		try {
 			const { items, ...transactionDataRest } = transactionData;
 
+			if (items.length === 0) {
+				throw new Error(
+					'Es necesario al menos 1 item para crear una transacción',
+				);
+			}
+
 			const newTransaction = await this.transactionModel.create(
 				{
 					...transactionDataRest,

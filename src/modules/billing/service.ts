@@ -169,6 +169,10 @@ export class BillingService {
 	}) => {
 		const transaction = await sequelize.transaction();
 		try {
+			if (billingData?.items?.length === 0) {
+				throw new Error('Es necesario al menos 1 item para crear una factura');
+			}
+
 			let customerId = customerData?.customerId ?? null;
 
 			if (customerData?.fullName && !customerData?.customerId) {

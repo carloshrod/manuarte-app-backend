@@ -149,6 +149,12 @@ export class QuoteService {
 	}) => {
 		const transaction = await sequelize.transaction();
 		try {
+			if (quoteData?.items?.length === 0) {
+				throw new Error(
+					'Es necesario al menos 1 item para crear una cotización',
+				);
+			}
+
 			let customerId = customerData?.customerId ?? null;
 			if (customerData?.fullName && !customerData?.customerId) {
 				const result = await this.customerService.create(
