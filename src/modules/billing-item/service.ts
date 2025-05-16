@@ -28,7 +28,7 @@ export class BillingItemService {
 		try {
 			const { quantity, name, productVariantId, stockId } = billingItemData;
 
-			const stockItemToUpdate = await this.stockItemService.getOne(
+			const stockItemToUpdate = await this.stockItemService.getOneByStock(
 				productVariantId,
 				stockId as string,
 			);
@@ -79,7 +79,7 @@ export class BillingItemService {
 		try {
 			const { productVariantId, quantity, name } = billingItemData;
 
-			const stockItemToUpdate = await this.stockItemService.getOne(
+			const stockItemToUpdate = await this.stockItemService.getOneByStock(
 				productVariantId,
 				stockId,
 			);

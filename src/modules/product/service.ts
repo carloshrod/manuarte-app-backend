@@ -71,7 +71,7 @@ export class ProductService {
 					newProductVariants.push(newProductVariant);
 
 					if (stocks?.length > 0) {
-						await this.stockItemService.createMultiple(
+						await this.stockItemService.createInMultipleStocks(
 							newProductVariant.id,
 							stockItemData,
 							stocks,
@@ -156,7 +156,7 @@ export class ProductService {
 			);
 
 			if (stocks?.length > 0) {
-				await this.stockItemService.createMultiple(
+				await this.stockItemService.createInMultipleStocks(
 					newProductVariant.id,
 					pvRest,
 					stocks,

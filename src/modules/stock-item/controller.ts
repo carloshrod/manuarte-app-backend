@@ -8,13 +8,33 @@ export class StockItemController {
 		this.stockItemService = stockItemService;
 	}
 
-	getAll: Handler = async (req, res, next) => {
+	getAllByStock: Handler = async (req, res, next) => {
 		try {
 			const shopSlug = (req.query.shopSlug as string) || '';
 
-			const result = await this.stockItemService.getAll(shopSlug);
+			const result = await this.stockItemService.getAllByStock(shopSlug);
 
 			res.status(result.status).json(result.stockItems);
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	getOneByStock: Handler = async (req, res, next) => {
+		try {
+			const { productVariantId, stockId } = req.params;
+
+			const stockItem = await this.stockItemService.getOneByStock(
+				productVariantId,
+				stockId,
+			);
+
+			if (!stockItem) {
+				res.sendStatus(204);
+				return;
+			}
+
+			res.status(200).json(stockItem);
 		} catch (error) {
 			next(error);
 		}
@@ -38,10 +58,19 @@ export class StockItemController {
 	update: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
-			const result = await this.stockItemService.update({
-				id,
-				stockItemData: req.body,
-			});
+			const { stockIds, ...restBody } = req.body;
+
+			const result =
+				stockIds === undefined || stockIds?.length === 0
+					? await this.stockItemService.update({
+							id,
+							stockItemData: restBody,
+						})
+					: await this.stockItemService.updateInMultipleStocks({
+							id,
+							stockIds,
+							stockItemData: restBody,
+						});
 
 			if (result.status === 200) {
 				res.status(result.status).json({

@@ -46,7 +46,7 @@ export class TransactionItemService {
 
 			const formattedItems = [];
 			for (const item of transactionItems) {
-				const stockItem = await this.stockItemService.getOne(
+				const stockItem = await this.stockItemService.getOneByStock(
 					item?.dataValues?.productVariantId,
 					stockId,
 				);

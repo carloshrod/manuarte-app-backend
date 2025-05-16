@@ -13,6 +13,7 @@ import { StockModel } from '../stock/model';
 import {
 	CreateStockItemDto,
 	PartialStockItem,
+	UpdateMultipleStockItemDto,
 	UpdateStockItemDto,
 } from './types';
 import { BillingStatus } from '../billing/types';
@@ -26,7 +27,7 @@ export class StockItemService {
 		this.shopService = new ShopService(ShopModel);
 	}
 
-	getAll = async (shopSlug: string) => {
+	getAllByStock = async (shopSlug: string) => {
 		try {
 			const shop = await this.shopService.getOneBySlug(shopSlug);
 			if (!shop) {
@@ -78,11 +79,18 @@ export class StockItemService {
 		}
 	};
 
-	getOne = async (productVariantId: string, stockId: string) => {
+	getOneByStock = async (productVariantId: string, stockId: string) => {
 		try {
 			const stockItem = await this.stockItemModel.findOne({
 				where: { stockId },
-				attributes: ['id', 'quantity'],
+				attributes: [
+					'id',
+					'quantity',
+					'currency',
+					'price',
+					'cost',
+					[sequelize.col('stock.name'), 'stockName'],
+				],
 				include: [
 					{
 						model: ProductVariantModel,
@@ -90,6 +98,12 @@ export class StockItemService {
 						where: { id: productVariantId },
 						attributes: [],
 						through: { attributes: [] },
+					},
+					{
+						model: StockModel,
+						as: 'stock',
+						attributes: [],
+						required: true,
 					},
 				],
 			});
@@ -297,7 +311,7 @@ export class StockItemService {
 		}
 	};
 
-	createMultiple = async (
+	createInMultipleStocks = async (
 		productVariantId: string,
 		stockItemData: PartialStockItem,
 		stocks: { id: string; currency: 'COP' | 'USD' }[],
@@ -367,6 +381,73 @@ export class StockItemService {
 				await transaction.rollback();
 			}
 			console.error('Error creating stock item');
+			throw error;
+		}
+	};
+
+	updateInMultipleStocks = async ({
+		id,
+		stockIds,
+		stockItemData,
+	}: UpdateMultipleStockItemDto) => {
+		try {
+			const { productVariantId } = stockItemData;
+
+			const missingStocks: string[] = [];
+
+			const stockItems = [
+				{ id, currency: 'COP' },
+				...(await Promise.all(
+					stockIds.map(async stockId => {
+						const stock = await StockModel.findByPk(stockId);
+						const stockItem = await this.getOneByStock(
+							productVariantId,
+							stockId,
+						);
+
+						const stockName = stock?.dataValues.name;
+						const itemStockName = stockItem?.dataValues.stockName || '';
+
+						if (stockName && !itemStockName.includes(stockName)) {
+							missingStocks.push(stockName);
+						}
+
+						return {
+							id: stockItem?.dataValues.id,
+							currency: stockItem?.dataValues.currency,
+						};
+					}),
+				)),
+			];
+
+			if (missingStocks.length > 0) {
+				throw new Error(
+					`El item no existe en: ${missingStocks.map(stock => `◾ ${stock}`).join(' ')}`,
+				);
+			}
+
+			const results = await Promise.all(
+				stockItems.map(({ id, currency }) => {
+					const price =
+						currency === 'USD' ? stockItemData.priceUsd : stockItemData.price;
+					const cost =
+						currency === 'USD' ? stockItemData.costUsd : stockItemData.cost;
+
+					return this.update({
+						id,
+						stockItemData: { ...stockItemData, price, cost },
+					});
+				}),
+			);
+
+			const result = results[0];
+
+			return {
+				status: result?.status,
+				updatedStockItem: result?.updatedStockItem,
+			};
+		} catch (error) {
+			console.error('Error updating stock items');
 			throw error;
 		}
 	};

@@ -14,10 +14,15 @@ const stockItemController = new StockItemController(stockItemService);
 router.get(
 	'/',
 	authorize(StockItemPermissions.STOCK_ITEM_READ),
-	stockItemController.getAll,
+	stockItemController.getAllByStock,
 );
 router.get(
 	'/:productVariantId/:stockId',
+	authorize(StockItemPermissions.STOCK_ITEM_READ),
+	stockItemController.getOneByStock,
+);
+router.get(
+	'/history/:productVariantId/:stockId',
 	authorize(StockItemPermissions.STOCK_ITEM_READ),
 	stockItemController.getHistory,
 );

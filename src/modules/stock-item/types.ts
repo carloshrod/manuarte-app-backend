@@ -25,3 +25,9 @@ export interface UpdateStockItemDto {
 	id: string;
 	stockItemData: CreateStockItemDto;
 }
+
+export interface UpdateMultipleStockItemDto {
+	id: string;
+	stockIds: string[];
+	stockItemData: CreateStockItemDto & { priceUsd: number; costUsd: number };
+}
