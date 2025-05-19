@@ -121,8 +121,12 @@ export class StockItemService {
 				attributes: [
 					'id',
 					'quantity',
-					[sequelize.col('productVariants.name'), 'productVariantName'],
+					'maxQty',
+					'minQty',
+					'stockId',
 					[sequelize.col('productVariants.product.name'), 'productName'],
+					[sequelize.col('productVariants.id'), 'productVariantId'],
+					[sequelize.col('productVariants.name'), 'productVariantName'],
 				],
 				include: [
 					{
@@ -143,13 +147,27 @@ export class StockItemService {
 
 			return stockItem;
 		} catch (error) {
-			console.error('Error obteniendo item de stock por id');
+			console.error('Error getting stock item by id');
 			throw error;
 		}
 	};
 
-	getHistory = async (productVariantId: string, stockId: string) => {
+	getHistory = async (id: string) => {
 		try {
+			const stockItem = await this.getOneById(id);
+			if (!stockItem) {
+				throw new Error('Item de stock no encontrado');
+			}
+			const {
+				stockId,
+				quantity,
+				maxQty,
+				minQty,
+				productVariantId,
+				productName,
+				productVariantName,
+			} = stockItem.dataValues;
+
 			const stock = await StockModel.findOne({
 				where: { id: stockId },
 				attributes: ['id', 'shopId'],
@@ -212,7 +230,10 @@ export class StockItemService {
 					{
 						model: TransactionModel,
 						as: 'transaction',
-						where: { type: { [Op.in]: ['EXIT', 'TRANSFER'] }, fromId: stockId },
+						where: {
+							type: { [Op.in]: ['EXIT', 'TRANSFER'] },
+							fromId: stockId,
+						},
 						attributes: [],
 						include: [
 							{
@@ -303,7 +324,17 @@ export class StockItemService {
 			);
 
 			if (history.length > 0) {
-				return { status: 200, history };
+				return {
+					status: 200,
+					stockItem: {
+						productName,
+						productVariantName,
+						quantity,
+						maxQty,
+						minQty,
+					},
+					history,
+				};
 			}
 		} catch (error) {
 			console.error('Error getting stock item history');

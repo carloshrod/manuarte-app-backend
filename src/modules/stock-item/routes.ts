@@ -17,14 +17,14 @@ router.get(
 	stockItemController.getAllByStock,
 );
 router.get(
+	'/history/:id',
+	authorize(StockItemPermissions.STOCK_ITEM_READ),
+	stockItemController.getHistory,
+);
+router.get(
 	'/:productVariantId/:stockId',
 	authorize(StockItemPermissions.STOCK_ITEM_READ),
 	stockItemController.getOneByStock,
-);
-router.get(
-	'/history/:productVariantId/:stockId',
-	authorize(StockItemPermissions.STOCK_ITEM_READ),
-	stockItemController.getHistory,
 );
 router.post(
 	'/',

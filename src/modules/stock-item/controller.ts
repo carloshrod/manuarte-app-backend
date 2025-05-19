@@ -97,15 +97,14 @@ export class StockItemController {
 
 	getHistory: Handler = async (req, res, next) => {
 		try {
-			const { productVariantId, stockId } = req.params;
+			const { id } = req.params;
+			console.log('******************* params', req.params);
 
-			const result = await this.stockItemService.getHistory(
-				productVariantId,
-				stockId,
-			);
+			const result = await this.stockItemService.getHistory(id);
 
 			if (result?.status === 200) {
-				res.status(result.status).json(result.history);
+				const { status, stockItem, history } = result;
+				res.status(status).json({ stockItem, history });
 				return;
 			}
 
