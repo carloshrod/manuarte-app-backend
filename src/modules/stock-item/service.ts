@@ -182,11 +182,12 @@ export class StockItemService {
 					'stockBefore',
 					'createdDate',
 					[sequelize.col('transaction.type'), 'type'],
-					[sequelize.col('transaction.fromId'), 'stockFromId'],
-					[sequelize.col('transaction.stockFrom.name'), 'stockFromName'],
-					[sequelize.col('transaction.toId'), 'stockToId'],
-					[sequelize.col('transaction.stockTo.name'), 'stockToName'],
-					[sequelize.col('transaction.description'), 'description'],
+					[sequelize.col('transaction.fromId'), 'fromId'],
+					[sequelize.col('transaction.stockFrom.name'), 'fromName'],
+					[sequelize.col('transaction.toId'), 'toId'],
+					[sequelize.col('transaction.stockTo.name'), 'toName'],
+					[sequelize.col('transaction.description'), 'identifier'],
+					[sequelize.col('transaction.state'), 'state'],
 				],
 				include: [
 					{
@@ -220,11 +221,12 @@ export class StockItemService {
 					'stockBefore',
 					'createdDate',
 					[sequelize.col('transaction.type'), 'type'],
-					[sequelize.col('transaction.fromId'), 'stockFromId'],
-					[sequelize.col('transaction.stockFrom.name'), 'stockFromName'],
-					[sequelize.col('transaction.toId'), 'stockToId'],
-					[sequelize.col('transaction.stockTo.name'), 'stockToName'],
-					[sequelize.col('transaction.description'), 'description'],
+					[sequelize.col('transaction.fromId'), 'fromId'],
+					[sequelize.col('transaction.stockFrom.name'), 'fromName'],
+					[sequelize.col('transaction.toId'), 'toId'],
+					[sequelize.col('transaction.stockTo.name'), 'toName'],
+					[sequelize.col('transaction.description'), 'identifier'],
+					[sequelize.col('transaction.state'), 'state'],
 				],
 				include: [
 					{
@@ -261,8 +263,9 @@ export class StockItemService {
 					'quantity',
 					'createdDate',
 					[sequelize.literal(`'BILLING'`), 'type'],
-					[sequelize.col('billing.serialNumber'), 'description'],
+					[sequelize.col('billing.serialNumber'), 'identifier'],
 					[sequelize.col('billing.shopId'), 'shopId'],
+					[sequelize.col('billing.status'), 'state'],
 				],
 				include: [
 					{
