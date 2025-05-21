@@ -20,6 +20,7 @@ export interface CreateTransactionDto {
 	state: TransactionState;
 	items: CreateTransactionItemDto[];
 	transferId?: string;
+	clientRequestId: string;
 }
 
 export type UpdateTransactionDto = Partial<CreateTransactionDto>;

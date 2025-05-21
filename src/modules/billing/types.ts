@@ -33,6 +33,7 @@ export interface CreateBillingDto {
 	currency: string;
 	requestedBy: string;
 	items: CreateBillingItemDto[];
+	clientRequestId: string;
 }
 
 export interface UpdateBillingDto extends CreateBillingDto {

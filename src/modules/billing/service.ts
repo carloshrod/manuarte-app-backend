@@ -169,6 +169,13 @@ export class BillingService {
 	}) => {
 		const transaction = await sequelize.transaction();
 		try {
+			const existing = await this.billingModel.findOne({
+				where: { clientRequestId: billingData?.clientRequestId },
+			});
+			if (existing) {
+				throw new Error('Ya se procesó esta solicitud');
+			}
+
 			if (billingData?.items?.length === 0) {
 				throw new Error('Es necesario al menos 1 item para crear una factura');
 			}
@@ -186,8 +193,15 @@ export class BillingService {
 				if (!result) throw new Error('El cliente está inactivo');
 			}
 
-			const { shopSlug, status, paymentMethod, shipping, total, requestedBy } =
-				billingData;
+			const {
+				shopSlug,
+				status,
+				paymentMethod,
+				shipping,
+				total,
+				clientRequestId,
+				requestedBy,
+			} = billingData;
 
 			const shop = shopSlug && (await this.shopService.getOneBySlug(shopSlug));
 			if (!shop) {
@@ -202,6 +216,7 @@ export class BillingService {
 				paymentMethod,
 				shipping,
 				total: Number(total) - Number(shipping ?? 0),
+				clientRequestId,
 				createdBy: requestedBy,
 			});
 			await newBilling.generateSerialNumber();

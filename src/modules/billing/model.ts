@@ -96,6 +96,11 @@ BillingModel.init(
 			allowNull: true,
 			defaultValue: 0,
 		},
+		clientRequestId: {
+			type: DataTypes.UUID,
+			allowNull: false,
+			unique: true,
+		},
 		createdBy: {
 			type: DataTypes.UUID,
 			allowNull: false,

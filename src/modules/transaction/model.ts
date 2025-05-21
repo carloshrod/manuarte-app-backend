@@ -52,6 +52,11 @@ TransactionModel.init(
 				key: 'id',
 			},
 		},
+		clientRequestId: {
+			type: DataTypes.UUID,
+			allowNull: false,
+			unique: true,
+		},
 		shippingDate: {
 			type: DataTypes.DATE,
 			allowNull: true,

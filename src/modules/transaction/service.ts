@@ -81,6 +81,13 @@ export class TransactionService {
 	create = async (transactionData: CreateTransactionDto) => {
 		const sqlTransaction = await sequelize.transaction();
 		try {
+			const existing = await this.transactionModel.findOne({
+				where: { clientRequestId: transactionData?.clientRequestId },
+			});
+			if (existing) {
+				throw new Error('Ya se procesó esta solicitud');
+			}
+
 			const { items, ...transactionDataRest } = transactionData;
 
 			if (items.length === 0) {
