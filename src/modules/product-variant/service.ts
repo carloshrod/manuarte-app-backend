@@ -132,23 +132,75 @@ export class ProductVariantService {
 	};
 
 	searchByName = async (
+		stockId: string,
 		search: string,
-		shopSlug: string,
 		missingProducts: boolean,
 	) => {
 		try {
-			const shop = await this.shopService.getOneBySlug(shopSlug);
-			if (!shop) {
-				return { status: 400, message: 'Tienda no encontrada' };
-			}
-
 			const productVariants = missingProducts
-				? await this.getMissing(search, shop.dataValues?.stockId)
-				: await this.getWithStockInfo(search, shop.dataValues?.stockId);
+				? await this.getMissing(search, stockId)
+				: await this.getWithStockInfo(search, stockId);
 
 			return { status: 200, productVariants };
 		} catch (error) {
 			console.error(error);
+			throw error;
+		}
+	};
+
+	bulkSearch = async (productVariantCodes: string[], stockId: string) => {
+		try {
+			const productVariantsWithStockInfo = await Promise.all(
+				productVariantCodes.map(async pvCode => {
+					const productVariant = await this.productVariantModel.findOne({
+						where: { vId: pvCode },
+						attributes: [
+							'id',
+							[sequelize.col('stockItems.id'), 'stockItemId'],
+							[sequelize.col('stockItems.quantity'), 'quantity'],
+						],
+						include: [
+							{
+								model: StockItemModel,
+								as: 'stockItems',
+								where: { stockId },
+								attributes: [],
+								through: { attributes: [] },
+							},
+						],
+					});
+
+					return {
+						...productVariant?.dataValues,
+						productCode: pvCode,
+					};
+				}),
+			);
+
+			const productVariantsResult = [];
+			for (const productVariant of productVariantsWithStockInfo) {
+				console.log(productVariant);
+				if (productVariant) {
+					const stockItems = await StockItemModel.findAll({
+						include: [
+							{
+								model: this.productVariantModel,
+								as: 'productVariants',
+								where: { id: productVariant.id },
+								through: { attributes: [] },
+							},
+						],
+					});
+					productVariantsResult.push({
+						...productVariant,
+						stocks: stockItems.map(item => item.dataValues.stockId),
+					});
+				}
+			}
+
+			return { status: 200, productVariants: productVariantsResult };
+		} catch (error) {
+			console.error('Error obteniendo productos con información de stock');
 			throw error;
 		}
 	};

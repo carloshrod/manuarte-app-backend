@@ -25,15 +25,34 @@ export class ProductVariantController {
 
 	searchByName: Handler = async (req, res, next) => {
 		try {
+			const { stockId } = req.params;
 			const search = (req.query.search as string) || '';
-			const shopSlug = (req.query.shopSlug as string) || '';
 			const missingProducts = req.query.missingProducts === 'true';
 
 			const result = await this.productVariantService.searchByName(
+				stockId,
 				search,
-				shopSlug,
 				missingProducts as boolean,
 			);
+			if (result.status !== 200) {
+				res.sendStatus(400);
+			}
+
+			res.status(result.status).json(result.productVariants);
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	bulkSearch: Handler = async (req, res, next) => {
+		try {
+			const { stockId } = req.params;
+
+			const result = await this.productVariantService.bulkSearch(
+				req.body,
+				stockId,
+			);
+
 			if (result.status !== 200) {
 				res.sendStatus(400);
 			}
