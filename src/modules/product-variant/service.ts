@@ -152,51 +152,63 @@ export class ProductVariantService {
 		try {
 			const productVariantsWithStockInfo = await Promise.all(
 				productVariantCodes.map(async pvCode => {
-					const productVariant = await this.productVariantModel.findOne({
-						where: { vId: pvCode },
-						attributes: [
-							'id',
-							[sequelize.col('stockItems.id'), 'stockItemId'],
-							[sequelize.col('stockItems.quantity'), 'quantity'],
-						],
-						include: [
-							{
-								model: StockItemModel,
-								as: 'stockItems',
-								where: { stockId },
-								attributes: [],
-								through: { attributes: [] },
-							},
-						],
-					});
+					try {
+						const productVariant = await this.productVariantModel.findOne({
+							where: { vId: pvCode },
+							attributes: [
+								'id',
+								[sequelize.col('stockItems.id'), 'stockItemId'],
+								[sequelize.col('stockItems.quantity'), 'quantity'],
+							],
+							include: [
+								{
+									model: StockItemModel,
+									as: 'stockItems',
+									where: { stockId },
+									attributes: [],
+									through: { attributes: [] },
+								},
+							],
+						});
 
-					return {
-						...productVariant?.dataValues,
-						productCode: pvCode,
-					};
+						if (!productVariant) {
+							throw new Error(
+								`No fue posible encontrar en la bodega el item con código ${pvCode}. Por favor revise bien los datos e intentelo nuevamente!`,
+							);
+						}
+
+						return {
+							...productVariant?.dataValues,
+							productCode: pvCode,
+						};
+					} catch (error) {
+						console.error(`Error interno con el código ${pvCode}:`, error);
+						throw error;
+					}
 				}),
 			);
 
-			const productVariantsResult = [];
-			for (const productVariant of productVariantsWithStockInfo) {
-				console.log(productVariant);
-				if (productVariant) {
-					const stockItems = await StockItemModel.findAll({
-						include: [
-							{
-								model: this.productVariantModel,
-								as: 'productVariants',
-								where: { id: productVariant.id },
-								through: { attributes: [] },
-							},
-						],
-					});
-					productVariantsResult.push({
-						...productVariant,
-						stocks: stockItems.map(item => item.dataValues.stockId),
-					});
-				}
-			}
+			const productVariantsResult = await Promise.all(
+				productVariantsWithStockInfo.map(async productVariant => {
+					if (productVariant) {
+						const stockItems = await StockItemModel.findAll({
+							include: [
+								{
+									model: this.productVariantModel,
+									as: 'productVariants',
+									where: { id: productVariant.id },
+									through: { attributes: [] },
+								},
+							],
+						});
+
+						return {
+							...productVariant,
+							stocks: stockItems.map(item => item.dataValues.stockId),
+						};
+					}
+				}),
+			);
 
 			return { status: 200, productVariants: productVariantsResult };
 		} catch (error) {
