@@ -4,21 +4,17 @@ import { ProductModel } from '../product/model';
 import { StockItemModel } from '../stock-item/model';
 import { ProductVariantModel } from './model';
 import { CreateProductVariantDto, UpdateProductVariantDto } from './types';
-import { ShopService } from '../shop/service';
-import { ShopModel } from '../shop/model';
 import { Op, Transaction } from 'sequelize';
 
 export class ProductVariantService {
 	private productVariantModel;
 	private productModel;
 	private productCategoryModel;
-	private shopService;
 
 	constructor(productVariantModel: typeof ProductVariantModel) {
 		this.productVariantModel = productVariantModel;
 		this.productModel = ProductModel;
 		this.productCategoryModel = ProductCategoryModel;
-		this.shopService = new ShopService(ShopModel);
 	}
 
 	getAll = async () => {
@@ -45,6 +41,7 @@ export class ProductVariantService {
 							{
 								model: this.productCategoryModel,
 								as: 'productCategory',
+								required: true,
 								attributes: [],
 							},
 						],

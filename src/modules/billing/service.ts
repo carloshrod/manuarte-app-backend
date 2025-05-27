@@ -118,6 +118,7 @@ export class BillingService {
 					{
 						model: BillingItemModel,
 						as: 'billingItems',
+						required: true,
 						attributes: [
 							'id',
 							'productVariantId',
@@ -130,11 +131,13 @@ export class BillingService {
 					{
 						model: ShopModel,
 						as: 'shop',
+						required: true,
 						attributes: [],
 						include: [
 							{
 								model: StockModel,
 								as: 'stock',
+								required: true,
 								attributes: [],
 							},
 						],

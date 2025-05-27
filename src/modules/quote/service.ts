@@ -110,6 +110,7 @@ export class QuoteService {
 					{
 						model: QuoteItemModel,
 						as: 'quoteItems',
+						required: true,
 						attributes: [
 							'id',
 							'productVariantId',

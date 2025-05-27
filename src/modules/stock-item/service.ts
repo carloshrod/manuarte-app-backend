@@ -132,6 +132,7 @@ export class StockItemService {
 					{
 						model: ProductVariantModel,
 						as: 'productVariants',
+						required: true,
 						attributes: [],
 						include: [
 							{

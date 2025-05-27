@@ -297,21 +297,25 @@ export class BillingItemService {
 					{
 						model: ProductVariantModel,
 						as: 'productVariant',
+						required: true,
 						attributes: [],
 						include: [
 							{
 								model: ProductModel,
 								as: 'product',
+								required: true,
 								attributes: [],
 								include: [
 									{
 										model: ProductCategoryModel,
 										as: 'productCategory',
+										required: true,
 										attributes: [],
 										include: [
 											{
 												model: ProductCategoryGroupModel,
 												as: 'productCategoryGroup',
+												required: true,
 												attributes: [],
 											},
 										],
