@@ -81,4 +81,36 @@ export class CustomerController {
 			next(error);
 		}
 	};
+
+	getStats: Handler = async (req, res, next) => {
+		try {
+			const { id } = req.params;
+			const result = await this.customerService.getStats(id);
+
+			if (result.status !== 200) {
+				res.sendStatus(500);
+				return;
+			}
+
+			res.status(result.status).json(result.customer);
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	getTop: Handler = async (req, res, next) => {
+		try {
+			const limit = req.query.limit;
+			const result = await this.customerService.getTop(Number(limit));
+
+			if (result.status !== 200) {
+				res.sendStatus(500);
+				return;
+			}
+
+			res.status(result.status).json(result.topCustomers);
+		} catch (error) {
+			next(error);
+		}
+	};
 }

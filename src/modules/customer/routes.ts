@@ -21,6 +21,16 @@ router.get(
 	authorize(CustomerPermissions.CUSTOMER_SEARCH),
 	customerController.searchCustomer,
 );
+router.get(
+	'/stats/:id',
+	authorize(CustomerPermissions.CUSTOMER_READ),
+	customerController.getStats,
+);
+router.get(
+	'/top',
+	authorize(CustomerPermissions.CUSTOMER_READ),
+	customerController.getTop,
+);
 router.post(
 	'/',
 	authorize(CustomerPermissions.CUSTOMER_CREATE),

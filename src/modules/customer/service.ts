@@ -1,4 +1,4 @@
-import { Transaction } from 'sequelize';
+import { QueryTypes, Transaction } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { CustomError } from '../../middlewares/errorHandler';
 import { AddressModel } from '../address/model';
@@ -6,6 +6,12 @@ import { PersonModel } from '../person/model';
 import { CustomerModel } from './model';
 import { CreateCustomerDto, UpdateCustomerDto } from './types';
 import { Op } from 'sequelize';
+import { BillingModel } from '../billing/model';
+import { BillingStatus } from '../billing/types';
+import { QuoteModel } from '../quote/model';
+import { QuoteStatus } from '../quote/types';
+import { ShopModel } from '../shop/model';
+import { BillingItemModel } from '../billing-item/model';
 
 export class CustomerService {
 	private customerModel;
@@ -199,6 +205,222 @@ export class CustomerService {
 			return customer;
 		} catch (error) {
 			console.error(error);
+			throw error;
+		}
+	};
+
+	getStats = async (id: string) => {
+		try {
+			const customerInfo = await this.customerModel.findOne({
+				where: { id },
+				attributes: [
+					'id',
+					'personId',
+					'email',
+					'phoneNumber',
+					'createdDate',
+					'city',
+					[sequelize.col('person.fullName'), 'fullName'],
+					[sequelize.col('person.dni'), 'dni'],
+					[sequelize.col('address.location'), 'location'],
+				],
+				include: [
+					{
+						model: this.personModel,
+						as: 'person',
+						attributes: [],
+					},
+					{
+						model: this.addressModel,
+						as: 'address',
+						attributes: [],
+					},
+				],
+			});
+
+			const billings = await BillingModel.findAndCountAll({
+				where: { customerId: id, status: BillingStatus.PAID },
+				attributes: [
+					'serialNumber',
+					'paymentMethod',
+					'total',
+					'shipping',
+					'createdDate',
+				],
+				order: [['createdDate', 'DESC']],
+			});
+
+			const [result] = await sequelize.query<{
+				totalSpent: string | null;
+			}>(
+				`
+				SELECT SUM("totalPrice") AS "totalSpent"
+				FROM "billing_item" bi
+				INNER JOIN "billing" b ON b.id = bi."billingId"
+				WHERE 
+					b."customerId" = :customerId 
+					AND b."status" = 'PAID' 
+					AND bi."name" NOT ILIKE '%flete%'
+				`,
+				{
+					replacements: { customerId: id },
+					type: QueryTypes.SELECT,
+				},
+			);
+			const totalSpent = result.totalSpent || 0;
+
+			const topProducts = await sequelize.query<{
+				productVariantId: string;
+				name: string;
+				totalQty: number;
+			}>(
+				`
+				SELECT 
+					bi."productVariantId",
+					MAX(bi."name") AS "name",
+					SUM(bi."quantity") AS "totalQty"
+				FROM "billing_item" bi
+				INNER JOIN "billing" b ON b.id = bi."billingId"
+				WHERE 
+					b."customerId" = :customerId 
+					AND b."status" = 'PAID' 
+					AND bi."name" NOT ILIKE '%flete%'
+				GROUP BY bi."productVariantId"
+				ORDER BY "totalQty" DESC
+				LIMIT 5
+				`,
+				{
+					replacements: { customerId: id },
+					type: QueryTypes.SELECT,
+				},
+			);
+
+			const quotes = await QuoteModel.findAndCountAll({
+				where: { customerId: id, status: QuoteStatus.PENDING },
+				attributes: [
+					'serialNumber',
+					'shipping',
+					[
+						sequelize.literal(`(
+							SELECT COALESCE(SUM("totalPrice"::numeric), 0)
+							FROM "quote_item" AS qi
+							WHERE 
+								qi."quoteId" = "QuoteModel"."id" 
+								AND qi."name" NOT ILIKE '%flete%'
+						)`),
+						'total',
+					],
+					'createdDate',
+				],
+				order: [['createdDate', 'DESC']],
+			});
+
+			return {
+				status: 200,
+				customer: {
+					info: customerInfo,
+					billings,
+					totalSpent,
+					topProducts,
+					quotes,
+				},
+			};
+		} catch (error) {
+			console.error('Error getting customer history: ', error);
+			throw error;
+		}
+	};
+
+	getTop = async (limit: number) => {
+		try {
+			let topCol;
+			let topEcu;
+
+			for (const currency of ['COP', 'USD']) {
+				const topCustomers = await this.customerModel.findAll({
+					attributes: [
+						'id',
+						'personId',
+						'email',
+						'phoneNumber',
+						'createdDate',
+						'city',
+						[sequelize.col('person.fullName'), 'fullName'],
+						[sequelize.col('person.dni'), 'dni'],
+						[sequelize.col('address.location'), 'location'],
+						[
+							sequelize.fn(
+								'COUNT',
+								sequelize.literal('DISTINCT "billings"."id"'),
+							),
+							'billingCount',
+						],
+						[
+							sequelize.fn(
+								'SUM',
+								sequelize.col('"billings->billingItems"."totalPrice"'),
+							),
+							'totalSpent',
+						],
+					],
+					include: [
+						{
+							model: BillingModel,
+							as: 'billings',
+							required: true,
+							attributes: [],
+							where: { status: BillingStatus.PAID },
+							include: [
+								{
+									model: BillingItemModel,
+									as: 'billingItems',
+									required: true,
+									attributes: [],
+									where: {
+										name: { [Op.notILike]: '%flete%' },
+									},
+								},
+								{
+									model: ShopModel,
+									as: 'shop',
+									required: true,
+									attributes: [],
+									where: { currency },
+								},
+							],
+						},
+						{
+							model: this.personModel,
+							as: 'person',
+							attributes: [],
+						},
+						{
+							model: this.addressModel,
+							as: 'address',
+							attributes: [],
+						},
+					],
+					group: [
+						'CustomerModel.id',
+						'person.fullName',
+						'person.dni',
+						'address.location',
+					],
+					order: [[sequelize.literal('"billingCount"'), 'DESC']],
+					limit,
+					subQuery: false,
+				});
+
+				if (currency === 'COP') {
+					topCol = topCustomers;
+				} else if (currency === 'USD') {
+					topEcu = topCustomers;
+				}
+			}
+
+			return { status: 200, topCustomers: { col: topCol, ecu: topEcu } };
+		} catch (error) {
+			console.error('Error getting top customers: ', error);
 			throw error;
 		}
 	};
