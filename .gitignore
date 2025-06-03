@@ -173,5 +173,6 @@ $RECYCLE.BIN/
 # temp folder
 src/models
 models
+data
 
 # End of https://www.toptal.com/developers/gitignore/api/node,windows
