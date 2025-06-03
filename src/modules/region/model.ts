@@ -2,22 +2,28 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { CityModel } from '../city/model';
 
-export class ProvinceModel extends Model {}
+export class RegionModel extends Model {}
 
-ProvinceModel.init(
+RegionModel.init(
 	{
 		id: {
-			type: DataTypes.UUID,
-			allowNull: false,
-			defaultValue: DataTypes.UUIDV4,
+			type: DataTypes.INTEGER,
 			primaryKey: true,
+			autoIncrement: true,
+			allowNull: false,
+			unique: true,
 		},
 		name: {
 			type: DataTypes.STRING,
 			allowNull: false,
 		},
+		regionCode: {
+			type: DataTypes.STRING(3),
+			allowNull: false,
+			unique: true,
+		},
 		countryId: {
-			type: DataTypes.UUID,
+			type: DataTypes.INTEGER,
 			allowNull: false,
 			references: {
 				model: 'country',
@@ -41,28 +47,21 @@ ProvinceModel.init(
 	},
 	{
 		sequelize,
-		tableName: 'province',
+		tableName: 'region',
 		schema: 'public',
 		timestamps: true,
 		createdAt: 'createdDate',
 		updatedAt: 'updatedDate',
 		deletedAt: 'deletedDate',
-		indexes: [
-			{
-				name: 'PK_4f461cb46f57e806516b7073659',
-				unique: true,
-				fields: [{ name: 'id' }],
-			},
-		],
 	},
 );
 
-ProvinceModel.hasMany(CityModel, {
-	foreignKey: 'provinceId',
+RegionModel.hasMany(CityModel, {
+	foreignKey: 'regionId',
 	as: 'cities',
 });
 
-CityModel.belongsTo(ProvinceModel, {
-	foreignKey: 'provinceId',
-	as: 'province',
+CityModel.belongsTo(RegionModel, {
+	foreignKey: 'regionId',
+	as: 'state',
 });

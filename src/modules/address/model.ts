@@ -20,7 +20,7 @@ AddressModel.init(
 			allowNull: true,
 		},
 		cityId: {
-			type: DataTypes.UUID,
+			type: DataTypes.INTEGER,
 			allowNull: true,
 			references: {
 				model: 'city',
@@ -62,12 +62,5 @@ AddressModel.init(
 		createdAt: 'createdDate',
 		updatedAt: 'updatedDate',
 		deletedAt: 'deletedDate',
-		indexes: [
-			{
-				name: 'PK_d92de1f82754668b5f5f5dd4fd5',
-				unique: true,
-				fields: [{ name: 'id' }],
-			},
-		],
 	},
 );

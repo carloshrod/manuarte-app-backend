@@ -1,25 +1,22 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
-import { ProvinceModel } from '../province/model';
+import { RegionModel } from '../region/model';
 
 export class CountryModel extends Model {}
 
 CountryModel.init(
 	{
 		id: {
-			type: DataTypes.UUID,
-			allowNull: false,
-			defaultValue: DataTypes.UUIDV4,
+			type: DataTypes.INTEGER,
 			primaryKey: true,
+			autoIncrement: true,
+			allowNull: false,
+			unique: true,
 		},
 		name: {
 			type: DataTypes.STRING,
 			allowNull: false,
 			unique: 'UQ_a3ef25bff86c640040b4ada0a8d',
-		},
-		language: {
-			type: DataTypes.STRING,
-			allowNull: false,
 		},
 		currency: {
 			type: DataTypes.STRING,
@@ -62,31 +59,15 @@ CountryModel.init(
 		createdAt: 'createdDate',
 		updatedAt: 'updatedDate',
 		deletedAt: 'deletedDate',
-		indexes: [
-			{
-				name: 'PK_bf6e37c231c4f4ea56dcd887269',
-				unique: true,
-				fields: [{ name: 'id' }],
-			},
-			{
-				name: 'UQ_a3ef25bff86c640040b4ada0a8d',
-				unique: true,
-				fields: [
-					{ name: 'name' },
-					{ name: 'callingCode' },
-					{ name: 'isoCode' },
-				],
-			},
-		],
 	},
 );
 
-CountryModel.hasMany(ProvinceModel, {
+CountryModel.hasMany(RegionModel, {
 	foreignKey: 'countryId',
-	as: 'provinces',
+	as: 'regions',
 });
 
-ProvinceModel.belongsTo(CountryModel, {
+RegionModel.belongsTo(CountryModel, {
 	foreignKey: 'countryId',
 	as: 'country',
 });

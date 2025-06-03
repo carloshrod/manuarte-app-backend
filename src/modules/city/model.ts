@@ -7,20 +7,21 @@ export class CityModel extends Model {}
 CityModel.init(
 	{
 		id: {
-			type: DataTypes.UUID,
-			allowNull: false,
-			defaultValue: DataTypes.UUIDV4,
+			type: DataTypes.INTEGER,
 			primaryKey: true,
+			autoIncrement: true,
+			allowNull: false,
+			unique: true,
 		},
 		name: {
 			type: DataTypes.STRING,
 			allowNull: false,
 		},
-		provinceId: {
-			type: DataTypes.UUID,
+		regionId: {
+			type: DataTypes.INTEGER,
 			allowNull: false,
 			references: {
-				model: 'province',
+				model: 'region',
 				key: 'id',
 			},
 		},
@@ -47,13 +48,6 @@ CityModel.init(
 		createdAt: 'createdDate',
 		updatedAt: 'updatedDate',
 		deletedAt: 'deletedDate',
-		indexes: [
-			{
-				name: 'PK_b222f51ce26f7e5ca86944a6739',
-				unique: true,
-				fields: [{ name: 'id' }],
-			},
-		],
 	},
 );
 
