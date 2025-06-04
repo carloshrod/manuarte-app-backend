@@ -11,6 +11,9 @@ import { BillingItemModel } from '../billing-item/model';
 import { AddressModel } from '../address/model';
 import { ShopService } from '../shop/service';
 import { StockModel } from '../stock/model';
+import { CityModel } from '../city/model';
+import { RegionModel } from '../region/model';
+import { CountryModel } from '../country/model';
 
 export class BillingService {
 	private billingModel;
@@ -91,6 +94,13 @@ export class BillingService {
 					[sequelize.col('customer.phoneNumber'), 'phoneNumber'],
 					[sequelize.col('customer.address.location'), 'location'],
 					[sequelize.col('customer.city'), 'city'],
+					[sequelize.col('customer.address.cityId'), 'cityId'],
+					[sequelize.col('customer.address.city.name'), 'cityName'],
+					[sequelize.col('customer.address.city.region.name'), 'regionName'],
+					[
+						sequelize.col('customer.address.city.region.country.isoCode'),
+						'countryIsoCode',
+					],
 					[sequelize.col('shop.stock.id'), 'stockId'],
 					'createdDate',
 					'updatedDate',
@@ -111,6 +121,27 @@ export class BillingService {
 								model: AddressModel,
 								as: 'address',
 								attributes: [],
+								include: [
+									{
+										model: CityModel,
+										as: 'city',
+										attributes: [],
+										include: [
+											{
+												model: RegionModel,
+												as: 'region',
+												attributes: [],
+												include: [
+													{
+														model: CountryModel,
+														as: 'country',
+														attributes: [],
+													},
+												],
+											},
+										],
+									},
+								],
 							},
 						],
 						paranoid: false,
@@ -192,6 +223,7 @@ export class BillingService {
 				);
 				customerId = result.customer.id;
 			} else if (customerId) {
+				await this.customerService.update(customerData, transaction);
 				const result = await this.customerService.getCustomerById(customerId);
 				if (!result) throw new Error('El cliente está inactivo');
 			}

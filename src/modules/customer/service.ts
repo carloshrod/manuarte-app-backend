@@ -12,16 +12,22 @@ import { QuoteModel } from '../quote/model';
 import { QuoteStatus } from '../quote/types';
 import { ShopModel } from '../shop/model';
 import { BillingItemModel } from '../billing-item/model';
+import { CityModel } from '../city/model';
+import { RegionModel } from '../region/model';
+import { CountryModel } from '../country/model';
+import { CityService } from '../city/service';
 
 export class CustomerService {
 	private customerModel;
 	private personModel;
 	private addressModel;
+	private cityService;
 
 	constructor(customerModel: typeof CustomerModel) {
 		this.customerModel = customerModel;
 		this.personModel = PersonModel;
 		this.addressModel = AddressModel;
+		this.cityService = new CityService(CityModel);
 	}
 
 	getAll = async () => {
@@ -37,6 +43,13 @@ export class CustomerService {
 					[sequelize.col('person.fullName'), 'fullName'],
 					[sequelize.col('person.dni'), 'dni'],
 					[sequelize.col('address.location'), 'location'],
+					[sequelize.col('address.cityId'), 'cityId'],
+					[sequelize.col('address.city.name'), 'cityName'],
+					[sequelize.col('address.city.region.name'), 'regionName'],
+					[
+						sequelize.col('address.city.region.country.isoCode'),
+						'countryIsoCode',
+					],
 				],
 				include: [
 					{
@@ -48,6 +61,27 @@ export class CustomerService {
 						model: this.addressModel,
 						as: 'address',
 						attributes: [],
+						include: [
+							{
+								model: CityModel,
+								as: 'city',
+								attributes: [],
+								include: [
+									{
+										model: RegionModel,
+										as: 'region',
+										attributes: [],
+										include: [
+											{
+												model: CountryModel,
+												as: 'country',
+												attributes: [],
+											},
+										],
+									},
+								],
+							},
+						],
 					},
 				],
 			});
@@ -71,12 +105,11 @@ export class CustomerService {
 				{ transaction: localTransaction },
 			);
 
-			const { email, phoneNumber, city } = restCustomer;
+			const { email, phoneNumber } = restCustomer;
 			const customer = await this.customerModel.create(
 				{
 					email: email?.length > 0 ? email : undefined,
 					phoneNumber,
-					city,
 					personId: person.id,
 				},
 				{ transaction: localTransaction },
@@ -87,10 +120,13 @@ export class CustomerService {
 					{
 						location: restCustomer?.location,
 						customerId: customer.id,
+						cityId: restCustomer?.cityId,
 					},
 					{ transaction: localTransaction },
 				);
 			}
+
+			const cityInfo = await this.cityService.getById(restCustomer?.cityId);
 
 			if (!transaction) await localTransaction.commit();
 
@@ -99,6 +135,9 @@ export class CustomerService {
 				customer: {
 					id: customer.id,
 					personId: person.id,
+					cityName: cityInfo?.dataValues?.name,
+					regionName: cityInfo?.dataValues?.regionName,
+					countryIsoCode: cityInfo?.dataValues?.countryIsoCode,
 					...customerData,
 				},
 			};
@@ -134,7 +173,7 @@ export class CustomerService {
 				throw new Error('Usuario no encontrado');
 			}
 
-			const { fullName, dni, email, phoneNumber, city, location } = rest;
+			const { fullName, dni, email, phoneNumber, location, cityId } = rest;
 
 			await personToUpdate.update(
 				{ fullName, dni },
@@ -144,23 +183,30 @@ export class CustomerService {
 				{
 					email: email?.length > 0 ? email : undefined,
 					phoneNumber,
-					city,
 				},
 				{ transaction: localTransaction },
 			);
 			await this.addressModel.update(
-				{ location },
+				{ location, cityId },
 				{
 					where: { customerId: customerToUpdate.id },
 					transaction: localTransaction,
 				},
 			);
 
+			const cityInfo = await this.cityService.getById(cityId);
+
 			if (!transaction) await localTransaction.commit();
 
 			return {
 				status: 200,
-				updatedCustomer: { ...customerData, id: customerToUpdate.id },
+				updatedCustomer: {
+					...customerData,
+					cityName: cityInfo?.dataValues?.name,
+					regionName: cityInfo?.dataValues?.regionName,
+					countryIsoCode: cityInfo?.dataValues?.countryIsoCode,
+					id: customerToUpdate.id,
+				},
 			};
 		} catch (error) {
 			if (!transaction) await localTransaction.rollback();
@@ -223,6 +269,13 @@ export class CustomerService {
 					[sequelize.col('person.fullName'), 'fullName'],
 					[sequelize.col('person.dni'), 'dni'],
 					[sequelize.col('address.location'), 'location'],
+					[sequelize.col('address.cityId'), 'cityId'],
+					[sequelize.col('address.city.name'), 'cityName'],
+					[sequelize.col('address.city.region.name'), 'regionName'],
+					[
+						sequelize.col('address.city.region.country.isoCode'),
+						'countryIsoCode',
+					],
 				],
 				include: [
 					{
@@ -234,6 +287,27 @@ export class CustomerService {
 						model: this.addressModel,
 						as: 'address',
 						attributes: [],
+						include: [
+							{
+								model: CityModel,
+								as: 'city',
+								attributes: [],
+								include: [
+									{
+										model: RegionModel,
+										as: 'region',
+										attributes: [],
+										include: [
+											{
+												model: CountryModel,
+												as: 'country',
+												attributes: [],
+											},
+										],
+									},
+								],
+							},
+						],
 					},
 				],
 			});
@@ -348,6 +422,13 @@ export class CustomerService {
 						[sequelize.col('person.fullName'), 'fullName'],
 						[sequelize.col('person.dni'), 'dni'],
 						[sequelize.col('address.location'), 'location'],
+						[sequelize.col('address.cityId'), 'cityId'],
+						[sequelize.col('address.city.name'), 'cityName'],
+						[sequelize.col('address.city.region.name'), 'regionName'],
+						[
+							sequelize.col('address.city.region.country.isoCode'),
+							'countryIsoCode',
+						],
 						[
 							sequelize.fn(
 								'COUNT',
@@ -398,6 +479,27 @@ export class CustomerService {
 							model: this.addressModel,
 							as: 'address',
 							attributes: [],
+							include: [
+								{
+									model: CityModel,
+									as: 'city',
+									attributes: [],
+									include: [
+										{
+											model: RegionModel,
+											as: 'region',
+											attributes: [],
+											include: [
+												{
+													model: CountryModel,
+													as: 'country',
+													attributes: [],
+												},
+											],
+										},
+									],
+								},
+							],
 						},
 					],
 					group: [
@@ -405,9 +507,12 @@ export class CustomerService {
 						'person.fullName',
 						'person.dni',
 						'address.location',
+						'address.cityId',
+						'address.city.name',
+						'address.city.region.name',
+						'address.city.region.country.isoCode',
 					],
 					order: [[sequelize.literal('"billingCount"'), 'DESC']],
-					limit,
 					subQuery: false,
 				});
 
@@ -443,6 +548,13 @@ export class CustomerService {
 					[sequelize.col('customer.phoneNumber'), 'phoneNumber'],
 					[sequelize.col('customer.address.location'), 'location'],
 					[sequelize.col('customer.city'), 'city'],
+					[sequelize.col('customer.address.cityId'), 'cityId'],
+					[sequelize.col('customer.address.city.name'), 'cityName'],
+					[sequelize.col('customer.address.city.region.name'), 'regionName'],
+					[
+						sequelize.col('customer.address.city.region.country.isoCode'),
+						'countryIsoCode',
+					],
 				],
 				include: [
 					{
@@ -455,6 +567,27 @@ export class CustomerService {
 								model: this.addressModel,
 								as: 'address',
 								attributes: [],
+								include: [
+									{
+										model: CityModel,
+										as: 'city',
+										attributes: [],
+										include: [
+											{
+												model: RegionModel,
+												as: 'region',
+												attributes: [],
+												include: [
+													{
+														model: CountryModel,
+														as: 'country',
+														attributes: [],
+													},
+												],
+											},
+										],
+									},
+								],
 							},
 						],
 					},

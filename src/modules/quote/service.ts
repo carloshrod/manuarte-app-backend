@@ -1,11 +1,14 @@
 import { sequelize } from '../../config/database';
 import { AddressModel } from '../address/model';
+import { CityModel } from '../city/model';
+import { CountryModel } from '../country/model';
 import { CustomerModel } from '../customer/model';
 import { CustomerService } from '../customer/service';
 import { CreateCustomerDto, UpdateCustomerDto } from '../customer/types';
 import { PersonModel } from '../person/model';
 import { QuoteItemModel } from '../quote-item/model';
 import { QuoteItemService } from '../quote-item/service';
+import { RegionModel } from '../region/model';
 import { ShopModel } from '../shop/model';
 import { QuoteModel } from './model';
 import { CreateQuoteDto, UpdateQuoteDto } from './types';
@@ -84,6 +87,13 @@ export class QuoteService {
 					[sequelize.col('customer.phoneNumber'), 'phoneNumber'],
 					[sequelize.col('customer.address.location'), 'location'],
 					[sequelize.col('customer.city'), 'city'],
+					[sequelize.col('customer.address.cityId'), 'cityId'],
+					[sequelize.col('customer.address.city.name'), 'cityName'],
+					[sequelize.col('customer.address.city.region.name'), 'regionName'],
+					[
+						sequelize.col('customer.address.city.region.country.isoCode'),
+						'countryIsoCode',
+					],
 					'createdDate',
 					'updatedDate',
 				],
@@ -103,6 +113,27 @@ export class QuoteService {
 								model: AddressModel,
 								as: 'address',
 								attributes: [],
+								include: [
+									{
+										model: CityModel,
+										as: 'city',
+										attributes: [],
+										include: [
+											{
+												model: RegionModel,
+												as: 'region',
+												attributes: [],
+												include: [
+													{
+														model: CountryModel,
+														as: 'country',
+														attributes: [],
+													},
+												],
+											},
+										],
+									},
+								],
 							},
 						],
 						paranoid: false,

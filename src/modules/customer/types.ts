@@ -4,7 +4,7 @@ export interface CreateCustomerDto extends PersonDto {
 	email: string;
 	phoneNumber: string;
 	location: string;
-	city: string;
+	cityId: string;
 	customerId?: string;
 	personId?: string;
 }
