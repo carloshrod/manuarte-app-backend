@@ -317,8 +317,17 @@ export class CustomerService {
 				attributes: [
 					'serialNumber',
 					'paymentMethod',
-					'total',
 					'shipping',
+					[
+						sequelize.literal(`(
+							SELECT COALESCE(SUM("totalPrice"::numeric), 0)
+							FROM "billing_item" AS bi
+							WHERE 
+								bi."billingId" = "BillingModel"."id" 
+								AND bi."name" NOT ILIKE '%flete%'
+						)`),
+						'total',
+					],
 					'createdDate',
 				],
 				order: [['createdDate', 'DESC']],
