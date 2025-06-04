@@ -21,7 +21,7 @@ router.get(
 router.get(
 	'/search/:stockId',
 	authorize(ProductPermissions.PRODUCT_SEARCH),
-	productVariantController.searchByName,
+	productVariantController.searchByNameOrCode,
 );
 router.post(
 	'/bulkSearch/:stockId',

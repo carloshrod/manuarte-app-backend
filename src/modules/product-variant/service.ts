@@ -128,7 +128,7 @@ export class ProductVariantService {
 		}
 	};
 
-	searchByName = async (
+	searchByNameOrCode = async (
 		stockId: string,
 		search: string,
 		missingProducts: boolean,
@@ -169,8 +169,30 @@ export class ProductVariantService {
 						});
 
 						if (!productVariant) {
+							const missingProductInStock =
+								await this.productVariantModel.findOne({
+									where: { vId: pvCode },
+									attributes: [
+										'name',
+										[sequelize.col('product.name'), 'productName'],
+									],
+									include: [
+										{
+											model: this.productModel,
+											as: 'product',
+											attributes: [],
+										},
+									],
+								});
+							if (!missingProductInStock) {
+								throw new Error(
+									`No existe el producto con código ${pvCode}. Por favor revisa bien los datos e intentalo nuevamente!`,
+								);
+							}
+							const { name, productName } = missingProductInStock.dataValues;
+
 							throw new Error(
-								`No fue posible encontrar en la bodega el item con código ${pvCode}. Por favor revise bien los datos e intentelo nuevamente!`,
+								`No fue posible encontrar en la bodega el item ${productName} - ${name}. Por favor revisa bien los datos e intentalo nuevamente!`,
 							);
 						}
 

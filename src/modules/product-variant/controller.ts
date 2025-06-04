@@ -23,13 +23,13 @@ export class ProductVariantController {
 		}
 	};
 
-	searchByName: Handler = async (req, res, next) => {
+	searchByNameOrCode: Handler = async (req, res, next) => {
 		try {
 			const { stockId } = req.params;
 			const search = (req.query.search as string) || '';
 			const missingProducts = req.query.missingProducts === 'true';
 
-			const result = await this.productVariantService.searchByName(
+			const result = await this.productVariantService.searchByNameOrCode(
 				stockId,
 				search,
 				missingProducts as boolean,
