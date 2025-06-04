@@ -63,5 +63,5 @@ RegionModel.hasMany(CityModel, {
 
 CityModel.belongsTo(RegionModel, {
 	foreignKey: 'regionId',
-	as: 'state',
+	as: 'region',
 });
