@@ -248,7 +248,10 @@ export class UserService {
 			const assignablePermissions = await this.permissionModel.findAll({
 				where: {
 					name: {
-						[Op.or]: permissionConditions,
+						[Op.and]: [
+							{ [Op.or]: permissionConditions },
+							{ [Op.not]: 'customer-delete' },
+						],
 					},
 				},
 				attributes: ['id', 'name'],
