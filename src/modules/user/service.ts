@@ -234,7 +234,7 @@ export class UserService {
 			}
 
 			const ITEMS_PERMISSIONS_BY_ROLE = {
-				cajero: ['product', 'customer', 'supplier'], // Items asignables a usuario con rol = cajero
+				cajero: ['product', 'customer', 'direct-enter'], // Items asignables a usuario con rol = cajero
 			};
 
 			const permissionConditions =
