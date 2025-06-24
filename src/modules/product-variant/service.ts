@@ -154,10 +154,17 @@ export class ProductVariantService {
 							where: { vId: pvCode },
 							attributes: [
 								'id',
+								'name',
+								[sequelize.col('product.name'), 'productName'],
 								[sequelize.col('stockItems.id'), 'stockItemId'],
 								[sequelize.col('stockItems.quantity'), 'quantity'],
 							],
 							include: [
+								{
+									model: this.productModel,
+									as: 'product',
+									attributes: [],
+								},
 								{
 									model: StockItemModel,
 									as: 'stockItems',
@@ -196,8 +203,16 @@ export class ProductVariantService {
 							);
 						}
 
+						if (!productVariant || !productVariant.dataValues) {
+							throw new Error(
+								`No se pudo obtener los datos del producto con código ${pvCode}.`,
+							);
+						}
+						const { productName, name, ...rest } = productVariant.dataValues;
+
 						return {
-							...productVariant?.dataValues,
+							...rest,
+							name: `${productName} - ${name}`,
 							productCode: pvCode,
 						};
 					} catch (error) {
