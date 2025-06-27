@@ -6,6 +6,8 @@ import { StockItemService } from '../stock-item/service';
 import { ProductVariantModel } from '../product-variant/model';
 import { ProductModel } from '../product/model';
 import { sequelize } from '../../config/database';
+import { TransactionModel } from '../transaction/model';
+import { TransactionState } from '../transaction/types';
 
 export class TransactionItemService {
 	private transactionItemModel;
@@ -59,6 +61,35 @@ export class TransactionItemService {
 			}
 
 			return { status: 200, transactionItems: formattedItems };
+		} catch (error) {
+			console.error('Error obteniendo items de transacción');
+			throw error;
+		}
+	};
+
+	getInTransitByStockId = async (toId: string) => {
+		try {
+			const transactionItems = await this.transactionItemModel.findAll({
+				attributes: [
+					'productVariantId',
+					[sequelize.fn('SUM', sequelize.col('quantity')), 'qtyInTransit'],
+				],
+				include: [
+					{
+						model: TransactionModel,
+						as: 'transaction',
+						where: {
+							toId,
+							state: TransactionState.PROGRESS,
+						},
+						attributes: [],
+					},
+				],
+				group: ['productVariantId'],
+				raw: true,
+			});
+
+			return { status: 200, transactionItems };
 		} catch (error) {
 			console.error('Error obteniendo items de transacción');
 			throw error;

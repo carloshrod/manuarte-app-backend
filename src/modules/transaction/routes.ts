@@ -21,6 +21,11 @@ router.get(
 	authorize(TransactionPermissions.TRANSACTION_READ),
 	transactionController.getItems,
 );
+router.get(
+	'/items-in-transit/:stockId',
+	authorize(TransactionPermissions.TRANSACTION_READ),
+	transactionController.getItemsInTransit,
+);
 router.post(
 	'/',
 	authorize(TransactionPermissions.TRANSACTION_CREATE),
