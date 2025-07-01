@@ -41,6 +41,7 @@ export class BillingService {
 					'serialNumber',
 					'status',
 					'paymentMethod',
+					'shipping',
 					'total',
 					'createdDate',
 					'updatedDate',
