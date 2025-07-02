@@ -1,4 +1,5 @@
 import { sequelize } from '../../config/database';
+import { CountryModel } from '../country/model';
 import { StockModel } from '../stock/model';
 import { ShopModel } from './model';
 
@@ -20,11 +21,17 @@ export class ShopService {
 					[sequelize.col('stock.id'), 'stockId'],
 					[sequelize.col('stock.name'), 'stockName'],
 					[sequelize.col('stock.isMain'), 'mainStock'],
+					[sequelize.col('country.isoCode'), 'isoCode'],
 				],
 				include: [
 					{
 						model: StockModel,
 						as: 'stock',
+						attributes: [],
+					},
+					{
+						model: CountryModel,
+						as: 'country',
 						attributes: [],
 					},
 				],

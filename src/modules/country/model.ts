@@ -1,6 +1,7 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { RegionModel } from '../region/model';
+import { ShopModel } from '../shop/model';
 
 export class CountryModel extends Model {}
 
@@ -62,12 +63,24 @@ CountryModel.init(
 	},
 );
 
+// ***** CountryModel-RegionModel Relations *****
 CountryModel.hasMany(RegionModel, {
 	foreignKey: 'countryId',
 	as: 'regions',
 });
 
 RegionModel.belongsTo(CountryModel, {
+	foreignKey: 'countryId',
+	as: 'country',
+});
+
+// ***** CountryModel-ShopModel Relations *****
+CountryModel.hasMany(ShopModel, {
+	foreignKey: 'countryId',
+	as: 'shops',
+});
+
+ShopModel.belongsTo(CountryModel, {
 	foreignKey: 'countryId',
 	as: 'country',
 });

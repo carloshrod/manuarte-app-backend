@@ -8,6 +8,7 @@ import { RoleModel } from '../role/model';
 import { ShopModel } from '../shop/model';
 import { StockModel } from '../stock/model';
 import { sequelize } from '../../config/database';
+import { CountryModel } from '../country/model';
 
 export class AuthService {
 	private userModel;
@@ -28,6 +29,7 @@ export class AuthService {
 					'password',
 					'roleId',
 					[sequelize.col('shop.slug'), 'shopSlug'],
+					[sequelize.col('shop.country.isoCode'), 'isoCode'],
 					[sequelize.col('shop.stock.isMain'), 'isMain'],
 				],
 				include: [
@@ -39,6 +41,11 @@ export class AuthService {
 							{
 								model: StockModel,
 								as: 'stock',
+								attributes: [],
+							},
+							{
+								model: CountryModel,
+								as: 'country',
 								attributes: [],
 							},
 						],
@@ -93,6 +100,7 @@ export class AuthService {
 					'roleId',
 					'refreshToken',
 					[sequelize.col('shop.slug'), 'shopSlug'],
+					[sequelize.col('shop.country.isoCode'), 'isoCode'],
 					[sequelize.col('shop.stock.isMain'), 'isMain'],
 				],
 				include: [
@@ -104,6 +112,11 @@ export class AuthService {
 							{
 								model: StockModel,
 								as: 'stock',
+								attributes: [],
+							},
+							{
+								model: CountryModel,
+								as: 'country',
 								attributes: [],
 							},
 						],
@@ -167,6 +180,7 @@ export class AuthService {
 						roleId: user.roleId,
 						roleName: await this.getRoleName(user.roleId),
 						shop: user?.dataValues?.shopSlug,
+						isoCode: user?.dataValues?.isoCode,
 						mainStock: user?.dataValues?.isMain,
 						extraPermissions: (await user.getExtraPermissions()).map(
 							permission => permission.name,

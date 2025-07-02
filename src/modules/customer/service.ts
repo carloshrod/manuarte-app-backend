@@ -30,8 +30,14 @@ export class CustomerService {
 		this.cityService = new CityService(CityModel);
 	}
 
-	getAll = async () => {
+	getAll = async (isoCode?: string) => {
 		try {
+			if (isoCode && typeof isoCode !== 'string') {
+				throw new Error('Invalid isoCode');
+			}
+
+			const filterByCountry = Boolean(isoCode);
+
 			const customers = await this.customerModel.findAll({
 				attributes: [
 					'id',
@@ -61,21 +67,26 @@ export class CustomerService {
 						model: this.addressModel,
 						as: 'address',
 						attributes: [],
+						required: filterByCountry,
 						include: [
 							{
 								model: CityModel,
 								as: 'city',
 								attributes: [],
+								required: filterByCountry,
 								include: [
 									{
 										model: RegionModel,
 										as: 'region',
 										attributes: [],
+										required: filterByCountry,
 										include: [
 											{
 												model: CountryModel,
 												as: 'country',
 												attributes: [],
+												required: filterByCountry,
+												where: filterByCountry ? { isoCode } : undefined,
 											},
 										],
 									},
@@ -539,7 +550,7 @@ export class CustomerService {
 		}
 	};
 
-	searchCustomer = async (search: string) => {
+	searchCustomer = async (search: string, isoCode: string) => {
 		try {
 			const customer = await this.personModel.findAll({
 				where: {
@@ -576,21 +587,26 @@ export class CustomerService {
 								model: this.addressModel,
 								as: 'address',
 								attributes: [],
+								required: true,
 								include: [
 									{
 										model: CityModel,
 										as: 'city',
 										attributes: [],
+										required: true,
 										include: [
 											{
 												model: RegionModel,
 												as: 'region',
 												attributes: [],
+												required: true,
 												include: [
 													{
 														model: CountryModel,
 														as: 'country',
 														attributes: [],
+														required: true,
+														where: { isoCode },
 													},
 												],
 											},

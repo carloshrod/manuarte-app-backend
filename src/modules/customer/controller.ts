@@ -8,9 +8,10 @@ export class CustomerController {
 		this.customerService = customerService;
 	}
 
-	getAll: Handler = async (_req, res, next) => {
+	getAll: Handler = async (req, res, next) => {
 		try {
-			const customers = await this.customerService.getAll();
+			const isoCode = req.query.isoCode as string;
+			const customers = await this.customerService.getAll(isoCode);
 
 			if (customers.length > 0) {
 				res.status(200).json(customers);
@@ -74,7 +75,9 @@ export class CustomerController {
 	searchCustomer: Handler = async (req, res, next) => {
 		try {
 			const search = (req.query.search as string) || '';
-			const result = await this.customerService.searchCustomer(search);
+			const isoCode = (req.query.isoCode as string) || '';
+
+			const result = await this.customerService.searchCustomer(search, isoCode);
 
 			res.status(result.status).json(result.customer);
 		} catch (error) {
