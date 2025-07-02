@@ -197,13 +197,25 @@ export class CustomerService {
 				},
 				{ transaction: localTransaction },
 			);
-			await this.addressModel.update(
+
+			const [updatedCount] = await this.addressModel.update(
 				{ location, cityId },
 				{
 					where: { customerId: customerToUpdate.id },
 					transaction: localTransaction,
 				},
 			);
+
+			if (updatedCount === 0) {
+				await this.addressModel.create(
+					{
+						location,
+						customerId: customerToUpdate.id,
+						cityId,
+					},
+					{ transaction: localTransaction },
+				);
+			}
 
 			const cityInfo = await this.cityService.getById(cityId);
 
