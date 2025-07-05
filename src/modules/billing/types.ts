@@ -28,7 +28,9 @@ export interface CreateBillingDto {
 	shopId?: string;
 	status: BillingStatus;
 	paymentMethod: PaymentMethod;
-	total: number;
+	subtotal: number;
+	discountType: string;
+	discount: number;
 	shipping: string;
 	currency: string;
 	requestedBy: string;

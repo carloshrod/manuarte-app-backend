@@ -77,6 +77,16 @@ QuoteModel.init(
 			type: DataTypes.STRING,
 			allowNull: false,
 		},
+		discountType: {
+			type: DataTypes.ENUM('PERCENTAGE', 'FIXED'),
+			allowNull: true,
+			defaultValue: null,
+		},
+		discount: {
+			type: DataTypes.DOUBLE,
+			allowNull: true,
+			defaultValue: 0,
+		},
 		shipping: {
 			type: DataTypes.DOUBLE,
 			allowNull: true,

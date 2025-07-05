@@ -87,9 +87,19 @@ BillingModel.init(
 			),
 			allowNull: false,
 		},
-		total: {
+		subtotal: {
 			type: DataTypes.DOUBLE,
 			allowNull: false,
+		},
+		discountType: {
+			type: DataTypes.ENUM('PERCENTAGE', 'FIXED'),
+			allowNull: true,
+			defaultValue: null,
+		},
+		discount: {
+			type: DataTypes.DOUBLE,
+			allowNull: true,
+			defaultValue: 0,
 		},
 		shipping: {
 			type: DataTypes.DOUBLE,

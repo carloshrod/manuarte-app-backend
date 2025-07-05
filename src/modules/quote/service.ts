@@ -78,6 +78,8 @@ export class QuoteService {
 					'serialNumber',
 					'status',
 					'currency',
+					'discountType',
+					'discount',
 					'shipping',
 					'customerId',
 					[sequelize.col('customer.person.id'), 'personId'],
@@ -198,7 +200,14 @@ export class QuoteService {
 				await this.customerService.update(customerData, transaction);
 			}
 
-			const { status, shipping, shopSlug, requestedBy } = quoteData;
+			const {
+				status,
+				discountType,
+				discount,
+				shipping,
+				shopSlug,
+				requestedBy,
+			} = quoteData;
 
 			const shop = await ShopModel.findOne({
 				where: { slug: shopSlug },
@@ -213,6 +222,8 @@ export class QuoteService {
 				shopId: shop.id,
 				status,
 				currency: shop.currency,
+				discountType: discount > 0 ? discountType : null,
+				discount,
 				shipping,
 				createdBy: requestedBy,
 			});
@@ -284,6 +295,9 @@ export class QuoteService {
 					customerId: customerData?.customerId,
 					status: quoteData?.status,
 					currency: quoteData?.currency,
+					discountType:
+						quoteData?.discount > 0 ? quoteData?.discountType : null,
+					discount: quoteData?.discount || 0,
 					shipping: quoteData?.shipping,
 					requestedBy: quoteData?.requestedBy,
 				},

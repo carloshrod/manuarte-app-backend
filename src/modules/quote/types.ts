@@ -13,7 +13,9 @@ export interface CreateQuoteDto {
 	shopId?: string;
 	items: CreateQuoteItemDto[];
 	status: QuoteStatus;
-	shipping: string;
+	discountType: string;
+	discount: number;
+	shipping: number;
 	requestedBy: string;
 	currency?: 'COP' | 'USD';
 }

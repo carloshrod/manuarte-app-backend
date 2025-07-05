@@ -98,7 +98,6 @@ export class StockItemController {
 	getHistory: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
-			console.log('******************* params', req.params);
 
 			const result = await this.stockItemService.getHistory(id);
 

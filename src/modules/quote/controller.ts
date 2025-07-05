@@ -47,6 +47,7 @@ export class QuoteController {
 				quoteData: { ...req.body?.quoteData, requestedBy },
 				customerData: req.body?.customerData,
 			});
+
 			if (result.status !== 201) {
 				res.sendStatus(500);
 				return;
