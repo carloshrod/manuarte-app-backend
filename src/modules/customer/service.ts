@@ -340,6 +340,7 @@ export class CustomerService {
 				attributes: [
 					'serialNumber',
 					'paymentMethod',
+					'discount',
 					'shipping',
 					[
 						sequelize.literal(`(
@@ -349,7 +350,7 @@ export class CustomerService {
 								bi."billingId" = "BillingModel"."id" 
 								AND bi."name" NOT ILIKE '%flete%'
 						)`),
-						'total',
+						'subtotal',
 					],
 					'createdDate',
 				],
@@ -414,7 +415,7 @@ export class CustomerService {
 								qi."quoteId" = "QuoteModel"."id" 
 								AND qi."name" NOT ILIKE '%flete%'
 						)`),
-						'total',
+						'subtotal',
 					],
 					'createdDate',
 				],
