@@ -7,7 +7,7 @@ import { CustomerModel } from './model';
 import { CreateCustomerDto, UpdateCustomerDto } from './types';
 import { Op } from 'sequelize';
 import { BillingModel } from '../billing/model';
-import { BillingStatus } from '../billing/types';
+import { BillingStatus, Payment } from '../billing/types';
 import { QuoteModel } from '../quote/model';
 import { QuoteStatus } from '../quote/types';
 import { ShopModel } from '../shop/model';
@@ -16,6 +16,7 @@ import { CityModel } from '../city/model';
 import { RegionModel } from '../region/model';
 import { CountryModel } from '../country/model';
 import { CityService } from '../city/service';
+import { BillingPaymentModel } from '../billing-payment/model';
 
 export class CustomerService {
 	private customerModel;
@@ -339,7 +340,6 @@ export class CustomerService {
 				where: { customerId: id, status: BillingStatus.PAID },
 				attributes: [
 					'serialNumber',
-					'paymentMethod',
 					'discount',
 					'shipping',
 					[
@@ -354,8 +354,29 @@ export class CustomerService {
 					],
 					'createdDate',
 				],
+				include: [
+					{
+						model: BillingPaymentModel,
+						as: 'payments',
+						attributes: ['paymentMethod'],
+					},
+				],
 				order: [['createdDate', 'DESC']],
+				distinct: true,
 			});
+
+			const billingsWithPaymentMethods = billings.rows
+				.map(billing => {
+					const billingJson = billing.toJSON();
+
+					return {
+						...billingJson,
+						paymentMethods:
+							billingJson.payments?.map((p: Payment) => p.paymentMethod) || [],
+					};
+				})
+				// eslint-disable-next-line @typescript-eslint/no-unused-vars
+				.map(({ payments, ...rest }) => rest);
 
 			const [result] = await sequelize.query<{
 				totalSpent: string | null;
@@ -426,7 +447,7 @@ export class CustomerService {
 				status: 200,
 				customer: {
 					info: customerInfo,
-					billings,
+					billings: { rows: billingsWithPaymentMethods, count: billings.count },
 					totalSpent,
 					topProducts,
 					quotes,

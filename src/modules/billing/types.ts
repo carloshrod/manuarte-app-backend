@@ -23,11 +23,17 @@ export enum PaymentMethod {
 	OTHER = 'OTHER',
 }
 
+export interface Payment {
+	paymentMethod: PaymentMethod;
+	amount: number;
+	paymentReference?: string;
+}
+
 export interface CreateBillingDto {
 	shopSlug?: string;
 	shopId?: string;
 	status: BillingStatus;
-	paymentMethod: PaymentMethod;
+	payments: Payment[];
 	subtotal: number;
 	discountType: string;
 	discount: number;

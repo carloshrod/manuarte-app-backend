@@ -64,9 +64,13 @@ export class BillingController {
 
 	update: Handler = async (req, res, next) => {
 		try {
+			const requestedBy = (req as CustomRequest).requestedBy;
 			const { id } = req.params;
 
-			const result = await this.billingService.update(req.body, id);
+			const result = await this.billingService.update(
+				{ ...req.body, requestedBy },
+				id,
+			);
 
 			if (result.status === 200) {
 				res

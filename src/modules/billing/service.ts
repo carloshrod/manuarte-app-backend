@@ -1,5 +1,10 @@
 import { CreateCustomerDto } from './../customer/types';
-import { BillingStatus, CreateBillingDto, UpdateBillingDto } from './types';
+import {
+	BillingStatus,
+	CreateBillingDto,
+	Payment,
+	UpdateBillingDto,
+} from './types';
 import { sequelize } from '../../config/database';
 import { CustomerModel } from '../customer/model';
 import { PersonModel } from '../person/model';
@@ -14,15 +19,18 @@ import { StockModel } from '../stock/model';
 import { CityModel } from '../city/model';
 import { RegionModel } from '../region/model';
 import { CountryModel } from '../country/model';
+import { BillingPaymentModel } from '../billing-payment/model';
 
 export class BillingService {
 	private billingModel;
+	private billingPaymentModel;
 	private billingItemService;
 	private customerService;
 	private shopService;
 
 	constructor(billingModel: typeof BillingModel) {
 		this.billingModel = billingModel;
+		this.billingPaymentModel = BillingPaymentModel;
 		this.billingItemService = new BillingItemService(BillingItemModel);
 		this.customerService = new CustomerService(CustomerModel);
 		this.shopService = new ShopService(ShopModel);
@@ -40,7 +48,6 @@ export class BillingService {
 					'id',
 					'serialNumber',
 					'status',
-					'paymentMethod',
 					'shipping',
 					'subtotal',
 					'createdDate',
@@ -51,6 +58,11 @@ export class BillingService {
 					'shopId',
 				],
 				include: [
+					{
+						model: this.billingPaymentModel,
+						as: 'payments',
+						attributes: ['paymentMethod'],
+					},
 					{
 						model: CustomerModel,
 						as: 'customer',
@@ -69,7 +81,20 @@ export class BillingService {
 				order: [['createdDate', 'DESC']],
 			});
 
-			return { status: 200, billings };
+			const billingsWithPaymentMethods = billings
+				.map(billing => {
+					const billingJson = billing.toJSON();
+
+					return {
+						...billingJson,
+						paymentMethods:
+							billingJson.payments?.map((p: Payment) => p.paymentMethod) || [],
+					};
+				})
+				// eslint-disable-next-line @typescript-eslint/no-unused-vars
+				.map(({ payments, ...rest }) => rest);
+
+			return { status: 200, billings: billingsWithPaymentMethods };
 		} catch (error) {
 			console.error('Error obteniendo facturas');
 			throw error;
@@ -85,7 +110,6 @@ export class BillingService {
 					'shopId',
 					'serialNumber',
 					'status',
-					'paymentMethod',
 					'discountType',
 					'discount',
 					'shipping',
@@ -109,6 +133,11 @@ export class BillingService {
 					'updatedDate',
 				],
 				include: [
+					{
+						model: this.billingPaymentModel,
+						as: 'payments',
+						attributes: ['paymentMethod', 'amount'],
+					},
 					{
 						model: CustomerModel,
 						as: 'customer',
@@ -181,9 +210,13 @@ export class BillingService {
 			if (!billing)
 				return { status: 404, message: 'No fue posible obtener la factura' };
 
+			const rawBilling = billing.toJSON();
+
 			const formattedBilling = {
-				...billing.toJSON(),
-				items: billing.get('billingItems'),
+				...rawBilling,
+				items: rawBilling.billingItems,
+				paymentMethods:
+					rawBilling.payments.map((p: Payment) => p.paymentMethod) || [],
 			};
 			delete formattedBilling.billingItems;
 
@@ -234,7 +267,7 @@ export class BillingService {
 			const {
 				shopSlug,
 				status,
-				paymentMethod,
+				payments,
 				discountType,
 				discount,
 				shipping,
@@ -253,7 +286,7 @@ export class BillingService {
 				customerId,
 				shopId: shop?.dataValues?.id,
 				status,
-				paymentMethod,
+				paymentMethod: payments[0].paymentMethod,
 				discountType: discount > 0 ? discountType : null,
 				discount: discount || 0,
 				shipping,
@@ -263,6 +296,16 @@ export class BillingService {
 			});
 			await newBilling.generateSerialNumber();
 			await newBilling.save({ transaction });
+
+			const paymentEntries = payments.map(payment => ({
+				...payment,
+				billingId: newBilling.id,
+				paymentReference: payment?.paymentReference ?? null,
+			}));
+
+			await this.billingPaymentModel.bulkCreate(paymentEntries, {
+				transaction,
+			});
 
 			for (const item of billingData.items) {
 				await this.billingItemService.create(
@@ -286,7 +329,7 @@ export class BillingService {
 					id: newBilling.id,
 					serialNumber: newBilling.serialNumber,
 					status,
-					paymentMethod,
+					paymentMethods: payments.map(p => p.paymentMethod),
 					subtotal,
 					customerId,
 					customerName: customerData?.fullName ?? null,
@@ -303,18 +346,57 @@ export class BillingService {
 	};
 
 	update = async (billingData: UpdateBillingDto, billingId: string) => {
+		const transaction = await sequelize.transaction();
 		try {
-			const billingToUpdate = await this.billingModel.findByPk(billingId);
-			if (!billingToUpdate)
+			const billingToUpdate = await this.billingModel.findByPk(billingId, {
+				transaction,
+			});
+			if (!billingToUpdate) {
+				await transaction.rollback();
 				return {
 					status: 400,
 					message: 'Factura no encontrada',
 				};
+			}
 
-			await billingToUpdate.update(billingData);
+			if (!billingData.payments || billingData.payments.length === 0) {
+				await transaction.rollback();
+				return {
+					status: 400,
+					message: 'La factura debe tener al menos un método de pago',
+				};
+			}
+
+			await billingToUpdate.update(
+				{
+					status: billingData.status,
+					updatedBy: billingData.requestedBy,
+				},
+				{ transaction },
+			);
+
+			if (billingData?.payments && billingData.payments.length > 0) {
+				await this.billingPaymentModel.destroy({
+					where: { billingId },
+					transaction,
+				});
+
+				const newPaymentEntries = billingData.payments.map(payment => ({
+					...payment,
+					billingId,
+					paymentReference: payment.paymentReference || null,
+				}));
+
+				await this.billingPaymentModel.bulkCreate(newPaymentEntries, {
+					transaction,
+				});
+			}
+
+			await transaction.commit();
 
 			return { status: 200 };
 		} catch (error) {
+			await transaction.rollback();
 			console.error('Error editando factura');
 			throw error;
 		}
