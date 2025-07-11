@@ -4,6 +4,7 @@ import { BillingItemModel } from '../billing-item/model';
 import { ShopModel } from '../shop/model';
 import { CustomerModel } from '../customer/model';
 import { Op } from 'sequelize';
+import { BillingPaymentModel } from '../billing-payment/model';
 
 export class BillingModel extends Model {
 	public id!: string;
@@ -196,4 +197,15 @@ BillingModel.belongsTo(CustomerModel, {
 CustomerModel.hasMany(BillingModel, {
 	foreignKey: 'customerId',
 	as: 'billings',
+});
+
+// ***** BillingModel-BillingPaymentModel Relations *****
+BillingModel.hasMany(BillingPaymentModel, {
+	foreignKey: 'billingId',
+	as: 'payments',
+});
+
+BillingPaymentModel.belongsTo(BillingModel, {
+	foreignKey: 'billingId',
+	as: 'billing',
 });
