@@ -48,6 +48,8 @@ export class BillingService {
 					'id',
 					'serialNumber',
 					'status',
+					'discountType',
+					'discount',
 					'shipping',
 					'subtotal',
 					'createdDate',
