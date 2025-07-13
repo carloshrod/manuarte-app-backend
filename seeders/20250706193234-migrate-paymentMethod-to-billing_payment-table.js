@@ -5,7 +5,7 @@
 module.exports = {
 	async up(queryInterface, Sequelize) {
 		const billings = await queryInterface.sequelize.query(
-			`SELECT id, "paymentMethod", subtotal FROM billing WHERE "paymentMethod" IS NOT NULL`,
+			`SELECT id, "paymentMethod", subtotal, shipping FROM billing WHERE "paymentMethod" IS NOT NULL`,
 			{ type: Sequelize.QueryTypes.SELECT },
 		);
 
@@ -13,7 +13,7 @@ module.exports = {
 			id: Sequelize.literal('uuid_generate_v4()'),
 			billingId: billing.id,
 			paymentMethod: billing.paymentMethod,
-			amount: billing.subtotal,
+			amount: Number(billing.subtotal) + Number(billing.shipping),
 			paymentReference: null,
 			createdDate: new Date(),
 			updatedDate: new Date(),
