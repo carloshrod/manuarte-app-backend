@@ -2,6 +2,7 @@ import { CreateCustomerDto } from './../customer/types';
 import {
 	BillingStatus,
 	CreateBillingDto,
+	DiscountType,
 	Payment,
 	UpdateBillingDto,
 } from './types';
@@ -20,11 +21,15 @@ import { CityModel } from '../city/model';
 import { RegionModel } from '../region/model';
 import { CountryModel } from '../country/model';
 import { BillingPaymentModel } from '../billing-payment/model';
+import { StockItemService } from '../stock-item/service';
+import { StockItemModel } from '../stock-item/model';
+import { StockOperation } from '../stock-item/types';
 
 export class BillingService {
 	private billingModel;
 	private billingPaymentModel;
 	private billingItemService;
+	private stockItemService;
 	private customerService;
 	private shopService;
 
@@ -32,6 +37,7 @@ export class BillingService {
 		this.billingModel = billingModel;
 		this.billingPaymentModel = BillingPaymentModel;
 		this.billingItemService = new BillingItemService(BillingItemModel);
+		this.stockItemService = new StockItemService(StockItemModel);
 		this.customerService = new CustomerService(CustomerModel);
 		this.shopService = new ShopService(ShopModel);
 	}
@@ -284,6 +290,8 @@ export class BillingService {
 				return { status: 400, message: 'Tienda no encontrada' };
 			}
 
+			const deductFromStock = status === BillingStatus.PAID;
+
 			const newBilling = this.billingModel.build({
 				customerId,
 				shopId: shop?.dataValues?.id,
@@ -295,6 +303,7 @@ export class BillingService {
 				subtotal,
 				clientRequestId,
 				createdBy: requestedBy,
+				effectiveDate: deductFromStock ? new Date().toISOString() : null,
 			});
 			await newBilling.generateSerialNumber();
 			await newBilling.save({ transaction });
@@ -319,6 +328,7 @@ export class BillingService {
 						stockId: shop?.dataValues?.stockId,
 						currency: item.currency ?? billingData.currency,
 					},
+					deductFromStock,
 					transaction,
 				);
 			}
@@ -369,9 +379,34 @@ export class BillingService {
 				};
 			}
 
+			const {
+				status: statusBefore,
+				subtotal,
+				discountType,
+				discount,
+				shipping,
+			} = billingToUpdate.dataValues;
+
+			const discountValue =
+				discountType === DiscountType.PERCENTAGE
+					? Number(subtotal) * (Number(discount) / 100)
+					: Number(discount);
+
+			const total =
+				Math.round(
+					(Number(subtotal) - discountValue + Number(shipping)) * 100,
+				) / 100;
+
+			const totalPayment = billingData?.payments?.reduce(
+				(sum, item) => sum + (Number(item.amount) || 0),
+				0,
+			);
+
+			const paymentCompleted = totalPayment === total;
+
 			await billingToUpdate.update(
 				{
-					status: billingData.status,
+					status: paymentCompleted ? BillingStatus.PAID : billingData.status,
 					updatedBy: billingData.requestedBy,
 				},
 				{ transaction },
@@ -394,6 +429,30 @@ export class BillingService {
 				});
 			}
 
+			if (
+				statusBefore !== BillingStatus.PAID &&
+				billingData.status === BillingStatus.PAID &&
+				paymentCompleted
+			) {
+				// ⚠️Se actualiza effectiveDate porque la factura impacta stock al pasar a PAID
+				await billingToUpdate.update(
+					{ effectiveDate: new Date().toISOString() },
+					{ transaction },
+				);
+				// Esto asegura trazabilidad correcta en los movimientos de inventario ⚠️
+
+				for (const billingItem of billingData.items) {
+					await this.stockItemService.updateQuantity(
+						{
+							...billingItem,
+							stockId: billingData?.stockId,
+						},
+						StockOperation.SUBTRACT,
+						transaction,
+					);
+				}
+			}
+
 			await transaction.commit();
 
 			return { status: 200 };
@@ -404,28 +463,31 @@ export class BillingService {
 		}
 	};
 
-	cancel = async (serialNumber: string) => {
+	cancel = async (serialNumber: string, updatedBy: string) => {
 		const transaction = await sequelize.transaction();
 		try {
-			const result = await this.getOne(serialNumber);
+			const { billing } = await this.getOne(serialNumber);
 
-			if (
-				!Array.isArray(result.billing.items) ||
-				result.billing.items.length === 0
-			) {
+			if (billing?.status !== BillingStatus.PAID) {
+				throw new Error(
+					'No puedes anular esta factura porque su pago no ha sido completado',
+				);
+			}
+
+			if (!Array.isArray(billing.items) || billing.items.length === 0) {
 				throw new Error('No hay ítems en la factura');
 			}
 
-			for (const item of result.billing.items) {
-				await this.billingItemService.cancel({
-					billingItemData: item,
-					stockId: result.billing.stockId,
+			for (const item of billing.items) {
+				await this.stockItemService.updateQuantity(
+					{ ...item, stockId: billing?.stockId },
+					StockOperation.ADD,
 					transaction,
-				});
+				);
 			}
 
 			await this.billingModel.update(
-				{ status: BillingStatus.CANCELED },
+				{ status: BillingStatus.CANCELED, updatedBy },
 				{ where: { serialNumber }, transaction },
 			);
 

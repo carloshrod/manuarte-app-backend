@@ -31,3 +31,15 @@ export interface UpdateMultipleStockItemDto {
 	stockIds: string[];
 	stockItemData: CreateStockItemDto & { priceUsd: number; costUsd: number };
 }
+
+export interface UpdateStockItemQtyDto {
+	quantity: number;
+	name: string;
+	productVariantId: string;
+	stockId: string;
+}
+
+export enum StockOperation {
+	ADD = 'add',
+	SUBTRACT = 'subtract',
+}

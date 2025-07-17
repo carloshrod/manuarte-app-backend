@@ -9,7 +9,7 @@ import { BillingPaymentModel } from '../billing-payment/model';
 export class BillingModel extends Model {
 	public id!: string;
 	public serialNumber!: string;
-	public total!: number;
+	public subtotal!: number;
 	public createdDate!: string;
 
 	async generateSerialNumber() {
@@ -66,7 +66,12 @@ BillingModel.init(
 			},
 		},
 		status: {
-			type: DataTypes.ENUM('PAID', 'PENDING_PAYMENT', 'CANCELED'),
+			type: DataTypes.ENUM(
+				'PAID',
+				'PENDING_PAYMENT',
+				'PARTIAL_PAYMENT',
+				'CANCELED',
+			),
 			allowNull: false,
 		},
 		paymentMethod: {
@@ -127,6 +132,10 @@ BillingModel.init(
 				model: 'user',
 				key: 'id',
 			},
+		},
+		effectiveDate: {
+			type: DataTypes.DATE,
+			allowNull: true,
 		},
 		createdDate: {
 			type: DataTypes.DATE,

@@ -87,8 +87,13 @@ export class BillingController {
 
 	cancel: Handler = async (req, res, next) => {
 		try {
+			const requestedBy = (req as CustomRequest).requestedBy;
+
 			const { serialNumber } = req.params;
-			const result = await this.billingService.cancel(serialNumber);
+			const result = await this.billingService.cancel(
+				serialNumber,
+				requestedBy,
+			);
 
 			res.status(result.status).json({ message: result.message });
 		} catch (error) {

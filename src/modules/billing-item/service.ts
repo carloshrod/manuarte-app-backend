@@ -11,6 +11,7 @@ import { ProductVariantModel } from '../product-variant/model';
 import { ProductModel } from '../product/model';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductCategoryGroupModel } from '../product-category-group/model';
+import { StockOperation } from '../stock-item/types';
 
 export class BillingItemService {
 	private billingItemModel;
@@ -23,41 +24,23 @@ export class BillingItemService {
 
 	create = async (
 		billingItemData: CreateBillingItemDto,
+		deductFromStock: boolean,
 		transaction: Transaction,
 	) => {
 		try {
-			const { quantity, name, productVariantId, stockId } = billingItemData;
-
-			const stockItemToUpdate = await this.stockItemService.getOneByStock(
-				productVariantId,
-				stockId as string,
-			);
-			if (!stockItemToUpdate) {
-				throw new Error(`No fue posible encontrar el producto ${name}`);
-			}
-			if (Number(stockItemToUpdate?.quantity) < quantity) {
-				throw new Error(
-					`No hay suficiente stock (${stockItemToUpdate?.quantity}) para ${name}`,
-				);
-			}
-
 			const newBillingItem = await this.billingItemModel.create(
 				billingItemData,
 				{ transaction },
 			);
 
-			const currentQty = Number(stockItemToUpdate?.quantity);
-			const delta = Number(quantity);
-
-			if (isNaN(currentQty) || isNaN(delta)) {
-				throw new Error(`Ocurrió un error con las cantidades del item ${name}`);
+			if (!deductFromStock) {
+				return newBillingItem;
 			}
 
-			const newQuantity = currentQty - delta;
-
-			await stockItemToUpdate.update(
-				{ quantity: newQuantity },
-				{ transaction },
+			await this.stockItemService.updateQuantity(
+				billingItemData,
+				StockOperation.SUBTRACT,
+				transaction,
 			);
 
 			return newBillingItem;
@@ -77,32 +60,11 @@ export class BillingItemService {
 		transaction: Transaction;
 	}) => {
 		try {
-			const { productVariantId, quantity, name } = billingItemData;
-
-			const stockItemToUpdate = await this.stockItemService.getOneByStock(
-				productVariantId,
-				stockId,
+			await this.stockItemService.updateQuantity(
+				{ ...billingItemData, stockId },
+				StockOperation.ADD,
+				transaction,
 			);
-
-			if (!stockItemToUpdate) {
-				throw new Error(`No fue posible encontrar el producto`);
-			}
-
-			const currentQty = Number(stockItemToUpdate?.quantity);
-			const delta = Number(quantity);
-
-			if (isNaN(currentQty) || isNaN(delta)) {
-				throw new Error(`Ocurrió un error con las cantidades del item ${name}`);
-			}
-
-			const newQuantity = currentQty + delta;
-
-			await stockItemToUpdate.update(
-				{ quantity: newQuantity },
-				{ transaction },
-			);
-
-			return stockItemToUpdate;
 		} catch (error) {
 			console.error('Error cancelando items de factura');
 			throw error;
@@ -259,9 +221,6 @@ export class BillingItemService {
 			const result = await this.billingItemModel.findAll({
 				where: {
 					currency,
-					createdDate: {
-						[Op.between]: [startOfMonth, endOfMonth],
-					},
 					name: {
 						[Op.notILike]: '%flete%',
 					},
@@ -291,6 +250,9 @@ export class BillingItemService {
 						as: 'billing',
 						attributes: [],
 						where: {
+							effectiveDate: {
+								[Op.between]: [startOfMonth, endOfMonth],
+							},
 							status: BillingStatus.PAID,
 						},
 					},

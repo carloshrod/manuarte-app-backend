@@ -3,6 +3,7 @@ import { CreateBillingItemDto } from '../billing-item/types';
 export enum BillingStatus {
 	PAID = 'PAID',
 	PENDING_PAYMENT = 'PENDING_PAYMENT',
+	PARTIAL_PAYMENT = 'PARTIAL_PAYMENT',
 	CANCELED = 'CANCELED',
 }
 
@@ -21,6 +22,11 @@ export enum PaymentMethod {
 	PAYPAL = 'PAYPAL',
 	BANK_DEPOSIT = 'BANK_DEPOSIT',
 	OTHER = 'OTHER',
+}
+
+export enum DiscountType {
+	PERCENTAGE = 'PERCENTAGE',
+	FIXED = 'FIXED',
 }
 
 export interface Payment {
@@ -46,5 +52,8 @@ export interface CreateBillingDto {
 
 export interface UpdateBillingDto extends CreateBillingDto {
 	status: BillingStatus;
+	statusBefore: BillingStatus;
 	paymentMethod: PaymentMethod;
+	paymentCompleted?: boolean;
+	stockId: string;
 }

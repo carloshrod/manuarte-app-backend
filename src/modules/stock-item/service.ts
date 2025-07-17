@@ -13,8 +13,10 @@ import { StockModel } from '../stock/model';
 import {
 	CreateStockItemDto,
 	PartialStockItem,
+	StockOperation,
 	UpdateMultipleStockItemDto,
 	UpdateStockItemDto,
+	UpdateStockItemQtyDto,
 } from './types';
 import { BillingStatus } from '../billing/types';
 
@@ -262,7 +264,7 @@ export class StockItemService {
 					'billingId',
 					'currency',
 					'quantity',
-					'createdDate',
+					[sequelize.col('billing.effectiveDate'), 'createdDate'],
 					[sequelize.literal(`'BILLING'`), 'type'],
 					[sequelize.col('billing.serialNumber'), 'identifier'],
 					[sequelize.col('billing.shopId'), 'shopId'],
@@ -517,6 +519,47 @@ export class StockItemService {
 			};
 		} catch (error) {
 			console.error('Error updating stock item');
+			throw error;
+		}
+	};
+
+	updateQuantity = async (
+		{ quantity, name, productVariantId, stockId }: UpdateStockItemQtyDto,
+		operation: StockOperation = StockOperation.SUBTRACT,
+		transaction: Transaction,
+	) => {
+		try {
+			const stockItemToUpdate = await this.getOneByStock(
+				productVariantId,
+				stockId as string,
+			);
+
+			if (!stockItemToUpdate) {
+				throw new Error(`No fue posible encontrar el producto ${name}`);
+			}
+
+			const currentQty = Number(stockItemToUpdate?.quantity);
+			const delta = Number(quantity);
+
+			if (isNaN(currentQty) || isNaN(delta)) {
+				throw new Error(`Ocurrió un error con las cantidades del item ${name}`);
+			}
+
+			if (operation === StockOperation.SUBTRACT && currentQty < delta) {
+				throw new Error(`No hay suficiente stock (${currentQty}) para ${name}`);
+			}
+
+			const newQuantity =
+				operation === StockOperation.ADD
+					? currentQty + delta
+					: currentQty - delta;
+
+			await stockItemToUpdate.update(
+				{ quantity: newQuantity },
+				{ transaction },
+			);
+		} catch (error) {
+			console.error('Error updating stock item quantity');
 			throw error;
 		}
 	};
