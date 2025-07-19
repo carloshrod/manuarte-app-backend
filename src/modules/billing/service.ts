@@ -121,6 +121,7 @@ export class BillingService {
 					'discountType',
 					'discount',
 					'shipping',
+					'comments',
 					'customerId',
 					[sequelize.col('customer.person.id'), 'personId'],
 					[sequelize.col('customer.person.fullName'), 'fullName'],
@@ -280,6 +281,7 @@ export class BillingService {
 				discount,
 				shipping,
 				subtotal,
+				comments,
 				clientRequestId,
 				requestedBy,
 			} = billingData;
@@ -301,6 +303,7 @@ export class BillingService {
 				discount: discount || 0,
 				shipping,
 				subtotal,
+				comments,
 				clientRequestId,
 				createdBy: requestedBy,
 				effectiveDate: deductFromStock ? new Date().toISOString() : null,
@@ -407,6 +410,7 @@ export class BillingService {
 			await billingToUpdate.update(
 				{
 					status: paymentCompleted ? BillingStatus.PAID : billingData.status,
+					comments: billingData.comments,
 					updatedBy: billingData.requestedBy,
 				},
 				{ transaction },
@@ -434,7 +438,7 @@ export class BillingService {
 				billingData.status === BillingStatus.PAID &&
 				paymentCompleted
 			) {
-				// ⚠️Se actualiza effectiveDate porque la factura impacta stock al pasar a PAID
+				// ⚠️ Se actualiza effectiveDate porque la factura impacta stock al pasar a PAID
 				await billingToUpdate.update(
 					{ effectiveDate: new Date().toISOString() },
 					{ transaction },

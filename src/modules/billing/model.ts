@@ -70,9 +70,14 @@ BillingModel.init(
 				'PAID',
 				'PENDING_PAYMENT',
 				'PARTIAL_PAYMENT',
+				'PENDING_DELIVERY',
 				'CANCELED',
 			),
 			allowNull: false,
+		},
+		comments: {
+			type: DataTypes.TEXT,
+			allowNull: true,
 		},
 		paymentMethod: {
 			type: DataTypes.ENUM(

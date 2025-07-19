@@ -4,6 +4,7 @@ export enum BillingStatus {
 	PAID = 'PAID',
 	PENDING_PAYMENT = 'PENDING_PAYMENT',
 	PARTIAL_PAYMENT = 'PARTIAL_PAYMENT',
+	PENDING_DELIVERY = 'PENDING_DELIVERY',
 	CANCELED = 'CANCELED',
 }
 
@@ -44,6 +45,7 @@ export interface CreateBillingDto {
 	discountType: string;
 	discount: number;
 	shipping: string;
+	comments: string;
 	currency: string;
 	requestedBy: string;
 	items: CreateBillingItemDto[];
