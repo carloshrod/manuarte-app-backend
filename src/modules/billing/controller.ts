@@ -51,7 +51,7 @@ export class BillingController {
 			if (result.status === 201) {
 				res.status(result.status).json({
 					newBilling: result.newBilling,
-					message: 'Factura generada con éxito',
+					message: result.message ?? 'Factura generada con éxito',
 				});
 				return;
 			}
@@ -73,9 +73,9 @@ export class BillingController {
 			);
 
 			if (result.status === 200) {
-				res
-					.status(result.status)
-					.json({ message: 'Factura actualizada con éxito' });
+				res.status(result.status).json({
+					message: result.message ?? 'Factura actualizada con éxito',
+				});
 				return;
 			}
 

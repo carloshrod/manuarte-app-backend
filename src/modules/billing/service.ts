@@ -95,8 +95,12 @@ export class BillingService {
 
 					return {
 						...billingJson,
-						paymentMethods:
-							billingJson.payments?.map((p: Payment) => p.paymentMethod) || [],
+						paymentMethods: [
+							...new Set(
+								billingJson.payments?.map((p: Payment) => p.paymentMethod) ||
+									[],
+							),
+						],
 					};
 				})
 				// eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -224,8 +228,11 @@ export class BillingService {
 			const formattedBilling = {
 				...rawBilling,
 				items: rawBilling.billingItems,
-				paymentMethods:
-					rawBilling.payments.map((p: Payment) => p.paymentMethod) || [],
+				paymentMethods: [
+					...new Set(
+						rawBilling.payments?.map((p: Payment) => p.paymentMethod) || [],
+					),
+				],
 			};
 			delete formattedBilling.billingItems;
 
@@ -338,6 +345,13 @@ export class BillingService {
 
 			await transaction.commit();
 
+			const RES_MESSAGES: Record<string, string> = {
+				[BillingStatus.PAID]: 'Factura generada con éxito',
+				[BillingStatus.PARTIAL_PAYMENT]: 'Abono generado con éxito',
+				[BillingStatus.PENDING_DELIVERY]:
+					'Pedido pendiente de entrega generado con éxito',
+			};
+
 			return {
 				status: 201,
 				newBilling: {
@@ -352,6 +366,7 @@ export class BillingService {
 					createdDate: newBilling.createdDate,
 					shopId: shop?.dataValues?.id,
 				},
+				message: RES_MESSAGES[status],
 			};
 		} catch (error) {
 			await transaction.rollback();
@@ -366,29 +381,31 @@ export class BillingService {
 			const billingToUpdate = await this.billingModel.findByPk(billingId, {
 				transaction,
 			});
+
 			if (!billingToUpdate) {
-				await transaction.rollback();
+				throw new Error('Factura no encontrada');
+			}
+
+			if (billingToUpdate?.dataValues?.status === BillingStatus.PAID) {
+				await billingToUpdate.update(
+					{
+						comments:
+							billingData?.comments?.length > 0 ? billingData?.comments : null,
+						updatedBy: billingData?.requestedBy,
+					},
+					{ transaction },
+				);
+
+				await transaction.commit();
+
 				return {
-					status: 400,
-					message: 'Factura no encontrada',
+					status: 200,
+					billingUpdated: billingToUpdate.dataValues,
 				};
 			}
 
-			if (!billingData.payments || billingData.payments.length === 0) {
-				await transaction.rollback();
-				return {
-					status: 400,
-					message: 'La factura debe tener al menos un método de pago',
-				};
-			}
-
-			const {
-				status: statusBefore,
-				subtotal,
-				discountType,
-				discount,
-				shipping,
-			} = billingToUpdate.dataValues;
+			const { subtotal, discountType, discount, shipping } =
+				billingToUpdate.dataValues;
 
 			const discountValue =
 				discountType === DiscountType.PERCENTAGE
@@ -400,28 +417,29 @@ export class BillingService {
 					(Number(subtotal) - discountValue + Number(shipping)) * 100,
 				) / 100;
 
-			const totalPayment = billingData?.payments?.reduce(
-				(sum, item) => sum + (Number(item.amount) || 0),
-				0,
-			);
+			const newPayment =
+				billingData?.payments?.reduce(
+					(sum, item) => sum + (Number(item.amount) || 0),
+					0,
+				) || 0;
 
-			const paymentCompleted = totalPayment === total;
+			const existingPayment = await this.billingPaymentModel.sum('amount', {
+				where: { billingId },
+			});
+
+			const totalPaid = newPayment + existingPayment;
+			const paymentCompleted = totalPaid === total;
 
 			await billingToUpdate.update(
 				{
-					status: paymentCompleted ? BillingStatus.PAID : billingData.status,
-					comments: billingData.comments,
-					updatedBy: billingData.requestedBy,
+					status: billingData?.status,
+					comments: billingData?.comments,
+					updatedBy: billingData?.requestedBy,
 				},
 				{ transaction },
 			);
 
-			if (billingData?.payments && billingData.payments.length > 0) {
-				await this.billingPaymentModel.destroy({
-					where: { billingId },
-					transaction,
-				});
-
+			if (billingData?.payments?.length > 0) {
 				const newPaymentEntries = billingData.payments.map(payment => ({
 					...payment,
 					billingId,
@@ -433,11 +451,7 @@ export class BillingService {
 				});
 			}
 
-			if (
-				statusBefore !== BillingStatus.PAID &&
-				billingData.status === BillingStatus.PAID &&
-				paymentCompleted
-			) {
+			if (billingData?.status === BillingStatus.PAID && paymentCompleted) {
 				// ⚠️ Se actualiza effectiveDate porque la factura impacta stock al pasar a PAID
 				await billingToUpdate.update(
 					{ effectiveDate: new Date().toISOString() },
@@ -459,7 +473,17 @@ export class BillingService {
 
 			await transaction.commit();
 
-			return { status: 200 };
+			const RES_MESSAGES: Record<string, string> = {
+				[BillingStatus.PAID]: 'Factura generada con éxito',
+				[BillingStatus.PARTIAL_PAYMENT]: 'Abono generado con éxito',
+				[BillingStatus.PENDING_DELIVERY]:
+					'Pedido pendiente de entrega generado con éxito',
+			};
+
+			return {
+				status: 200,
+				message: RES_MESSAGES[billingData?.status],
+			};
 		} catch (error) {
 			await transaction.rollback();
 			console.error('Error editando factura');
