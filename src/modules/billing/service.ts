@@ -149,7 +149,7 @@ export class BillingService {
 					{
 						model: this.billingPaymentModel,
 						as: 'payments',
-						attributes: ['paymentMethod', 'amount'],
+						attributes: ['paymentMethod', 'amount', 'createdDate'],
 					},
 					{
 						model: CustomerModel,
