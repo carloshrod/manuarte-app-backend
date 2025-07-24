@@ -58,6 +58,7 @@ export class BillingService {
 					'discount',
 					'shipping',
 					'subtotal',
+					'effectiveDate',
 					'createdDate',
 					'updatedDate',
 					'customerId',
@@ -86,7 +87,14 @@ export class BillingService {
 						paranoid: false,
 					},
 				],
-				order: [['createdDate', 'DESC']],
+				order: [
+					[
+						sequelize.literal(
+							'COALESCE("BillingModel"."effectiveDate", "BillingModel"."createdDate")',
+						),
+						'DESC',
+					],
+				],
 			});
 
 			const billingsWithPaymentMethods = billings
