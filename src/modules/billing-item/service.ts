@@ -89,7 +89,17 @@ export class BillingItemService {
 					],
 					[sequelize.col('billingItems.currency'), 'currency'],
 					[
-						sequelize.fn('SUM', sequelize.col('billingItems.totalPrice')),
+						sequelize.literal(`
+							SUM(
+								CASE
+									WHEN "BillingModel"."discountType" = 'PERCENTAGE'
+										THEN "billingItems"."totalPrice" * (1 - "BillingModel"."discount" / 100)
+									WHEN "BillingModel"."discountType" = 'FIXED'
+										THEN "billingItems"."totalPrice" * (1 - "BillingModel"."discount" / NULLIF("BillingModel"."subtotal", 0))
+									ELSE "billingItems"."totalPrice"
+								END
+							)
+							`),
 						'totalSales',
 					],
 				],
@@ -121,8 +131,7 @@ export class BillingItemService {
 						'month',
 						sequelize.col('billingItems.createdDate'),
 					),
-					'month',
-					'currency',
+					'billingItems.currency',
 				],
 				order: [[sequelize.literal('month'), 'ASC']],
 				raw: true,
