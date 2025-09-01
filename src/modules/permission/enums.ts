@@ -62,3 +62,18 @@ export enum DashboardPermissions {
 	DASHBOARD_UPDATE = 'dashboard-update',
 	DASHBOARD_DELETE = 'dashboard-delete',
 }
+
+export enum CashSessionPermissions {
+	CASH_SESSION_READ = 'cash-session-read',
+	CASH_SESSION_CREATE = 'cash-session-create',
+	CASH_SESSION_CLOSE = 'cash-session-close',
+	CASH_SESSION_MOVEMENTS_READ = 'cash-session-movements-read',
+	CASH_SESSION_MOVEMENTS_CREATE = 'cash-session-movements-create',
+	CASH_SESSION_MOVEMENTS_ANNUL = 'cash-session-movements-annul',
+}
+
+export enum BankTransferPermissions {
+	BANK_TRANSFER_MOVEMENTS_READ = 'bank-transfer-movements-read',
+	BANK_TRANSFER_MOVEMENTS_CREATE = 'bank-transfer-movements-create',
+	BANK_TRANSFER_MOVEMENTS_ANNUL = 'bank-transfer-movements-annul',
+}
