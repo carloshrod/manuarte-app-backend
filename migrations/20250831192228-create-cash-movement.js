@@ -57,6 +57,11 @@ module.exports = {
 					type: Sequelize.TEXT,
 					allowNull: true,
 				},
+				createdBy: {
+					type: Sequelize.UUID,
+					allowNull: true,
+					references: { model: 'user', key: 'id' },
+				},
 				createdDate: {
 					type: Sequelize.DATE,
 					allowNull: false,
@@ -81,6 +86,7 @@ module.exports = {
 		await queryInterface.addIndex('cash_movement', ['billingPaymentId']);
 		await queryInterface.addIndex('cash_movement', ['type']);
 		await queryInterface.addIndex('cash_movement', ['category']);
+		await queryInterface.addIndex('cash_movement', ['createdBy']);
 	},
 
 	async down(queryInterface) {

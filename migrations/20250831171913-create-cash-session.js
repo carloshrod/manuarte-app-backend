@@ -11,11 +11,6 @@ module.exports = {
 				defaultValue: Sequelize.literal('uuid_generate_v4()'),
 				primaryKey: true,
 			},
-			userId: {
-				type: Sequelize.UUID,
-				allowNull: false,
-				references: { model: 'user', key: 'id' },
-			},
 			shopId: {
 				type: Sequelize.UUID,
 				allowNull: false,
@@ -35,6 +30,11 @@ module.exports = {
 				allowNull: false,
 				defaultValue: 0,
 			},
+			openedBy: {
+				type: Sequelize.UUID,
+				allowNull: false,
+				references: { model: 'user', key: 'id' },
+			},
 			closingAmount: {
 				type: Sequelize.DECIMAL(15, 2),
 				allowNull: true,
@@ -46,6 +46,11 @@ module.exports = {
 			closingDifference: {
 				type: Sequelize.DECIMAL(15, 2),
 				allowNull: true,
+			},
+			closedBy: {
+				type: Sequelize.UUID,
+				allowNull: true,
+				references: { model: 'user', key: 'id' },
 			},
 			comments: {
 				type: Sequelize.TEXT,
@@ -77,7 +82,8 @@ module.exports = {
 		});
 
 		await queryInterface.addIndex('cash_session', ['shopId']);
-		await queryInterface.addIndex('cash_session', ['userId']);
+		await queryInterface.addIndex('cash_session', ['openedBy']);
+		await queryInterface.addIndex('cash_session', ['closedBy']);
 	},
 
 	async down(queryInterface) {

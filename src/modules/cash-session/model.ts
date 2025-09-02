@@ -5,9 +5,13 @@ import { ShopModel } from '../shop/model';
 import { CashMovementModel } from '../cash-movement/model';
 
 export class CashSessionModel extends Model {
-	public openedAt!: string;
-	public closedAt!: string;
-	public declaredClosingAmount!: string;
+	public openedAt!: Date;
+	public closedAt!: Date | null;
+	public openingAmount!: number;
+	public closingAmount!: number;
+	public declaredClosingAmount!: number;
+	public closingDifference!: number;
+	public comments!: string | null | undefined;
 }
 
 CashSessionModel.init(
@@ -17,14 +21,6 @@ CashSessionModel.init(
 			allowNull: false,
 			defaultValue: DataTypes.UUIDV4,
 			primaryKey: true,
-		},
-		userId: {
-			type: DataTypes.UUID,
-			allowNull: false,
-			references: {
-				model: 'user',
-				key: 'id',
-			},
 		},
 		shopId: {
 			type: DataTypes.UUID,
@@ -48,6 +44,11 @@ CashSessionModel.init(
 			allowNull: false,
 			defaultValue: 0,
 		},
+		openedBy: {
+			type: DataTypes.UUID,
+			allowNull: false,
+			references: { model: 'user', key: 'id' },
+		},
 		closingAmount: {
 			type: DataTypes.DECIMAL(15, 2),
 			allowNull: true,
@@ -59,6 +60,11 @@ CashSessionModel.init(
 		closingDifference: {
 			type: DataTypes.DECIMAL(15, 2),
 			allowNull: true,
+		},
+		closedBy: {
+			type: DataTypes.UUID,
+			allowNull: true,
+			references: { model: 'user', key: 'id' },
 		},
 		comments: {
 			type: DataTypes.TEXT,
@@ -102,13 +108,23 @@ CashSessionModel.init(
 
 // ***** CashSessionModel-UserModel Relations *****
 CashSessionModel.belongsTo(UserModel, {
-	foreignKey: 'userId',
-	as: 'user',
+	foreignKey: 'openedBy',
+	as: 'openedByUser',
 });
 
 UserModel.hasMany(CashSessionModel, {
-	foreignKey: 'userId',
-	as: 'cashSessions',
+	foreignKey: 'openedBy',
+	as: 'openedSessions',
+});
+
+CashSessionModel.belongsTo(UserModel, {
+	foreignKey: 'closedBy',
+	as: 'closedByUser',
+});
+
+UserModel.hasMany(CashSessionModel, {
+	foreignKey: 'closedBy',
+	as: 'closedSessions',
 });
 
 // ***** CashSessionModel-ShopModel Relations *****

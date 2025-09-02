@@ -1,6 +1,7 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { BillingPaymentModel } from '../billing-payment/model';
+import { UserModel } from '../user/model';
 
 export class CashMovementModel extends Model {}
 
@@ -52,6 +53,11 @@ CashMovementModel.init(
 			type: DataTypes.TEXT,
 			allowNull: true,
 		},
+		createdBy: {
+			type: DataTypes.UUID,
+			allowNull: true,
+			references: { model: 'user', key: 'id' },
+		},
 		createdDate: {
 			type: DataTypes.DATE,
 			allowNull: false,
@@ -88,4 +94,15 @@ CashMovementModel.belongsTo(BillingPaymentModel, {
 BillingPaymentModel.hasOne(CashMovementModel, {
 	foreignKey: 'billingPaymentId',
 	as: 'cashMovement',
+});
+
+// ***** CashMovementModel-UserModel Relations *****
+CashMovementModel.belongsTo(UserModel, {
+	foreignKey: 'createdBy',
+	as: 'creator',
+});
+
+UserModel.hasMany(CashMovementModel, {
+	foreignKey: 'createdBy',
+	as: 'manualCashMovements',
 });
