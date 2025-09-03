@@ -96,6 +96,10 @@ export class QuoteService {
 						sequelize.col('customer.address.city.region.country.isoCode'),
 						'countryIsoCode',
 					],
+					[
+						sequelize.col('customer.address.city.region.country.callingCode'),
+						'callingCode',
+					],
 					'createdDate',
 					'updatedDate',
 				],
