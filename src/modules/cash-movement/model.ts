@@ -3,7 +3,10 @@ import { sequelize } from '../../config/database';
 import { BillingPaymentModel } from '../billing-payment/model';
 import { UserModel } from '../user/model';
 
-export class CashMovementModel extends Model {}
+export class CashMovementModel extends Model {
+	public type!: 'INCOME' | 'EXPENSE';
+	public amount!: number;
+}
 
 CashMovementModel.init(
 	{
@@ -27,6 +30,14 @@ CashMovementModel.init(
 			references: {
 				model: 'billing_payment',
 				key: 'id',
+			},
+		},
+		reference: {
+			type: DataTypes.STRING,
+			allowNull: true,
+			references: {
+				model: 'billing',
+				key: 'serialNumber',
 			},
 		},
 		type: {

@@ -5,12 +5,14 @@ import { ShopModel } from '../shop/model';
 import { CashMovementModel } from '../cash-movement/model';
 
 export class CashSessionModel extends Model {
+	public id!: string;
 	public openedAt!: Date;
 	public closedAt!: Date | null;
 	public openingAmount!: number;
 	public closingAmount!: number;
 	public declaredClosingAmount!: number;
 	public closingDifference!: number;
+	public closedBy!: string;
 	public comments!: string | null | undefined;
 }
 

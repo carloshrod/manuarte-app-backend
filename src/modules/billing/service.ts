@@ -4,6 +4,7 @@ import {
 	CreateBillingDto,
 	DiscountType,
 	Payment,
+	PaymentMethod,
 	UpdateBillingDto,
 } from './types';
 import { sequelize } from '../../config/database';
@@ -24,6 +25,11 @@ import { BillingPaymentModel } from '../billing-payment/model';
 import { StockItemService } from '../stock-item/service';
 import { StockItemModel } from '../stock-item/model';
 import { StockOperation } from '../stock-item/types';
+import { CashSessionService } from '../cash-session/service';
+import { CashSessionModel } from '../cash-session/model';
+import { CashMovementService } from '../cash-movement/service';
+import { CashMovementModel } from '../cash-movement/model';
+import { CashMovementCategory } from '../cash-movement/types';
 
 export class BillingService {
 	private billingModel;
@@ -32,6 +38,8 @@ export class BillingService {
 	private stockItemService;
 	private customerService;
 	private shopService;
+	private cashSessionService;
+	private cashMovementService;
 
 	constructor(billingModel: typeof BillingModel) {
 		this.billingModel = billingModel;
@@ -40,6 +48,8 @@ export class BillingService {
 		this.stockItemService = new StockItemService(StockItemModel);
 		this.customerService = new CustomerService(CustomerModel);
 		this.shopService = new ShopService(ShopModel);
+		this.cashSessionService = new CashSessionService(CashSessionModel);
+		this.cashMovementService = new CashMovementService(CashMovementModel);
 	}
 
 	getAll = async (shopSlug: string) => {
@@ -266,6 +276,25 @@ export class BillingService {
 	}) => {
 		const transaction = await sequelize.transaction();
 		try {
+			const {
+				shopSlug,
+				status,
+				payments,
+				discountType,
+				discount,
+				shipping,
+				subtotal,
+				comments,
+				clientRequestId,
+				requestedBy,
+			} = billingData;
+
+			const shop = shopSlug && (await this.shopService.getOneBySlug(shopSlug));
+			if (!shop) {
+				await transaction.rollback();
+				return { status: 400, message: 'Tienda no encontrada' };
+			}
+
 			const existing = await this.billingModel.findOne({
 				where: { clientRequestId: billingData?.clientRequestId },
 			});
@@ -291,27 +320,9 @@ export class BillingService {
 				if (!result) throw new Error('El cliente está inactivo');
 			}
 
-			const {
-				shopSlug,
-				status,
-				payments,
-				discountType,
-				discount,
-				shipping,
-				subtotal,
-				comments,
-				clientRequestId,
-				requestedBy,
-			} = billingData;
-
-			const shop = shopSlug && (await this.shopService.getOneBySlug(shopSlug));
-			if (!shop) {
-				await transaction.rollback();
-				return { status: 400, message: 'Tienda no encontrada' };
-			}
-
 			const deductFromStock = status === BillingStatus.PAID;
 
+			// Crear factura *****
 			const newBilling = this.billingModel.build({
 				customerId,
 				shopId: shop?.dataValues?.id,
@@ -329,16 +340,40 @@ export class BillingService {
 			await newBilling.generateSerialNumber();
 			await newBilling.save({ transaction });
 
+			// Crear pagos *****
 			const paymentEntries = payments.map(payment => ({
 				...payment,
 				billingId: newBilling.id,
 				paymentReference: payment?.paymentReference ?? null,
 			}));
 
-			await this.billingPaymentModel.bulkCreate(paymentEntries, {
-				transaction,
-			});
+			const createdPayments = await this.billingPaymentModel.bulkCreate(
+				paymentEntries,
+				{
+					transaction,
+					returning: true,
+				},
+			);
 
+			// Crear movimientos de caja *****
+			for (const payment of createdPayments) {
+				if (payment?.dataValues?.paymentMethod === PaymentMethod.CASH) {
+					await this.cashMovementService.create(
+						{
+							shopId: shop?.dataValues?.id,
+							billingPaymentId: payment?.dataValues?.id,
+							reference: newBilling?.serialNumber,
+							amount: Number(payment?.dataValues?.amount),
+							type: 'INCOME',
+							category: CashMovementCategory.SALE,
+							createdBy: requestedBy,
+						},
+						transaction,
+					);
+				}
+			}
+
+			// Crear items de factura *****
 			for (const item of billingData.items) {
 				await this.billingItemService.create(
 					{
@@ -457,9 +492,30 @@ export class BillingService {
 					paymentReference: payment.paymentReference || null,
 				}));
 
-				await this.billingPaymentModel.bulkCreate(newPaymentEntries, {
-					transaction,
-				});
+				const createdPayments = await this.billingPaymentModel.bulkCreate(
+					newPaymentEntries,
+					{
+						transaction,
+					},
+				);
+
+				// Crear movimientos de caja *****
+				for (const payment of createdPayments) {
+					if (payment?.dataValues?.paymentMethod === PaymentMethod.CASH) {
+						await this.cashMovementService.create(
+							{
+								shopId: billingToUpdate?.dataValues?.shopId,
+								billingPaymentId: payment?.dataValues?.id,
+								reference: billingToUpdate?.dataValues?.serialNumber,
+								amount: Number(payment?.dataValues?.amount),
+								type: 'INCOME',
+								category: CashMovementCategory.SALE,
+								createdBy: billingData?.requestedBy,
+							},
+							transaction,
+						);
+					}
+				}
 			}
 
 			if (billingData?.status === BillingStatus.PAID && paymentCompleted) {
@@ -528,6 +584,13 @@ export class BillingService {
 			await this.billingModel.update(
 				{ status: BillingStatus.CANCELED, updatedBy },
 				{ where: { serialNumber }, transaction },
+			);
+
+			// Anular movimientos de caja *****
+			await this.cashMovementService.cancel(
+				serialNumber,
+				updatedBy,
+				transaction,
 			);
 
 			await transaction.commit();

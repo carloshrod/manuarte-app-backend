@@ -33,6 +33,16 @@ module.exports = {
 					onUpdate: 'CASCADE',
 					onDelete: 'SET NULL',
 				},
+				reference: {
+					type: Sequelize.STRING,
+					allowNull: true,
+					references: {
+						model: 'billing',
+						key: 'serialNumber',
+					},
+					onUpdate: 'CASCADE',
+					onDelete: 'SET NULL',
+				},
 				type: {
 					type: Sequelize.ENUM('INCOME', 'EXPENSE'),
 					allowNull: false,
@@ -84,6 +94,7 @@ module.exports = {
 
 		await queryInterface.addIndex('cash_movement', ['cashSessionId']);
 		await queryInterface.addIndex('cash_movement', ['billingPaymentId']);
+		await queryInterface.addIndex('cash_movement', ['reference']);
 		await queryInterface.addIndex('cash_movement', ['type']);
 		await queryInterface.addIndex('cash_movement', ['category']);
 		await queryInterface.addIndex('cash_movement', ['createdBy']);
