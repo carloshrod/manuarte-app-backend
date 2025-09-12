@@ -9,17 +9,27 @@ export class CashSessionController {
 		this.cashSessionService = cashSessionService;
 	}
 
-	getLastSessionByShopId: Handler = async (req, res, next) => {
+	getCurrentSession: Handler = async (req, res, next) => {
 		try {
 			const { shopId } = req.params;
 
-			if (!shopId) {
-				res.status(400).json({ error: 'shopId es requerido' });
-				return;
-			}
+			const result = await this.cashSessionService.getCurrentSession(shopId);
 
-			const result =
-				await this.cashSessionService.getLastSessionByShopId(shopId);
+			res.status(200).json(result);
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	getSessionByDate: Handler = async (req, res, next) => {
+		try {
+			const { shopId } = req.params;
+			const date = (req.query.date as string) || '';
+
+			const result = await this.cashSessionService.getSessionByDate(
+				shopId,
+				date,
+			);
 
 			res.status(200).json(result);
 		} catch (error) {
@@ -30,12 +40,15 @@ export class CashSessionController {
 	openSession: Handler = async (req, res, next) => {
 		try {
 			const { shopId } = req.params;
-			const { declaredOpeningAmount } = req.body;
+			const { declaredOpeningAmount, initialPiggyBankAmount, comments } =
+				req.body;
 			const openedBy = (req as CustomRequest).requestedBy;
 
 			const cashSession = await this.cashSessionService.openSession({
 				shopId,
 				declaredOpeningAmount: Number(declaredOpeningAmount),
+				initialPiggyBankAmount,
+				comments,
 				openedBy,
 			});
 

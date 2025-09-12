@@ -47,12 +47,21 @@ module.exports = {
 				type: Sequelize.DECIMAL(15, 2),
 				allowNull: true,
 			},
+			piggyBankAmount: {
+				type: Sequelize.DECIMAL(15, 2),
+				allowNull: false,
+				defaultValue: 0,
+			},
 			closedBy: {
 				type: Sequelize.UUID,
 				allowNull: true,
 				references: { model: 'user', key: 'id' },
 			},
-			comments: {
+			openingComments: {
+				type: Sequelize.TEXT,
+				allowNull: true,
+			},
+			closingComments: {
 				type: Sequelize.TEXT,
 				allowNull: true,
 			},

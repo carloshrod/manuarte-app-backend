@@ -15,21 +15,19 @@ export class CashMovementController {
 			const { amount, type, category, comments, billingPaymentId } = req.body;
 			const createdBy = (req as CustomRequest).requestedBy;
 
-			const { newCashMovement, newBalance } =
-				await this.cashMovementService.create({
-					shopId,
-					type,
-					category,
-					amount,
-					comments,
-					billingPaymentId,
-					createdBy,
-				});
+			const currentSessionUpdated = await this.cashMovementService.create({
+				shopId,
+				type,
+				category,
+				amount,
+				comments,
+				billingPaymentId,
+				createdBy,
+			});
 
 			res.status(200).json({
 				message: 'Movimiento creado con éxito',
-				newCashMovement,
-				newBalance,
+				currentSessionUpdated,
 			});
 		} catch (error) {
 			next(error);

@@ -13,6 +13,11 @@ module.exports = {
 					defaultValue: Sequelize.literal('uuid_generate_v4()'),
 					primaryKey: true,
 				},
+				shopId: {
+					type: Sequelize.UUID,
+					allowNull: false,
+					references: { model: 'shop', key: 'id' },
+				},
 				billingPaymentId: {
 					type: Sequelize.UUID,
 					allowNull: true,
@@ -64,6 +69,7 @@ module.exports = {
 			},
 		);
 
+		await queryInterface.addIndex('bank_transfer_movement', ['shopId']);
 		await queryInterface.addIndex('bank_transfer_movement', [
 			'billingPaymentId',
 		]);

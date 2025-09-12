@@ -1,16 +1,12 @@
-import { BillingItemService } from './../billing-item/service';
 import { Handler } from 'express';
 import { BillingService } from './service';
-import { BillingItemModel } from '../billing-item/model';
 import { CustomRequest } from '../types';
 
 export class BillingController {
 	private billingService;
-	private billingItemService;
 
 	constructor(billingService: BillingService) {
 		this.billingService = billingService;
-		this.billingItemService = new BillingItemService(BillingItemModel);
 	}
 
 	getAll: Handler = async (req, res, next) => {
@@ -94,18 +90,6 @@ export class BillingController {
 				serialNumber,
 				requestedBy,
 			);
-
-			res.status(result.status).json({ message: result.message });
-		} catch (error) {
-			next(error);
-		}
-	};
-
-	delete: Handler = async (req, res, next) => {
-		try {
-			const { id } = req.params;
-
-			const result = await this.billingService.delete(id);
 
 			res.status(result.status).json({ message: result.message });
 		} catch (error) {

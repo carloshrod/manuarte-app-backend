@@ -1,6 +1,8 @@
 export type OpenCashSessionDTO = {
 	shopId: string;
 	declaredOpeningAmount: number;
+	initialPiggyBankAmount?: number;
+	comments?: string;
 	openedBy: string;
 };
 

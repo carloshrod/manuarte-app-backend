@@ -12,6 +12,7 @@ export class CashSessionModel extends Model {
 	public closingAmount!: number;
 	public declaredClosingAmount!: number;
 	public closingDifference!: number;
+	public piggyBankAmount!: number;
 	public closedBy!: string;
 	public comments!: string | null | undefined;
 }
@@ -63,12 +64,21 @@ CashSessionModel.init(
 			type: DataTypes.DECIMAL(15, 2),
 			allowNull: true,
 		},
+		piggyBankAmount: {
+			type: DataTypes.DECIMAL(15, 2),
+			allowNull: false,
+			defaultValue: 0,
+		},
 		closedBy: {
 			type: DataTypes.UUID,
 			allowNull: true,
 			references: { model: 'user', key: 'id' },
 		},
-		comments: {
+		openingComments: {
+			type: DataTypes.TEXT,
+			allowNull: true,
+		},
+		closingComments: {
 			type: DataTypes.TEXT,
 			allowNull: true,
 		},

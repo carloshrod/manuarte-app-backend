@@ -25,11 +25,11 @@ import { BillingPaymentModel } from '../billing-payment/model';
 import { StockItemService } from '../stock-item/service';
 import { StockItemModel } from '../stock-item/model';
 import { StockOperation } from '../stock-item/types';
-import { CashSessionService } from '../cash-session/service';
-import { CashSessionModel } from '../cash-session/model';
 import { CashMovementService } from '../cash-movement/service';
 import { CashMovementModel } from '../cash-movement/model';
 import { CashMovementCategory } from '../cash-movement/types';
+import { BankTransferMovementService } from '../bank-transfer-movement/service';
+import { BankTransferMovementModel } from '../bank-transfer-movement/model';
 
 export class BillingService {
 	private billingModel;
@@ -38,8 +38,8 @@ export class BillingService {
 	private stockItemService;
 	private customerService;
 	private shopService;
-	private cashSessionService;
 	private cashMovementService;
+	private bankTransferMovementService;
 
 	constructor(billingModel: typeof BillingModel) {
 		this.billingModel = billingModel;
@@ -48,8 +48,10 @@ export class BillingService {
 		this.stockItemService = new StockItemService(StockItemModel);
 		this.customerService = new CustomerService(CustomerModel);
 		this.shopService = new ShopService(ShopModel);
-		this.cashSessionService = new CashSessionService(CashSessionModel);
 		this.cashMovementService = new CashMovementService(CashMovementModel);
+		this.bankTransferMovementService = new BankTransferMovementService(
+			BankTransferMovementModel,
+		);
 	}
 
 	getAll = async (shopSlug: string) => {
@@ -370,6 +372,18 @@ export class BillingService {
 						},
 						transaction,
 					);
+				} else {
+					await this.bankTransferMovementService.create(
+						{
+							shopId: shop?.dataValues?.id,
+							billingPaymentId: payment?.dataValues?.id,
+							reference: newBilling?.serialNumber,
+							amount: Number(payment?.dataValues?.amount),
+							type: 'INCOME',
+							createdBy: billingData?.requestedBy,
+						},
+						transaction,
+					);
 				}
 			}
 
@@ -514,6 +528,18 @@ export class BillingService {
 							},
 							transaction,
 						);
+					} else {
+						await this.bankTransferMovementService.create(
+							{
+								shopId: billingToUpdate?.dataValues?.shopId,
+								billingPaymentId: payment?.dataValues?.id,
+								reference: billingToUpdate?.dataValues?.serialNumber,
+								amount: Number(payment?.dataValues?.amount),
+								type: 'INCOME',
+								createdBy: billingData?.requestedBy,
+							},
+							transaction,
+						);
 					}
 				}
 			}
@@ -563,22 +589,18 @@ export class BillingService {
 		try {
 			const { billing } = await this.getOne(serialNumber);
 
-			if (billing?.status !== BillingStatus.PAID) {
-				throw new Error(
-					'No puedes anular esta factura porque su pago no ha sido completado',
-				);
-			}
-
 			if (!Array.isArray(billing.items) || billing.items.length === 0) {
 				throw new Error('No hay ítems en la factura');
 			}
 
-			for (const item of billing.items) {
-				await this.stockItemService.updateQuantity(
-					{ ...item, stockId: billing?.stockId },
-					StockOperation.ADD,
-					transaction,
-				);
+			if (billing?.status === BillingStatus.PAID) {
+				for (const item of billing.items) {
+					await this.stockItemService.updateQuantity(
+						{ ...item, stockId: billing?.stockId },
+						StockOperation.ADD,
+						transaction,
+					);
+				}
 			}
 
 			await this.billingModel.update(
@@ -593,6 +615,13 @@ export class BillingService {
 				transaction,
 			);
 
+			// Anular movimientos de transferencias bancarias *****
+			await this.bankTransferMovementService.cancel(
+				serialNumber,
+				updatedBy,
+				transaction,
+			);
+
 			await transaction.commit();
 
 			return {
@@ -602,21 +631,6 @@ export class BillingService {
 		} catch (error) {
 			await transaction.rollback();
 			console.error('Error anulando factura');
-			throw error;
-		}
-	};
-
-	delete = async (id: string) => {
-		try {
-			const result = await this.billingModel.destroy({ where: { id } });
-
-			if (result === 1) {
-				return { status: 200, message: 'Factura eliminada con éxito' };
-			}
-
-			return { status: 404, message: 'Factura no encontrada' };
-		} catch (error) {
-			console.error('Error eliminando factura');
 			throw error;
 		}
 	};

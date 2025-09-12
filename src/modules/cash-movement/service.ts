@@ -5,6 +5,7 @@ import { CashMovementModel } from './model';
 import { toZonedTime } from 'date-fns-tz';
 import { CashMovementCategory, CreateCashMovementDTO } from './types';
 import { Transaction } from 'sequelize';
+import { PiggyBankMovementModel } from '../piggy-bank/model';
 
 const COLOMBIA_TZ = 'America/Bogota';
 
@@ -36,7 +37,7 @@ export class CashMovementService {
 			this.validateMovementTypeAndCategory(type, category);
 
 			const currentSession =
-				await this.cashSessionService.getLastSessionByShopId(shopId);
+				await this.cashSessionService.getCurrentSession(shopId);
 			if (!currentSession) {
 				throw new Error('La sesión de caja no existe.');
 			}
@@ -64,7 +65,11 @@ export class CashMovementService {
 				);
 			}
 
-			const newCashMovement = await this.cashMovementModel.create(
+			if (type === 'EXPENSE' && currentSession?.balance < amount) {
+				throw new Error('El valor es mayor que el monto disponible en la caja');
+			}
+
+			await this.cashMovementModel.create(
 				{
 					cashSessionId: currentSession?.data?.id,
 					billingPaymentId: billingPaymentId ?? null,
@@ -78,11 +83,30 @@ export class CashMovementService {
 				{ transaction },
 			);
 
-			const newBalance = await this.cashSessionService.getSessionBalance(
-				currentSession?.data?.id,
-			);
+			if (category === CashMovementCategory.PIGGY_BANK) {
+				await PiggyBankMovementModel.create(
+					{
+						cashSessionId: currentSession?.data?.id,
+						amount,
+						type: 'DEPOSIT',
+						createdBy,
+					},
+					{ transaction },
+				);
 
-			return { newCashMovement, newBalance };
+				const newPiggyBankAmount =
+					Number(currentSession?.data?.piggyBankAmount) + Number(amount);
+
+				await CashSessionModel.update(
+					{ piggyBankAmount: newPiggyBankAmount },
+					{ where: { id: currentSession?.data?.id } },
+				);
+			}
+
+			const currentSessionUpdated =
+				await this.cashSessionService.getCurrentSession(shopId);
+
+			return currentSessionUpdated;
 		} catch (error) {
 			console.error('Error creando movimiento de caja');
 			throw error;
