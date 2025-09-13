@@ -60,6 +60,12 @@ export class CashSessionService {
 						separate: true,
 						order: [['createdDate', 'DESC']],
 					},
+					{
+						model: PiggyBankMovementModel,
+						as: 'piggyBankMovements',
+						separate: true,
+						order: [['createdDate', 'DESC']],
+					},
 				],
 				order: [['openedAt', 'DESC']],
 			});
@@ -154,6 +160,12 @@ export class CashSessionService {
 					{
 						model: CashMovementModel,
 						as: 'movements',
+						separate: true,
+						order: [['createdDate', 'DESC']],
+					},
+					{
+						model: PiggyBankMovementModel,
+						as: 'piggyBankMovements',
 						separate: true,
 						order: [['createdDate', 'DESC']],
 					},
