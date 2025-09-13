@@ -12,9 +12,10 @@ export class CashSessionModel extends Model {
 	public closingAmount!: number;
 	public declaredClosingAmount!: number;
 	public closingDifference!: number;
+	public accumulatedDifference!: number;
 	public piggyBankAmount!: number;
 	public closedBy!: string;
-	public comments!: string | null | undefined;
+	public closingComments!: string | null | undefined;
 }
 
 CashSessionModel.init(
@@ -63,6 +64,11 @@ CashSessionModel.init(
 		closingDifference: {
 			type: DataTypes.DECIMAL(15, 2),
 			allowNull: true,
+		},
+		accumulatedDifference: {
+			type: DataTypes.DECIMAL(15, 2),
+			allowNull: false,
+			defaultValue: 0,
 		},
 		piggyBankAmount: {
 			type: DataTypes.DECIMAL(15, 2),

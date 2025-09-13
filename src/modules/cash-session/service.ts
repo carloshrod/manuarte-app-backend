@@ -4,6 +4,7 @@ import { toZonedTime } from 'date-fns-tz';
 import { closeCashSessionDTO, OpenCashSessionDTO } from './types';
 import { CashMovementModel } from '../cash-movement/model';
 import { Op } from 'sequelize';
+import { PiggyBankMovementModel } from '../piggy-bank/model';
 
 const COLOMBIA_TZ = 'America/Bogota';
 
@@ -36,6 +37,12 @@ export class CashSessionService {
 						separate: true,
 						order: [['createdDate', 'DESC']],
 					},
+					{
+						model: PiggyBankMovementModel,
+						as: 'piggyBankMovements',
+						separate: true,
+						order: [['createdDate', 'DESC']],
+					},
 				],
 				order: [['openedAt', 'DESC']],
 			});
@@ -65,6 +72,7 @@ export class CashSessionService {
 					canClose: false,
 					reason: 'No existen sesiones previas, esta será la primera sesión',
 					balance: 0,
+					accumulatedDifference: 0,
 				};
 			}
 
@@ -78,6 +86,7 @@ export class CashSessionService {
 					canClose: true,
 					reason: 'Caja pendiente de cierre',
 					balance,
+					accumulatedDifference: lastSession?.accumulatedDifference,
 					data: lastSession,
 				};
 			}
@@ -94,8 +103,11 @@ export class CashSessionService {
 					canClose: false,
 					reason: 'No hay caja abierta para hoy',
 					balance,
+					accumulatedDifference: lastSession?.accumulatedDifference,
 				};
 			}
+
+			const { balance } = await this.getSessionBalance(todaySession?.id);
 
 			if (todaySession.closedAt) {
 				return {
@@ -103,12 +115,11 @@ export class CashSessionService {
 					canOpen: false,
 					canClose: false,
 					reason: 'La caja de hoy ya fue cerrada',
+					balance,
+					accumulatedDifference: todaySession?.accumulatedDifference,
 					data: todaySession,
 				};
 			}
-
-			// Caja de hoy abierta
-			const { balance } = await this.getSessionBalance(todaySession?.id);
 
 			return {
 				status: 'open',
@@ -116,6 +127,7 @@ export class CashSessionService {
 				canClose: true,
 				reason: 'Caja abierta y operativa',
 				balance,
+				accumulatedDifference: todaySession?.accumulatedDifference,
 				data: todaySession,
 			};
 		} catch (error) {
@@ -218,13 +230,14 @@ export class CashSessionService {
 			const isFirstSession = !lastSession;
 
 			const inheritedAmount = Number(lastSession?.declaredClosingAmount ?? 0);
+			const inheritedAccumulatedDiff = lastSession?.accumulatedDifference ?? 0;
 			const openingDifference = declaredAmount - inheritedAmount;
+			const newAccumulatedDifference =
+				Number(inheritedAccumulatedDiff) + openingDifference;
 
 			const inheritedPiggyBankAmount = Number(
 				lastSession?.piggyBankAmount ?? 0,
 			);
-
-			console.log({ isFirstSession, initialPiggyBankAmount });
 
 			await CashSessionModel.create({
 				shopId,
@@ -233,6 +246,7 @@ export class CashSessionService {
 				openingAmount: inheritedAmount,
 				declaredOpeningAmount: declaredAmount,
 				openingDifference: isFirstSession ? 0 : openingDifference,
+				accumulatedDifference: isFirstSession ? 0 : newAccumulatedDifference,
 				piggyBankAmount: isFirstSession
 					? initialPiggyBankAmount
 					: inheritedPiggyBankAmount,
@@ -291,8 +305,10 @@ export class CashSessionService {
 			lastSessionOpened.declaredClosingAmount = declaredAmount;
 			lastSessionOpened.closingAmount = balance;
 			lastSessionOpened.closingDifference = closingDifference;
+			lastSessionOpened.accumulatedDifference =
+				Number(lastSessionOpened.accumulatedDifference) + closingDifference;
 			lastSessionOpened.closedBy = closedBy;
-			lastSessionOpened.comments = comments;
+			lastSessionOpened.closingComments = comments;
 
 			await lastSessionOpened.save();
 
