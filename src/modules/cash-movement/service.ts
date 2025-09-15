@@ -69,6 +69,20 @@ export class CashMovementService {
 				throw new Error('El valor es mayor que el monto disponible en la caja');
 			}
 
+			const isShortageCover = category === CashMovementCategory.SHORTAGE_COVER;
+
+			if (isShortageCover && !comments) {
+				throw new Error(
+					'Si estás reponiendo dinero faltante, por favor deja un comentario',
+				);
+			}
+
+			if (isShortageCover && currentSession?.data?.accumulatedDifference >= 0) {
+				throw new Error(
+					'Solo puedes reponer dinero faltante si la diferencia acumulada es negativa',
+				);
+			}
+
 			await this.cashMovementModel.create(
 				{
 					cashSessionId: currentSession?.data?.id,
@@ -82,6 +96,20 @@ export class CashMovementService {
 				},
 				{ transaction },
 			);
+
+			if (isShortageCover) {
+				const newAccumulatedDifference =
+					Number(currentSession?.data?.accumulatedDifference) + amount;
+
+				await CashSessionModel.update(
+					{
+						accumulatedDifference: newAccumulatedDifference,
+					},
+					{
+						where: { id: currentSession?.data?.id },
+					},
+				);
+			}
 
 			if (category === CashMovementCategory.PIGGY_BANK) {
 				await PiggyBankMovementModel.create(
@@ -152,6 +180,7 @@ export class CashMovementService {
 	) => {
 		const incomeCategories = [
 			CashMovementCategory.SALE,
+			CashMovementCategory.SHORTAGE_COVER,
 			CashMovementCategory.OTHER,
 		];
 		const expenseCategories = [

@@ -5,6 +5,7 @@ export enum CashMovementCategory {
 	PURCHASE = 'PURCHASE',
 	CHANGE = 'CHANGE',
 	PIGGY_BANK = 'PIGGY_BANK',
+	SHORTAGE_COVER = 'SHORTAGE_COVER',
 	OTHER = 'OTHER',
 }
 

@@ -52,6 +52,7 @@ CashMovementModel.init(
 				'PURCHASE',
 				'CHANGE',
 				'PIGGY_BANK',
+				'SHORTAGE_COVER',
 				'OTHER',
 			),
 			allowNull: false,
