@@ -71,16 +71,24 @@ export class CashMovementService {
 
 			const isShortageCover = category === CashMovementCategory.SHORTAGE_COVER;
 
-			if (isShortageCover && !comments) {
-				throw new Error(
-					'Si estás reponiendo dinero faltante, por favor deja un comentario',
-				);
-			}
+			if (isShortageCover) {
+				if (currentSession?.data?.accumulatedDifference >= 0) {
+					throw new Error(
+						'Solo puedes reponer dinero faltante si la diferencia acumulada es negativa',
+					);
+				}
 
-			if (isShortageCover && currentSession?.data?.accumulatedDifference >= 0) {
-				throw new Error(
-					'Solo puedes reponer dinero faltante si la diferencia acumulada es negativa',
-				);
+				if (amount !== Math.abs(currentSession?.data?.accumulatedDifference)) {
+					throw new Error(
+						`El monto debe ser igual o menor a ${Math.abs(currentSession?.data?.accumulatedDifference)}`,
+					);
+				}
+
+				if (!comments) {
+					throw new Error(
+						'Si estás reponiendo dinero faltante, por favor deja un comentario',
+					);
+				}
 			}
 
 			await this.cashMovementModel.create(
