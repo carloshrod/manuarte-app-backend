@@ -6,6 +6,9 @@ import { toZonedTime } from 'date-fns-tz';
 import { BillingPaymentModel } from '../billing-payment/model';
 import { sequelize } from '../../config/database';
 import { Op } from 'sequelize';
+import { BillingModel } from '../billing/model';
+import { CustomerModel } from '../customer/model';
+import { PersonModel } from '../person/model';
 
 const COLOMBIA_TZ = 'America/Bogota';
 
@@ -31,13 +34,37 @@ export class BankTransferMovementService {
 					createdDate: { [Op.between]: [startDate, endDate] },
 				},
 				attributes: {
-					include: [[sequelize.col('payment.paymentMethod'), 'paymentMethod']],
+					include: [
+						[sequelize.col('payment.paymentMethod'), 'paymentMethod'],
+						[sequelize.col('payment.billing.customer.person.fullName'), 'customerName'],
+					],
 				},
 				include: [
 					{
 						model: BillingPaymentModel,
 						as: 'payment',
 						attributes: [],
+						include: [
+							{
+								model: BillingModel,
+								as: 'billing',
+								attributes: [],
+								include: [
+									{
+										model: CustomerModel,
+										as: 'customer',
+										attributes: [],
+										include: [
+											{
+												model: PersonModel,
+												as: 'person',
+												attributes: ['fullName'],
+											},
+										],
+									},
+								],
+							},
+						],
 					},
 				],
 				order: [['createdDate', 'DESC']],

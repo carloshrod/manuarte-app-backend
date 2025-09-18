@@ -1,3 +1,5 @@
+import { CashMovementModel } from "./model";
+
 export enum CashMovementCategory {
 	SALE = 'SALE',
 	DELIVERY = 'DELIVERY',
@@ -19,3 +21,16 @@ export type CreateCashMovementDTO = {
 	comments?: string;
 	createdBy?: string;
 };
+
+export type CashMovementWithCustomerName = CashMovementModel & {
+  billingPayment?: {
+    billing?: {
+      customer?: {
+        person?: {
+          fullName?: string;
+        };
+      };
+    };
+  };
+};
+

@@ -5,8 +5,42 @@ import { closeCashSessionDTO, OpenCashSessionDTO } from './types';
 import { CashMovementModel } from '../cash-movement/model';
 import { Op } from 'sequelize';
 import { PiggyBankMovementModel } from '../piggy-bank/model';
+import { BillingPaymentModel } from '../billing-payment/model';
+import { BillingModel } from '../billing/model';
+import { CustomerModel } from '../customer/model';
+import { PersonModel } from '../person/model';
+import { CashMovementWithCustomerName } from '../cash-movement/types';
 
 const COLOMBIA_TZ = 'America/Bogota';
+
+export const cashMovementWithCustomerInclude = [
+	{
+		model: BillingPaymentModel,
+		as: 'billingPayment',
+		attributes: ['id'],
+		include: [
+			{
+				model: BillingModel,
+				as: 'billing',
+				attributes: ['id'],
+				include: [
+					{
+						model: CustomerModel,
+						as: 'customer',
+						attributes: ['id'],
+						include: [
+							{
+								model: PersonModel,
+								as: 'person',
+								attributes: ['fullName'],
+							},
+						],
+					},
+				],
+			},
+		],
+	},
+];
 
 export class CashSessionService {
 	private cashSessionModel;
@@ -36,6 +70,7 @@ export class CashSessionService {
 						as: 'movements',
 						separate: true,
 						order: [['createdDate', 'DESC']],
+						include: cashMovementWithCustomerInclude,
 					},
 					{
 						model: PiggyBankMovementModel,
@@ -59,6 +94,7 @@ export class CashSessionService {
 						as: 'movements',
 						separate: true,
 						order: [['createdDate', 'DESC']],
+						include: cashMovementWithCustomerInclude,
 					},
 					{
 						model: PiggyBankMovementModel,
@@ -93,7 +129,7 @@ export class CashSessionService {
 					reason: 'Caja pendiente de cierre',
 					balance,
 					accumulatedDifference: lastSession?.accumulatedDifference,
-					data: lastSession,
+					data: this.serializeCashSessionWithCustomers(lastSession),
 				};
 			}
 
@@ -123,7 +159,7 @@ export class CashSessionService {
 					reason: 'La caja de hoy ya fue cerrada',
 					balance,
 					accumulatedDifference: todaySession?.accumulatedDifference,
-					data: todaySession,
+					data: this.serializeCashSessionWithCustomers(todaySession),
 				};
 			}
 
@@ -134,7 +170,7 @@ export class CashSessionService {
 				reason: 'Caja abierta y operativa',
 				balance,
 				accumulatedDifference: todaySession?.accumulatedDifference,
-				data: todaySession,
+				data: this.serializeCashSessionWithCustomers(todaySession),
 			};
 		} catch (error) {
 			console.error('Error obteniendo sesión de caja del día actual');
@@ -162,6 +198,7 @@ export class CashSessionService {
 						as: 'movements',
 						separate: true,
 						order: [['createdDate', 'DESC']],
+						include: cashMovementWithCustomerInclude,
 					},
 					{
 						model: PiggyBankMovementModel,
@@ -173,7 +210,7 @@ export class CashSessionService {
 			});
 
 			if (session) {
-				return session.dataValues;
+				return this.serializeCashSessionWithCustomers(session);
 			}
 		} catch (error) {
 			console.error('Error obteniendo sesión de caja');
@@ -361,6 +398,32 @@ export class CashSessionService {
 			return { incomes, expenses, balance };
 		} catch (error) {
 			console.error('Error obteniendo balance de caja');
+			throw error;
+		}
+	};
+
+	private serializeCashSessionWithCustomers = (session: CashSessionModel) => {
+		try {
+			const movements = session.get(
+				'movements',
+			) as CashMovementWithCustomerName[];
+
+			const movementsWithCustomerName = movements.map(m => {
+				const mov = {
+					...m.toJSON(),
+					customerName:
+						m.billingPayment?.billing?.customer?.person?.fullName ?? null,
+				};
+				delete mov.billingPayment;
+				return mov;
+			});
+
+			return {
+				...session.toJSON(),
+				movements: movementsWithCustomerName,
+			};
+		} catch (error) {
+			console.error('Error enriqueciendo movimientos de caja');
 			throw error;
 		}
 	};
