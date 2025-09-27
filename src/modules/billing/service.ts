@@ -308,6 +308,12 @@ export class BillingService {
 				throw new Error('Es necesario al menos 1 item para crear una factura');
 			}
 
+			if (discount > 0 && !discountType) {
+				throw new Error(
+					'El tipo de descuento es requerido cuando hay un descuento mayor a 0',
+				);
+			}
+
 			let customerId = customerData?.customerId ?? null;
 
 			if (customerData?.fullName && !customerData?.customerId) {
@@ -330,7 +336,7 @@ export class BillingService {
 				shopId: shop?.dataValues?.id,
 				status,
 				paymentMethod: payments[0].paymentMethod,
-				discountType: discount > 0 ? discountType : null,
+				discountType: discount > 0 && discountType ? discountType : null,
 				discount: discount || 0,
 				shipping,
 				subtotal,
