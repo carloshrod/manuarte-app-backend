@@ -5,13 +5,17 @@ import { ShopModel } from '../shop/model';
 import { CashMovementModel } from '../cash-movement/model';
 
 export class CashSessionModel extends Model {
+	public id!: string;
 	public openedAt!: Date;
 	public closedAt!: Date | null;
 	public openingAmount!: number;
 	public closingAmount!: number;
 	public declaredClosingAmount!: number;
 	public closingDifference!: number;
-	public comments!: string | null | undefined;
+	public accumulatedDifference!: number;
+	public piggyBankAmount!: number;
+	public closedBy!: string;
+	public closingComments!: string | null | undefined;
 }
 
 CashSessionModel.init(
@@ -61,12 +65,26 @@ CashSessionModel.init(
 			type: DataTypes.DECIMAL(15, 2),
 			allowNull: true,
 		},
+		accumulatedDifference: {
+			type: DataTypes.DECIMAL(15, 2),
+			allowNull: false,
+			defaultValue: 0,
+		},
+		piggyBankAmount: {
+			type: DataTypes.DECIMAL(15, 2),
+			allowNull: false,
+			defaultValue: 0,
+		},
 		closedBy: {
 			type: DataTypes.UUID,
 			allowNull: true,
 			references: { model: 'user', key: 'id' },
 		},
-		comments: {
+		openingComments: {
+			type: DataTypes.TEXT,
+			allowNull: true,
+		},
+		closingComments: {
 			type: DataTypes.TEXT,
 			allowNull: true,
 		},

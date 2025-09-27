@@ -4,6 +4,7 @@ import {
 	CreateBillingDto,
 	DiscountType,
 	Payment,
+	PaymentMethod,
 	UpdateBillingDto,
 } from './types';
 import { sequelize } from '../../config/database';
@@ -24,6 +25,11 @@ import { BillingPaymentModel } from '../billing-payment/model';
 import { StockItemService } from '../stock-item/service';
 import { StockItemModel } from '../stock-item/model';
 import { StockOperation } from '../stock-item/types';
+import { CashMovementService } from '../cash-movement/service';
+import { CashMovementModel } from '../cash-movement/model';
+import { CashMovementCategory } from '../cash-movement/types';
+import { BankTransferMovementService } from '../bank-transfer-movement/service';
+import { BankTransferMovementModel } from '../bank-transfer-movement/model';
 
 export class BillingService {
 	private billingModel;
@@ -32,6 +38,8 @@ export class BillingService {
 	private stockItemService;
 	private customerService;
 	private shopService;
+	private cashMovementService;
+	private bankTransferMovementService;
 
 	constructor(billingModel: typeof BillingModel) {
 		this.billingModel = billingModel;
@@ -40,6 +48,10 @@ export class BillingService {
 		this.stockItemService = new StockItemService(StockItemModel);
 		this.customerService = new CustomerService(CustomerModel);
 		this.shopService = new ShopService(ShopModel);
+		this.cashMovementService = new CashMovementService(CashMovementModel);
+		this.bankTransferMovementService = new BankTransferMovementService(
+			BankTransferMovementModel,
+		);
 	}
 
 	getAll = async (shopSlug: string) => {
@@ -266,31 +278,6 @@ export class BillingService {
 	}) => {
 		const transaction = await sequelize.transaction();
 		try {
-			const existing = await this.billingModel.findOne({
-				where: { clientRequestId: billingData?.clientRequestId },
-			});
-			if (existing) {
-				throw new Error('Ya se procesó esta solicitud');
-			}
-
-			if (billingData?.items?.length === 0) {
-				throw new Error('Es necesario al menos 1 item para crear una factura');
-			}
-
-			let customerId = customerData?.customerId ?? null;
-
-			if (customerData?.fullName && !customerData?.customerId) {
-				const result = await this.customerService.create(
-					customerData,
-					transaction,
-				);
-				customerId = result.customer.id;
-			} else if (customerId) {
-				await this.customerService.update(customerData, transaction);
-				const result = await this.customerService.getCustomerById(customerId);
-				if (!result) throw new Error('El cliente está inactivo');
-			}
-
 			const {
 				shopSlug,
 				status,
@@ -310,14 +297,46 @@ export class BillingService {
 				return { status: 400, message: 'Tienda no encontrada' };
 			}
 
+			const existing = await this.billingModel.findOne({
+				where: { clientRequestId: billingData?.clientRequestId },
+			});
+			if (existing) {
+				throw new Error('Ya se procesó esta solicitud');
+			}
+
+			if (billingData?.items?.length === 0) {
+				throw new Error('Es necesario al menos 1 item para crear una factura');
+			}
+
+			if (discount > 0 && !discountType) {
+				throw new Error(
+					'El tipo de descuento es requerido cuando hay un descuento mayor a 0',
+				);
+			}
+
+			let customerId = customerData?.customerId ?? null;
+
+			if (customerData?.fullName && !customerData?.customerId) {
+				const result = await this.customerService.create(
+					customerData,
+					transaction,
+				);
+				customerId = result.customer.id;
+			} else if (customerId) {
+				await this.customerService.update(customerData, transaction);
+				const result = await this.customerService.getCustomerById(customerId);
+				if (!result) throw new Error('El cliente está inactivo');
+			}
+
 			const deductFromStock = status === BillingStatus.PAID;
 
+			// Crear factura *****
 			const newBilling = this.billingModel.build({
 				customerId,
 				shopId: shop?.dataValues?.id,
 				status,
 				paymentMethod: payments[0].paymentMethod,
-				discountType: discount > 0 ? discountType : null,
+				discountType: discount > 0 && discountType ? discountType : null,
 				discount: discount || 0,
 				shipping,
 				subtotal,
@@ -329,16 +348,52 @@ export class BillingService {
 			await newBilling.generateSerialNumber();
 			await newBilling.save({ transaction });
 
+			// Crear pagos *****
 			const paymentEntries = payments.map(payment => ({
 				...payment,
 				billingId: newBilling.id,
 				paymentReference: payment?.paymentReference ?? null,
 			}));
 
-			await this.billingPaymentModel.bulkCreate(paymentEntries, {
-				transaction,
-			});
+			const createdPayments = await this.billingPaymentModel.bulkCreate(
+				paymentEntries,
+				{
+					transaction,
+					returning: true,
+				},
+			);
 
+			// Crear movimientos de caja *****
+			for (const payment of createdPayments) {
+				if (payment?.dataValues?.paymentMethod === PaymentMethod.CASH) {
+					await this.cashMovementService.create(
+						{
+							shopId: shop?.dataValues?.id,
+							billingPaymentId: payment?.dataValues?.id,
+							reference: newBilling?.serialNumber,
+							amount: Number(payment?.dataValues?.amount),
+							type: 'INCOME',
+							category: CashMovementCategory.SALE,
+							createdBy: requestedBy,
+						},
+						transaction,
+					);
+				} else {
+					await this.bankTransferMovementService.create(
+						{
+							shopId: shop?.dataValues?.id,
+							billingPaymentId: payment?.dataValues?.id,
+							reference: newBilling?.serialNumber,
+							amount: Number(payment?.dataValues?.amount),
+							type: 'INCOME',
+							createdBy: billingData?.requestedBy,
+						},
+						transaction,
+					);
+				}
+			}
+
+			// Crear items de factura *****
 			for (const item of billingData.items) {
 				await this.billingItemService.create(
 					{
@@ -457,9 +512,42 @@ export class BillingService {
 					paymentReference: payment.paymentReference || null,
 				}));
 
-				await this.billingPaymentModel.bulkCreate(newPaymentEntries, {
-					transaction,
-				});
+				const createdPayments = await this.billingPaymentModel.bulkCreate(
+					newPaymentEntries,
+					{
+						transaction,
+					},
+				);
+
+				// Crear movimientos de caja *****
+				for (const payment of createdPayments) {
+					if (payment?.dataValues?.paymentMethod === PaymentMethod.CASH) {
+						await this.cashMovementService.create(
+							{
+								shopId: billingToUpdate?.dataValues?.shopId,
+								billingPaymentId: payment?.dataValues?.id,
+								reference: billingToUpdate?.dataValues?.serialNumber,
+								amount: Number(payment?.dataValues?.amount),
+								type: 'INCOME',
+								category: CashMovementCategory.SALE,
+								createdBy: billingData?.requestedBy,
+							},
+							transaction,
+						);
+					} else {
+						await this.bankTransferMovementService.create(
+							{
+								shopId: billingToUpdate?.dataValues?.shopId,
+								billingPaymentId: payment?.dataValues?.id,
+								reference: billingToUpdate?.dataValues?.serialNumber,
+								amount: Number(payment?.dataValues?.amount),
+								type: 'INCOME',
+								createdBy: billingData?.requestedBy,
+							},
+							transaction,
+						);
+					}
+				}
 			}
 
 			if (billingData?.status === BillingStatus.PAID && paymentCompleted) {
@@ -507,27 +595,37 @@ export class BillingService {
 		try {
 			const { billing } = await this.getOne(serialNumber);
 
-			if (billing?.status !== BillingStatus.PAID) {
-				throw new Error(
-					'No puedes anular esta factura porque su pago no ha sido completado',
-				);
-			}
-
 			if (!Array.isArray(billing.items) || billing.items.length === 0) {
 				throw new Error('No hay ítems en la factura');
 			}
 
-			for (const item of billing.items) {
-				await this.stockItemService.updateQuantity(
-					{ ...item, stockId: billing?.stockId },
-					StockOperation.ADD,
-					transaction,
-				);
+			if (billing?.status === BillingStatus.PAID) {
+				for (const item of billing.items) {
+					await this.stockItemService.updateQuantity(
+						{ ...item, stockId: billing?.stockId },
+						StockOperation.ADD,
+						transaction,
+					);
+				}
 			}
 
 			await this.billingModel.update(
 				{ status: BillingStatus.CANCELED, updatedBy },
 				{ where: { serialNumber }, transaction },
+			);
+
+			// Anular movimientos de caja *****
+			await this.cashMovementService.cancel(
+				serialNumber,
+				updatedBy,
+				transaction,
+			);
+
+			// Anular movimientos de transferencias bancarias *****
+			await this.bankTransferMovementService.cancel(
+				serialNumber,
+				updatedBy,
+				transaction,
 			);
 
 			await transaction.commit();
@@ -539,21 +637,6 @@ export class BillingService {
 		} catch (error) {
 			await transaction.rollback();
 			console.error('Error anulando factura');
-			throw error;
-		}
-	};
-
-	delete = async (id: string) => {
-		try {
-			const result = await this.billingModel.destroy({ where: { id } });
-
-			if (result === 1) {
-				return { status: 200, message: 'Factura eliminada con éxito' };
-			}
-
-			return { status: 404, message: 'Factura no encontrada' };
-		} catch (error) {
-			console.error('Error eliminando factura');
 			throw error;
 		}
 	};

@@ -80,11 +80,7 @@ export class BillingItemService {
 			const rawSales = await BillingModel.findAll({
 				attributes: [
 					[
-						sequelize.fn(
-							'DATE_PART',
-							'month',
-							sequelize.col('billingItems.createdDate'),
-						),
+						sequelize.fn('DATE_PART', 'month', sequelize.col('effectiveDate')),
 						'month',
 					],
 					[sequelize.col('billingItems.currency'), 'currency'],
@@ -104,7 +100,7 @@ export class BillingItemService {
 					],
 				],
 				where: {
-					createdDate: {
+					effectiveDate: {
 						[Op.between]: [startOfYear, endOfYear],
 					},
 					status: BillingStatus.PAID,
@@ -126,11 +122,7 @@ export class BillingItemService {
 					},
 				],
 				group: [
-					sequelize.fn(
-						'DATE_PART',
-						'month',
-						sequelize.col('billingItems.createdDate'),
-					),
+					sequelize.fn('DATE_PART', 'month', sequelize.col('effectiveDate')),
 					'billingItems.currency',
 				],
 				order: [[sequelize.literal('month'), 'ASC']],

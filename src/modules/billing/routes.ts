@@ -36,10 +36,5 @@ router.delete(
 	authorize(BillingPermissions.BILLING_DELETE),
 	billingController.cancel,
 );
-router.delete(
-	'/:id',
-	authorize(BillingPermissions.BILLING_DELETE),
-	billingController.delete,
-);
 
 export default router;

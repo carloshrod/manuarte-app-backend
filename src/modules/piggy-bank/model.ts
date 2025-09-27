@@ -1,14 +1,14 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
-import { BillingPaymentModel } from '../billing-payment/model';
 import { UserModel } from '../user/model';
+import { CashSessionModel } from '../cash-session/model';
 
-export class CashMovementModel extends Model {
-	public type!: 'INCOME' | 'EXPENSE';
+export class PiggyBankMovementModel extends Model {
+	public type!: 'DEPOSIT' | 'WITHDRAW';
 	public amount!: number;
 }
 
-CashMovementModel.init(
+PiggyBankMovementModel.init(
 	{
 		id: {
 			type: DataTypes.UUID,
@@ -24,37 +24,8 @@ CashMovementModel.init(
 				key: 'id',
 			},
 		},
-		billingPaymentId: {
-			type: DataTypes.UUID,
-			allowNull: true,
-			references: {
-				model: 'billing_payment',
-				key: 'id',
-			},
-		},
-		reference: {
-			type: DataTypes.STRING,
-			allowNull: true,
-			references: {
-				model: 'billing',
-				key: 'serialNumber',
-			},
-		},
 		type: {
-			type: DataTypes.ENUM('INCOME', 'EXPENSE'),
-			allowNull: false,
-		},
-		category: {
-			type: DataTypes.ENUM(
-				'SALE',
-				'DELIVERY',
-				'INBOUND_SHIPPING',
-				'PURCHASE',
-				'CHANGE',
-				'PIGGY_BANK',
-				'SHORTAGE_COVER',
-				'OTHER',
-			),
+			type: DataTypes.ENUM('DEPOSIT', 'WITHDRAW'),
 			allowNull: false,
 		},
 		amount: {
@@ -67,7 +38,7 @@ CashMovementModel.init(
 		},
 		createdBy: {
 			type: DataTypes.UUID,
-			allowNull: true,
+			allowNull: false,
 			references: { model: 'user', key: 'id' },
 		},
 		createdDate: {
@@ -87,7 +58,7 @@ CashMovementModel.init(
 	},
 	{
 		sequelize,
-		tableName: 'cash_movement',
+		tableName: 'piggy_bank_movement',
 		schema: 'public',
 		timestamps: true,
 		createdAt: 'createdDate',
@@ -97,24 +68,24 @@ CashMovementModel.init(
 	},
 );
 
-// ***** CashMovementModel-BillingPaymentModel Relations *****
-CashMovementModel.belongsTo(BillingPaymentModel, {
-	foreignKey: 'billingPaymentId',
-	as: 'billingPayment',
+// ***** PiggyBankMovementModel-CashSessionModel Relations *****
+PiggyBankMovementModel.belongsTo(CashSessionModel, {
+	foreignKey: 'cashSessionId',
+	as: 'cashSession',
 });
 
-BillingPaymentModel.hasOne(CashMovementModel, {
-	foreignKey: 'billingPaymentId',
-	as: 'cashMovement',
+CashSessionModel.hasMany(PiggyBankMovementModel, {
+	foreignKey: 'cashSessionId',
+	as: 'piggyBankMovements',
 });
 
-// ***** CashMovementModel-UserModel Relations *****
-CashMovementModel.belongsTo(UserModel, {
+// ***** PiggyBankMovementModel-UserModel Relations *****
+PiggyBankMovementModel.belongsTo(UserModel, {
 	foreignKey: 'createdBy',
 	as: 'creator',
 });
 
-UserModel.hasMany(CashMovementModel, {
+UserModel.hasMany(PiggyBankMovementModel, {
 	foreignKey: 'createdBy',
-	as: 'manualCashMovements',
+	as: 'piggyBankMovements',
 });

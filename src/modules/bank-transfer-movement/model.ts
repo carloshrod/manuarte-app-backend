@@ -2,8 +2,12 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { BillingPaymentModel } from '../billing-payment/model';
 import { UserModel } from '../user/model';
+import { ShopModel } from '../shop/model';
 
-export class BankTransferMovementModel extends Model {}
+export class BankTransferMovementModel extends Model {
+	public amount!: number;
+	public type!: 'INCOME' | 'EXPENSE';
+}
 
 BankTransferMovementModel.init(
 	{
@@ -12,6 +16,14 @@ BankTransferMovementModel.init(
 			allowNull: false,
 			defaultValue: DataTypes.UUIDV4,
 			primaryKey: true,
+		},
+		shopId: {
+			type: DataTypes.UUID,
+			allowNull: false,
+			references: {
+				model: 'shop',
+				key: 'id',
+			},
 		},
 		billingPaymentId: {
 			type: DataTypes.UUID,
@@ -69,10 +81,21 @@ BankTransferMovementModel.init(
 	},
 );
 
+// ***** BankTransferMovementModel-ShopModel Relations *****
+BankTransferMovementModel.belongsTo(ShopModel, {
+	foreignKey: 'shopId',
+	as: 'shop',
+});
+
+ShopModel.hasMany(BankTransferMovementModel, {
+	foreignKey: 'shopId',
+	as: 'bankTransferMovements',
+});
+
 // ***** BankTransferMovementModel-BillingPaymentModel Relations *****
 BankTransferMovementModel.belongsTo(BillingPaymentModel, {
 	foreignKey: 'billingPaymentId',
-	as: 'billingPayment',
+	as: 'payment',
 });
 
 BillingPaymentModel.hasOne(BankTransferMovementModel, {
@@ -88,5 +111,5 @@ BankTransferMovementModel.belongsTo(UserModel, {
 
 UserModel.hasMany(BankTransferMovementModel, {
 	foreignKey: 'createdBy',
-	as: 'manualTransferMovements',
+	as: 'bankTransferMovements',
 });
