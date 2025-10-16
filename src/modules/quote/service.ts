@@ -276,16 +276,27 @@ export class QuoteService {
 	}) => {
 		const transaction = await sequelize.transaction();
 		try {
-			let customerInfo;
-			if (customerData?.personId) {
-				customerInfo = await this.customerService.update(
-					customerData,
-					transaction,
-				);
-				if (!customerInfo) {
-					throw new Error('Cliente no encontrado');
+			let customerId = null;
+
+			// Si se envía info de cliente
+			if (customerData?.fullName) {
+				// Si no existe, créarlo
+				if (!customerData?.customerId) {
+					const result = await this.customerService.create(
+						customerData,
+						transaction,
+					);
+					customerId = result.customer.id;
+				} else {
+					// Si existe, actualízarlo
+					await this.customerService.update(customerData, transaction);
+					customerId = customerData.customerId;
 				}
+			} else if (customerData?.customerId) {
+				// Solo asignar el customerId si se envía
+				customerId = customerData.customerId;
 			}
+			// Si no se envía info del cliente, queda como consumidor final (customerId = null)
 
 			const quoteToUpdate = await this.quoteModel.findByPk(quoteData.id, {
 				transaction,
@@ -296,7 +307,7 @@ export class QuoteService {
 
 			await quoteToUpdate.update(
 				{
-					customerId: customerData?.customerId,
+					customerId,
 					status: quoteData?.status,
 					currency: quoteData?.currency,
 					discountType:
@@ -326,7 +337,7 @@ export class QuoteService {
 					id: quoteData?.id,
 					serialNumber: quoteToUpdate?.serialNumber,
 					status: quoteData?.status,
-					customerId: customerData?.customerId,
+					customerId,
 					customerName: customerData?.fullName,
 					shopId: quoteData?.shopId,
 					createdDate: quoteToUpdate?.createdDate,
