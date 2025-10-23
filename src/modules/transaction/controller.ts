@@ -51,22 +51,6 @@ export class TransactionController {
 		}
 	};
 
-	getItemsInTransit: Handler = async (req, res, next) => {
-		try {
-			const { stockId } = req.params;
-			const result =
-				await this.transactionItemService.getInTransitByStockId(stockId);
-			if (result.status === 200) {
-				res.status(200).json(result.transactionItems);
-				return;
-			}
-
-			res.sendStatus(result.status);
-		} catch (error) {
-			next(error);
-		}
-	};
-
 	create: Handler = async (req, res, next) => {
 		try {
 			const result = await this.transactionService.create(req.body);

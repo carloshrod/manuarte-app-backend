@@ -52,6 +52,18 @@ export class StockItemService {
 					'minQty',
 					'maxQty',
 					'updatedDate',
+					[
+						sequelize.literal(`(
+								SELECT COALESCE(SUM(ti.quantity), 0)
+								FROM transaction_item ti
+								INNER JOIN transaction t ON ti."transactionId" = t.id
+								WHERE ti."productVariantId" = "productVariants"."id"
+								AND t.type = 'TRANSFER' 
+								AND t."toId" = "StockItemModel"."stockId" 
+								AND t.state = 'PROGRESS'
+						)`),
+						'quantityInTransit',
+					],
 				],
 				include: [
 					{
