@@ -16,20 +16,32 @@ export class CityService {
 	}
 
 	search = async (search: string) => {
+		const normalizedSearch = search
+			.toLowerCase()
+			.normalize('NFD')
+			.replace(/[\u0300-\u036f]/g, '')
+			.replace(/ñ/g, 'n');
+
 		try {
 			const cities = await this.cityModel.findAll({
 				where: {
 					[Op.or]: [
 						sequelize.where(
-							sequelize.fn('unaccent', sequelize.col('"CityModel".name')),
+							sequelize.fn(
+								'unaccent',
+								sequelize.fn('lower', sequelize.col('"CityModel".name')),
+							),
 							{
-								[Op.iLike]: `%${search}%`,
+								[Op.iLike]: `%${normalizedSearch}%`,
 							},
 						),
 						sequelize.where(
-							sequelize.fn('unaccent', sequelize.col('region.name')),
+							sequelize.fn(
+								'unaccent',
+								sequelize.fn('lower', sequelize.col('region.name')),
+							),
 							{
-								[Op.iLike]: `%${search}%`,
+								[Op.iLike]: `%${normalizedSearch}%`,
 							},
 						),
 					],

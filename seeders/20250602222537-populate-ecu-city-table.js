@@ -56,6 +56,22 @@ module.exports = {
 	},
 
 	async down(queryInterface) {
-		await queryInterface.bulkDelete('city', null, {});
+		// Obtener las regiones de Ecuador para el rollback
+		const regions = await queryInterface.sequelize.query(
+			'SELECT id FROM region WHERE "countryId" = 2',
+			{ type: queryInterface.sequelize.QueryTypes.SELECT },
+		);
+		
+		const regionIds = regions.map(r => r.id);
+		
+		// Eliminar solo las ciudades que corresponden a cantones ecuatorianos
+		const cityNames = citiesData.flatMap(item => 
+			item.cities.map(city => capitalizeWords(city.name))
+		);
+		
+		await queryInterface.bulkDelete('city', {
+			name: cityNames,
+			regionId: regionIds
+		});
 	},
 };
