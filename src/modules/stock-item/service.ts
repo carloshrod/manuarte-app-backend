@@ -19,6 +19,8 @@ import {
 	UpdateStockItemQtyDto,
 } from './types';
 import { BillingStatus } from '../billing/types';
+import { ProductCategoryModel } from '../product-category/model';
+import { ProductCategoryGroupModel } from '../product-category-group/model';
 
 export class StockItemService {
 	private stockItemModel;
@@ -42,6 +44,12 @@ export class StockItemService {
 					'id',
 					[sequelize.col('productVariants.product.name'), 'productName'],
 					[sequelize.col('productVariants.name'), 'productVariantName'],
+					[
+						sequelize.col(
+							'productVariants.product.productCategory.productCategoryGroup.name',
+						),
+						'productCategoryGroupName',
+					],
 					[sequelize.col('productVariants.id'), 'productVariantId'],
 					[sequelize.col('productVariants.vId'), 'vId'],
 					'stockId',
@@ -79,6 +87,22 @@ export class StockItemService {
 								as: 'product',
 								attributes: [],
 								required: true,
+								include: [
+									{
+										model: ProductCategoryModel,
+										as: 'productCategory',
+										attributes: [],
+										required: true,
+										include: [
+											{
+												model: ProductCategoryGroupModel,
+												as: 'productCategoryGroup',
+												attributes: [],
+												required: true,
+											},
+										],
+									},
+								],
 							},
 						],
 					},
