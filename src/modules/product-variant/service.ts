@@ -17,40 +17,92 @@ export class ProductVariantService {
 		this.productCategoryModel = ProductCategoryModel;
 	}
 
-	getAll = async () => {
+	getAll = async (
+		page: number = 1,
+		pageSize: number = 30,
+		filters: {
+			vId?: string;
+			productName?: string;
+			variantName?: string;
+			productDescription?: string;
+			productCategoryName?: string;
+		} = {},
+	) => {
 		try {
-			const productVariants = await this.productVariantModel.findAll({
-				attributes: {
-					include: [
-						[sequelize.col('product.name'), 'productName'],
-						[sequelize.col('product.description'), 'productDescription'],
-						[sequelize.col('product.productCategoryId'), 'productCategoryId'],
-						[
-							sequelize.col('product.productCategory.name'),
-							'productCategoryName',
-						],
-					],
-				},
-				include: [
-					{
-						model: this.productModel,
-						as: 'product',
-						attributes: [],
-						where: { deletedDate: null },
+			const offset = (page - 1) * pageSize;
+
+			const where: Record<string, unknown> = {};
+			if (filters.vId) {
+				where.vId = { [Op.iLike]: `%${filters.vId}%` };
+			}
+			if (filters.variantName) {
+				where.name = { [Op.iLike]: `%${filters.variantName}%` };
+			}
+
+			const productWhere: Record<string, unknown> = { deletedDate: null };
+			if (filters.productName) {
+				productWhere.name = { [Op.iLike]: `%${filters.productName}%` };
+			}
+			if (filters.productDescription) {
+				productWhere.description = {
+					[Op.iLike]: `%${filters.productDescription}%`,
+				};
+			}
+
+			const productCategoryWhere: Record<string, unknown> = {};
+			if (filters.productCategoryName) {
+				productCategoryWhere.name = {
+					[Op.iLike]: `%${filters.productCategoryName}%`,
+				};
+			}
+
+			const { rows: productVariants, count: total } =
+				await this.productVariantModel.findAndCountAll({
+					where: { ...where },
+					attributes: {
 						include: [
-							{
-								model: this.productCategoryModel,
-								as: 'productCategory',
-								required: true,
-								attributes: [],
-							},
+							[sequelize.col('product.name'), 'productName'],
+							[sequelize.col('product.description'), 'productDescription'],
+							[sequelize.col('product.productCategoryId'), 'productCategoryId'],
+							[
+								sequelize.col('product.productCategory.name'),
+								'productCategoryName',
+							],
 						],
 					},
-				],
-				order: [['productName', 'ASC']],
-			});
+					include: [
+						{
+							model: this.productModel,
+							as: 'product',
+							attributes: [],
+							where: Object.keys(productWhere).length
+								? productWhere
+								: undefined,
+							include: [
+								{
+									model: this.productCategoryModel,
+									as: 'productCategory',
+									required: true,
+									attributes: [],
+									where: Object.keys(productCategoryWhere).length
+										? productCategoryWhere
+										: undefined,
+								},
+							],
+						},
+					],
+					order: [['productName', 'ASC']],
+					limit: pageSize,
+					offset,
+				});
 
-			return productVariants;
+			return {
+				productVariants,
+				total,
+				page,
+				pageSize,
+				totalPages: Math.ceil(total / pageSize),
+			};
 		} catch (error) {
 			console.error(
 				'ServiceError obteniendo presentaciones de productos: ',

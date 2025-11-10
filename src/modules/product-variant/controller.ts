@@ -9,12 +9,27 @@ export class ProductVariantController {
 		this.productVariantService = productVariantService;
 	}
 
-	getAll: Handler = async (_req, res, next) => {
+	getAll: Handler = async (req, res, next) => {
 		try {
-			const productVariants = await this.productVariantService.getAll();
+			const page = parseInt(req.query.page as string) || 1;
+			const pageSize = parseInt(req.query.pageSize as string) || 30;
 
-			if (productVariants.length > 0) {
-				res.status(200).json(productVariants);
+			const filters = {
+				vId: req.query.vId as string,
+				productName: req.query.productName as string,
+				variantName: req.query.name as string,
+				productDescription: req.query.productDescription as string,
+				productCategoryName: req.query.productCategoryName as string,
+			};
+
+			const result = await this.productVariantService.getAll(
+				page,
+				pageSize,
+				filters,
+			);
+
+			if (result.productVariants.length > 0) {
+				res.status(200).json(result);
 			} else {
 				res.sendStatus(204);
 			}
