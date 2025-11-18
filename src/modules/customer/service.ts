@@ -1,4 +1,4 @@
-import { QueryTypes, Transaction } from 'sequelize';
+import { col, fn, QueryTypes, Transaction, where } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { CustomError } from '../../middlewares/errorHandler';
 import { AddressModel } from '../address/model';
@@ -18,6 +18,14 @@ import { CountryModel } from '../country/model';
 import { CityService } from '../city/service';
 import { BillingPaymentModel } from '../billing-payment/model';
 
+interface CustomerFilters {
+	dni?: string;
+	fullName?: string;
+	email?: string;
+	phoneNumber?: string;
+	cityName?: string;
+}
+
 export class CustomerService {
 	private customerModel;
 	private personModel;
@@ -31,74 +39,132 @@ export class CustomerService {
 		this.cityService = new CityService(CityModel);
 	}
 
-	getAll = async (isoCode?: string) => {
+	getAll = async (
+		page: number = 1,
+		pageSize: number = 30,
+		filters: CustomerFilters = {},
+		isoCode?: string,
+	) => {
 		try {
 			if (isoCode && typeof isoCode !== 'string') {
 				throw new Error('Invalid isoCode');
 			}
 
+			const offset = (page - 1) * pageSize;
 			const filterByCountry = Boolean(isoCode);
 
-			const customers = await this.customerModel.findAll({
-				attributes: [
-					'id',
-					'personId',
-					'email',
-					'phoneNumber',
-					'createdDate',
-					'city',
-					[sequelize.col('person.fullName'), 'fullName'],
-					[sequelize.col('person.dni'), 'dni'],
-					[sequelize.col('address.location'), 'location'],
-					[sequelize.col('address.cityId'), 'cityId'],
-					[sequelize.col('address.city.name'), 'cityName'],
-					[sequelize.col('address.city.region.name'), 'regionName'],
-					[
-						sequelize.col('address.city.region.country.isoCode'),
-						'countryIsoCode',
-					],
-				],
-				include: [
-					{
-						model: this.personModel,
-						as: 'person',
-						attributes: [],
-					},
-					{
-						model: this.addressModel,
-						as: 'address',
-						attributes: [],
-						required: filterByCountry,
-						include: [
-							{
-								model: CityModel,
-								as: 'city',
-								attributes: [],
-								required: filterByCountry,
-								include: [
-									{
-										model: RegionModel,
-										as: 'region',
-										attributes: [],
-										required: filterByCountry,
-										include: [
-											{
-												model: CountryModel,
-												as: 'country',
-												attributes: [],
-												required: filterByCountry,
-												where: filterByCountry ? { isoCode } : undefined,
-											},
-										],
-									},
-								],
-							},
-						],
-					},
-				],
-			});
+			const customerWhere: Record<string, unknown> = {};
+			if (filters.email) {
+				customerWhere.email = { [Op.iLike]: `%${filters.email}%` };
+			}
+			if (filters.phoneNumber) {
+				customerWhere.phoneNumber = { [Op.iLike]: `%${filters.phoneNumber}%` };
+			}
 
-			return customers;
+			const personWhere: Record<string, unknown> = {};
+			if (filters.dni) {
+				personWhere.dni = { [Op.iLike]: `%${filters.dni}%` };
+			}
+			if (filters.fullName) {
+				const normalizedSearch = filters.fullName
+					.normalize('NFD')
+					.replace(/[\u0300-\u036f]/g, '')
+					.toLowerCase();
+
+				personWhere.fullName = where(
+					fn('unaccent', fn('lower', col('fullName'))),
+					Op.iLike,
+					`%${normalizedSearch}%`,
+				);
+			}
+
+			const cityWhere: Record<string, unknown> = {};
+			if (filters.cityName) {
+				const normalizedSearch = filters.cityName
+					.normalize('NFD')
+					.replace(/[\u0300-\u036f]/g, '')
+					.toLowerCase();
+
+				cityWhere.name = where(
+					fn('unaccent', fn('lower', col('name'))),
+					Op.iLike,
+					`%${normalizedSearch}%`,
+				);
+			}
+
+			const { rows: customers, count: total } =
+				await this.customerModel.findAndCountAll({
+					where: customerWhere,
+					attributes: [
+						'id',
+						'personId',
+						'email',
+						'phoneNumber',
+						'createdDate',
+						'city',
+						[sequelize.col('person.fullName'), 'fullName'],
+						[sequelize.col('person.dni'), 'dni'],
+						[sequelize.col('address.location'), 'location'],
+						[sequelize.col('address.cityId'), 'cityId'],
+						[sequelize.col('address.city.name'), 'cityName'],
+						[sequelize.col('address.city.region.name'), 'regionName'],
+						[
+							sequelize.col('address.city.region.country.isoCode'),
+							'countryIsoCode',
+						],
+					],
+					include: [
+						{
+							model: this.personModel,
+							as: 'person',
+							attributes: [],
+							where: Object.keys(personWhere).length ? personWhere : undefined,
+						},
+						{
+							model: this.addressModel,
+							as: 'address',
+							attributes: [],
+							required: true,
+							include: [
+								{
+									model: CityModel,
+									as: 'city',
+									attributes: [],
+									required: true,
+									where: Object.keys(cityWhere).length ? cityWhere : undefined,
+									include: [
+										{
+											model: RegionModel,
+											as: 'region',
+											attributes: [],
+											required: filterByCountry,
+											include: [
+												{
+													model: CountryModel,
+													as: 'country',
+													attributes: [],
+													required: filterByCountry,
+													where: filterByCountry ? { isoCode } : undefined,
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+					],
+					order: [['createdDate', 'ASC']],
+					limit: pageSize,
+					offset,
+				});
+
+			return {
+				customers,
+				total,
+				page,
+				pageSize,
+				totalPages: Math.ceil(total / pageSize),
+			};
 		} catch (error) {
 			console.error('ServiceError obteniendo clientes: ', error);
 			throw error;
@@ -459,13 +525,53 @@ export class CustomerService {
 		}
 	};
 
-	getTop = async (limit: number) => {
+	getTop = async (
+		page: number = 1,
+		pageSize: number = 30,
+		filters: CustomerFilters = {},
+		isoCode: string,
+	) => {
 		try {
-			let topCol;
-			let topEcu;
+			if (isoCode && typeof isoCode !== 'string') {
+				throw new Error('Invalid isoCode');
+			}
 
-			for (const currency of ['COP', 'USD']) {
-				const topCustomers = await this.customerModel.findAll({
+			const currency = isoCode === 'CO' ? 'COP' : 'USD';
+			const offset = (page - 1) * pageSize;
+
+			const personWhere: Record<string, unknown> = {};
+			if (filters.dni) {
+				personWhere.dni = { [Op.iLike]: `%${filters.dni}%` };
+			}
+			if (filters.fullName) {
+				const normalizedSearch = filters.fullName
+					.normalize('NFD')
+					.replace(/[\u0300-\u036f]/g, '')
+					.toLowerCase();
+
+				personWhere.fullName = where(
+					fn('unaccent', fn('lower', col('fullName'))),
+					Op.iLike,
+					`%${normalizedSearch}%`,
+				);
+			}
+
+			const cityWhere: Record<string, unknown> = {};
+			if (filters.cityName) {
+				const normalizedSearch = filters.cityName
+					.normalize('NFD')
+					.replace(/[\u0300-\u036f]/g, '')
+					.toLowerCase();
+
+				cityWhere.name = where(
+					fn('unaccent', fn('lower', col('address.city.name'))),
+					Op.iLike,
+					`%${normalizedSearch}%`,
+				);
+			}
+
+			const { rows: topCustomers, count } =
+				await this.customerModel.findAndCountAll({
 					attributes: [
 						'id',
 						'personId',
@@ -528,26 +634,33 @@ export class CustomerService {
 							model: this.personModel,
 							as: 'person',
 							attributes: [],
+							where: Object.keys(personWhere).length ? personWhere : undefined,
 						},
 						{
 							model: this.addressModel,
 							as: 'address',
 							attributes: [],
+							required: true,
 							include: [
 								{
 									model: CityModel,
 									as: 'city',
 									attributes: [],
+									required: true,
+									where: Object.keys(cityWhere).length ? cityWhere : undefined,
 									include: [
 										{
 											model: RegionModel,
 											as: 'region',
 											attributes: [],
+											required: true,
 											include: [
 												{
 													model: CountryModel,
 													as: 'country',
+													required: true,
 													attributes: [],
+													where: { isoCode },
 												},
 											],
 										},
@@ -568,16 +681,17 @@ export class CustomerService {
 					],
 					order: [[sequelize.literal('"billingCount"'), 'DESC']],
 					subQuery: false,
+					limit: pageSize,
+					offset,
 				});
 
-				if (currency === 'COP') {
-					topCol = topCustomers;
-				} else if (currency === 'USD') {
-					topEcu = topCustomers;
-				}
-			}
-
-			return { status: 200, topCustomers: { col: topCol, ecu: topEcu } };
+			return {
+				topCustomers,
+				total: count.length,
+				page,
+				pageSize,
+				totalPages: Math.ceil(count.length / pageSize),
+			};
 		} catch (error) {
 			console.error('Error getting top customers: ', error);
 			throw error;

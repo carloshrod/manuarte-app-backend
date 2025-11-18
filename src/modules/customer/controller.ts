@@ -10,11 +10,27 @@ export class CustomerController {
 
 	getAll: Handler = async (req, res, next) => {
 		try {
+			const page = parseInt(req.query.page as string) || 1;
+			const pageSize = parseInt(req.query.pageSize as string) || 30;
 			const isoCode = req.query.isoCode as string;
-			const customers = await this.customerService.getAll(isoCode);
 
-			if (customers.length > 0) {
-				res.status(200).json(customers);
+			const filters = {
+				dni: req.query.dni as string,
+				fullName: req.query.fullName as string,
+				email: req.query.email as string,
+				phoneNumber: req.query.phoneNumber as string,
+				cityName: req.query.cityName as string,
+			};
+
+			const result = await this.customerService.getAll(
+				page,
+				pageSize,
+				filters,
+				isoCode,
+			);
+
+			if (result.customers.length > 0) {
+				res.status(200).json(result);
 			} else {
 				res.sendStatus(204);
 			}
@@ -103,15 +119,28 @@ export class CustomerController {
 
 	getTop: Handler = async (req, res, next) => {
 		try {
-			const limit = req.query.limit;
-			const result = await this.customerService.getTop(Number(limit));
+			const page = parseInt(req.query.page as string) || 1;
+			const pageSize = parseInt(req.query.pageSize as string) || 30;
+			const isoCode = (req.query.isoCode as string) || '';
 
-			if (result.status !== 200) {
-				res.sendStatus(500);
-				return;
+			const filters = {
+				dni: req.query.dni as string,
+				fullName: req.query.fullName as string,
+				cityName: req.query.cityName as string,
+			};
+
+			const result = await this.customerService.getTop(
+				page,
+				pageSize,
+				filters,
+				isoCode,
+			);
+
+			if (result.topCustomers.length > 0) {
+				res.status(200).json(result);
+			} else {
+				res.sendStatus(204);
 			}
-
-			res.status(result.status).json(result.topCustomers);
 		} catch (error) {
 			next(error);
 		}

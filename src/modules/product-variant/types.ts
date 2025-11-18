@@ -22,3 +22,11 @@ export interface UpdateProductVariantDto {
 	name: string;
 	requestedBy: string;
 }
+
+export interface ProductVariantFilters {
+	vId?: string;
+	productName?: string;
+	variantName?: string;
+	productDescription?: string;
+	productCategoryName?: string;
+}

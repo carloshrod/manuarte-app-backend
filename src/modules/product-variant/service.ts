@@ -3,7 +3,11 @@ import { ProductCategoryModel } from '../product-category/model';
 import { ProductModel } from '../product/model';
 import { StockItemModel } from '../stock-item/model';
 import { ProductVariantModel } from './model';
-import { CreateProductVariantDto, UpdateProductVariantDto } from './types';
+import {
+	CreateProductVariantDto,
+	ProductVariantFilters,
+	UpdateProductVariantDto,
+} from './types';
 import { Op, Transaction } from 'sequelize';
 
 export class ProductVariantService {
@@ -20,13 +24,7 @@ export class ProductVariantService {
 	getAll = async (
 		page: number = 1,
 		pageSize: number = 30,
-		filters: {
-			vId?: string;
-			productName?: string;
-			variantName?: string;
-			productDescription?: string;
-			productCategoryName?: string;
-		} = {},
+		filters: ProductVariantFilters = {},
 	) => {
 		try {
 			const offset = (page - 1) * pageSize;
