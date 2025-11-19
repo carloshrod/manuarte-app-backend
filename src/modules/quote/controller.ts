@@ -1,6 +1,7 @@
 import { Handler } from 'express';
 import { QuoteService } from './service';
 import { CustomRequest } from '../types';
+import { QuoteStatus } from './types';
 
 export class QuoteController {
 	private quoteService;
@@ -11,14 +12,30 @@ export class QuoteController {
 
 	getAll: Handler = async (req, res, next) => {
 		try {
-			const shopSlug = (req.query.shopSlug as string) || '';
-			const result = await this.quoteService.getAll(shopSlug);
+			const shopId = (req.query.shopId as string) || '';
+			const page = parseInt(req.query.page as string) || 1;
+			const pageSize = parseInt(req.query.pageSize as string) || 30;
+
+			const filters = {
+				serialNumber: req.query.serialNumber as string,
+				status: req.query.status as QuoteStatus,
+				customerName: req.query.customerName as string,
+				dateStart: req.query.dateStart as string,
+				dateEnd: req.query.dateEnd as string,
+			};
+
+			const result = await this.quoteService.getAll(
+				shopId,
+				page,
+				pageSize,
+				filters,
+			);
 			if (result.status !== 200) {
 				res.sendStatus(result.status);
 				return;
 			}
 
-			res.status(200).json(result.quotes);
+			res.status(200).json(result?.data);
 		} catch (error) {
 			next(error);
 		}

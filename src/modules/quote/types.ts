@@ -23,3 +23,11 @@ export interface CreateQuoteDto {
 export interface UpdateQuoteDto extends CreateQuoteDto {
 	id: string;
 }
+
+export type QuoteFilters = {
+	serialNumber?: string;
+	status?: QuoteStatus;
+	customerName?: string;
+	dateStart?: string;
+	dateEnd?: string;
+};

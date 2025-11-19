@@ -153,7 +153,7 @@ export class CustomerService {
 							],
 						},
 					],
-					order: [['createdDate', 'ASC']],
+					order: [['createdDate', 'DESC']],
 					limit: pageSize,
 					offset,
 				});

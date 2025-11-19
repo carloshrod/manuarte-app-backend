@@ -28,6 +28,7 @@ export class AuthService {
 					'email',
 					'password',
 					'roleId',
+					'shopId',
 					[sequelize.col('shop.slug'), 'shopSlug'],
 					[sequelize.col('shop.country.isoCode'), 'isoCode'],
 					[sequelize.col('shop.stock.isMain'), 'isMain'],
@@ -180,6 +181,7 @@ export class AuthService {
 						roleId: user.roleId,
 						roleName: await this.getRoleName(user.roleId),
 						shop: user?.dataValues?.shopSlug,
+						shopId: user?.dataValues?.shopId,
 						isoCode: user?.dataValues?.isoCode,
 						mainStock: user?.dataValues?.isMain,
 						extraPermissions: (await user.getExtraPermissions()).map(

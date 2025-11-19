@@ -29,12 +29,12 @@ export class ProductVariantService {
 		try {
 			const offset = (page - 1) * pageSize;
 
-			const where: Record<string, unknown> = {};
+			const productVariantWhere: Record<string, unknown> = {};
 			if (filters.vId) {
-				where.vId = { [Op.iLike]: `%${filters.vId}%` };
+				productVariantWhere.vId = { [Op.iLike]: `%${filters.vId}%` };
 			}
 			if (filters.variantName) {
-				where.name = { [Op.iLike]: `%${filters.variantName}%` };
+				productVariantWhere.name = { [Op.iLike]: `%${filters.variantName}%` };
 			}
 
 			const productWhere: Record<string, unknown> = { deletedDate: null };
@@ -56,7 +56,7 @@ export class ProductVariantService {
 
 			const { rows: productVariants, count: total } =
 				await this.productVariantModel.findAndCountAll({
-					where: { ...where },
+					where: { ...productVariantWhere },
 					attributes: {
 						include: [
 							[sequelize.col('product.name'), 'productName'],

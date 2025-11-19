@@ -1,3 +1,4 @@
+import { col, fn, Op, where } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { AddressModel } from '../address/model';
 import { CityModel } from '../city/model';
@@ -11,7 +12,8 @@ import { QuoteItemService } from '../quote-item/service';
 import { RegionModel } from '../region/model';
 import { ShopModel } from '../shop/model';
 import { QuoteModel } from './model';
-import { CreateQuoteDto, UpdateQuoteDto } from './types';
+import { CreateQuoteDto, QuoteFilters, UpdateQuoteDto } from './types';
+import { endOfDay, parseISO, startOfDay } from 'date-fns';
 
 export class QuoteService {
 	private quoteModel;
@@ -24,44 +26,94 @@ export class QuoteService {
 		this.customerService = new CustomerService(CustomerModel);
 	}
 
-	getAll = async (shopSlug: string) => {
+	getAll = async (
+		shopId: string,
+		page: number = 1,
+		pageSize: number = 30,
+		filters: QuoteFilters = {},
+	) => {
 		try {
-			const shop = await ShopModel.findOne({ where: { slug: shopSlug } });
-			if (!shop)
-				return { status: 404, message: 'No fue posible encontrar la tienda' };
+			const offset = (page - 1) * pageSize;
 
-			const quotes = await this.quoteModel.findAll({
-				where: { shopId: shop.id },
-				attributes: [
-					'id',
-					'serialNumber',
-					'status',
-					'customerId',
-					[sequelize.col('customer.person.fullName'), 'customerName'],
-					'createdDate',
-					'updatedDate',
-					'shopId',
-				],
-				include: [
-					{
-						model: CustomerModel,
-						as: 'customer',
-						attributes: [],
-						include: [
-							{
-								model: PersonModel,
-								as: 'person',
-								attributes: [],
-								paranoid: false,
-							},
-						],
-						paranoid: false,
-					},
-				],
-				order: [['createdDate', 'DESC']],
-			});
+			const quoteWhere: Record<string, unknown> = {};
+			if (filters.serialNumber) {
+				quoteWhere.serialNumber = { [Op.iLike]: `%${filters.serialNumber}%` };
+			}
+			if (filters.status) {
+				quoteWhere.status = filters.status;
+			}
+			if (filters.dateStart && filters.dateEnd) {
+				const start = startOfDay(parseISO(filters.dateStart));
+				const end = endOfDay(parseISO(filters.dateEnd));
 
-			return { status: 200, quotes };
+				quoteWhere.createdDate = {
+					[Op.between]: [start, end],
+				};
+			}
+
+			const personWhere: Record<string, unknown> = {};
+			if (filters.customerName) {
+				const normalizedSearch = filters.customerName
+					.normalize('NFD')
+					.replace(/[\u0300-\u036f]/g, '')
+					.toLowerCase();
+
+				personWhere.fullName = where(
+					fn('unaccent', fn('lower', col('fullName'))),
+					Op.iLike,
+					`%${normalizedSearch}%`,
+				);
+			}
+
+			const { rows: quotes, count: total } =
+				await this.quoteModel.findAndCountAll({
+					where: { shopId, ...quoteWhere },
+					attributes: [
+						'id',
+						'serialNumber',
+						'status',
+						'customerId',
+						[sequelize.col('customer.person.fullName'), 'customerName'],
+						'createdDate',
+						'updatedDate',
+						'shopId',
+					],
+					include: [
+						{
+							model: CustomerModel,
+							as: 'customer',
+							attributes: [],
+							required: Boolean(Object.keys(personWhere).length),
+							include: [
+								{
+									model: PersonModel,
+									as: 'person',
+									attributes: [],
+									required: Boolean(Object.keys(personWhere).length),
+									where: Object.keys(personWhere).length
+										? personWhere
+										: undefined,
+									paranoid: false,
+								},
+							],
+							paranoid: false,
+						},
+					],
+					order: [['createdDate', 'DESC']],
+					limit: pageSize,
+					offset,
+				});
+
+			return {
+				status: 200,
+				data: {
+					quotes,
+					total,
+					page,
+					pageSize,
+					totalPages: Math.ceil(total / pageSize),
+				},
+			};
 		} catch (error) {
 			console.error('Error obteniendo cotizaciones');
 			throw error;
