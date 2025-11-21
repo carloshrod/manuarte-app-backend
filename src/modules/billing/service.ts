@@ -1,12 +1,4 @@
 import { CreateCustomerDto } from './../customer/types';
-import {
-	BillingStatus,
-	CreateBillingDto,
-	DiscountType,
-	Payment,
-	PaymentMethod,
-	UpdateBillingDto,
-} from './types';
 import { sequelize } from '../../config/database';
 import { CustomerModel } from '../customer/model';
 import { PersonModel } from '../person/model';
@@ -30,6 +22,17 @@ import { CashMovementModel } from '../cash-movement/model';
 import { CashMovementCategory } from '../cash-movement/types';
 import { BankTransferMovementService } from '../bank-transfer-movement/service';
 import { BankTransferMovementModel } from '../bank-transfer-movement/model';
+import { endOfDay, parseISO, startOfDay } from 'date-fns';
+import { col, fn, Op, where } from 'sequelize';
+import {
+	BillingFilters,
+	BillingStatus,
+	CreateBillingDto,
+	DiscountType,
+	Payment,
+	PaymentMethod,
+	UpdateBillingDto,
+} from './types';
 
 export class BillingService {
 	private billingModel;
@@ -54,60 +57,123 @@ export class BillingService {
 		);
 	}
 
-	getAll = async (shopSlug: string) => {
+	getAll = async (
+		shopId: string,
+		page: number = 1,
+		pageSize: number = 30,
+		filters: BillingFilters = {},
+	) => {
 		try {
-			const shop = await ShopModel.findOne({ where: { slug: shopSlug } });
-			if (!shop)
-				return { status: 404, message: 'No fue posible encontrar la tienda' };
+			const offset = (page - 1) * pageSize;
 
-			const billings = await this.billingModel.findAll({
-				where: { shopId: shop.id },
-				attributes: [
-					'id',
-					'serialNumber',
-					'status',
-					'discountType',
-					'discount',
-					'shipping',
-					'subtotal',
-					'effectiveDate',
-					'createdDate',
-					'updatedDate',
-					'customerId',
-					[sequelize.col('customer.person.fullName'), 'customerName'],
-					[sequelize.col('customer.person.dni'), 'dni'],
-					'shopId',
-				],
-				include: [
-					{
-						model: this.billingPaymentModel,
-						as: 'payments',
-						attributes: ['paymentMethod'],
-					},
-					{
-						model: CustomerModel,
-						as: 'customer',
-						attributes: [],
-						include: [
-							{
-								model: PersonModel,
-								as: 'person',
-								attributes: [],
-								paranoid: false,
+			const billingWhere: Record<string, unknown> = {};
+			if (filters.serialNumber) {
+				billingWhere.serialNumber = { [Op.iLike]: `%${filters.serialNumber}%` };
+			}
+			if (filters.status) {
+				billingWhere.status = filters.status;
+			}
+			if (filters.dateStart && filters.dateEnd) {
+				const start = startOfDay(parseISO(filters.dateStart));
+				const end = endOfDay(parseISO(filters.dateEnd));
+
+				billingWhere.effectiveDate = {
+					[Op.between]: [start, end],
+				};
+			}
+
+			const paymentWhere: Record<string, unknown> = {};
+			if (filters.paymentMethods) {
+				paymentWhere.paymentMethod = filters.paymentMethods;
+			}
+
+			const personWhere: Record<string, unknown> = {};
+			if (filters.customerName) {
+				const normalizedSearch = filters.customerName
+					.normalize('NFD')
+					.replace(/[\u0300-\u036f]/g, '')
+					.toLowerCase();
+
+				personWhere.fullName = where(
+					fn('unaccent', fn('lower', col('fullName'))),
+					Op.iLike,
+					`%${normalizedSearch}%`,
+				);
+			}
+
+			const { rows: billings, count: total } =
+				await this.billingModel.findAndCountAll({
+					where: {
+						shopId,
+						...billingWhere,
+						...(filters.paymentMethods && {
+							id: {
+								[Op.in]: sequelize.literal(`(
+									SELECT DISTINCT "billingId"
+									FROM "billing_payment"
+									WHERE "paymentMethod" IN (${
+										Array.isArray(filters.paymentMethods)
+											? filters.paymentMethods.map(pm => `'${pm}'`).join(',')
+											: `'${filters.paymentMethods}'`
+									})
+        				)`),
 							},
-						],
-						paranoid: false,
+						}),
 					},
-				],
-				order: [
-					[
-						sequelize.literal(
-							'COALESCE("BillingModel"."effectiveDate", "BillingModel"."createdDate")',
-						),
-						'DESC',
+					attributes: [
+						'id',
+						'serialNumber',
+						'status',
+						'discountType',
+						'discount',
+						'shipping',
+						'subtotal',
+						'effectiveDate',
+						'createdDate',
+						'updatedDate',
+						'customerId',
+						'shopId',
 					],
-				],
-			});
+					include: [
+						{
+							model: this.billingPaymentModel,
+							as: 'payments',
+							attributes: ['paymentMethod'],
+							separate: true,
+						},
+						{
+							model: CustomerModel,
+							as: 'customer',
+							attributes: ['id'],
+							required: Boolean(Object.keys(personWhere).length),
+							include: [
+								{
+									model: PersonModel,
+									as: 'person',
+									attributes: ['fullName', 'dni'],
+									required: Boolean(Object.keys(personWhere).length),
+									where: Object.keys(personWhere).length
+										? personWhere
+										: undefined,
+									paranoid: false,
+								},
+							],
+							paranoid: false,
+						},
+					],
+					order: [
+						[
+							sequelize.literal(
+								'COALESCE("BillingModel"."effectiveDate", "BillingModel"."createdDate")',
+							),
+							'DESC',
+						],
+					],
+					distinct: true,
+					subQuery: false,
+					limit: pageSize,
+					offset,
+				});
 
 			const billingsWithPaymentMethods = billings
 				.map(billing => {
@@ -115,6 +181,8 @@ export class BillingService {
 
 					return {
 						...billingJson,
+						customerName: billingJson.customer?.person?.fullName ?? null,
+						dni: billingJson.customer?.person?.dni ?? null,
 						paymentMethods: [
 							...new Set(
 								billingJson.payments?.map((p: Payment) => p.paymentMethod) ||
@@ -124,9 +192,18 @@ export class BillingService {
 					};
 				})
 				// eslint-disable-next-line @typescript-eslint/no-unused-vars
-				.map(({ payments, ...rest }) => rest);
+				.map(({ payments, customer, ...rest }) => rest);
 
-			return { status: 200, billings: billingsWithPaymentMethods };
+			return {
+				status: 200,
+				data: {
+					billings: billingsWithPaymentMethods,
+					total,
+					page,
+					pageSize,
+					totalPages: Math.ceil(total / pageSize),
+				},
+			};
 		} catch (error) {
 			console.error('Error obteniendo facturas');
 			throw error;

@@ -59,3 +59,12 @@ export interface UpdateBillingDto extends CreateBillingDto {
 	paymentCompleted?: boolean;
 	stockId: string;
 }
+
+export type BillingFilters = {
+	serialNumber?: string;
+	status?: BillingStatus[];
+	paymentMethods?: PaymentMethod[];
+	customerName?: string;
+	dateStart?: string;
+	dateEnd?: string;
+};
