@@ -88,6 +88,18 @@ export class TransactionService {
 				throw new Error('Ya se procesó esta solicitud');
 			}
 
+			// Validar que no haya productVariantId duplicados
+			const productVariantIds = transactionData.items.map(
+				item => item.productVariantId,
+			);
+			const uniqueIds = new Set(productVariantIds);
+
+			if (productVariantIds.length !== uniqueIds.size) {
+				throw new Error(
+					'No se pueden agregar productos repetidos en la misma transacción. Si necesitas enviar más cantidad, incrementa la cantidad del item existente.',
+				);
+			}
+
 			const { items, ...transactionDataRest } = transactionData;
 
 			if (items.length === 0) {
