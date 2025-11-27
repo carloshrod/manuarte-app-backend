@@ -43,3 +43,21 @@ export enum StockOperation {
 	ADD = 'add',
 	SUBTRACT = 'subtract',
 }
+
+export type StockItemFilters = {
+	productName?: string;
+	productVariantName?: string;
+};
+
+export type StockHistoryTransactionType =
+	| 'ENTER'
+	| 'EXIT'
+	| 'TRANSFER'
+	| 'BILLING';
+
+export type StockItemFiltersHistory = {
+	dateStart?: string;
+	dateEnd?: string;
+	type?: StockHistoryTransactionType;
+	identifier?: string;
+};

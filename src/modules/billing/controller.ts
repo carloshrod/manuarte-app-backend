@@ -25,8 +25,6 @@ export class BillingController {
 				dateEnd: req.query.dateEnd as string,
 			};
 
-			console.log(filters.paymentMethods);
-
 			const result = await this.billingService.getAll(
 				shopId,
 				page,

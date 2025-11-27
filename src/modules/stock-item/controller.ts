@@ -1,5 +1,6 @@
 import { Handler } from 'express';
 import { StockItemService } from './service';
+import { StockHistoryTransactionType } from './types';
 
 export class StockItemController {
 	private stockItemService;
@@ -10,11 +11,31 @@ export class StockItemController {
 
 	getAllByStock: Handler = async (req, res, next) => {
 		try {
-			const shopSlug = (req.query.shopSlug as string) || '';
+			const stockId = (req.query.stockId as string) || '';
+			const page = parseInt(req.query.page as string) || 1;
+			const pageSize = parseInt(req.query.pageSize as string) || 30;
 
-			const result = await this.stockItemService.getAllByStock(shopSlug);
+			const filters = {
+				productName: req.query.productName as string,
+				productVariantName: req.query.productVariantName as string,
+			};
 
-			res.status(result.status).json(result.stockItems);
+			const report = req.query.report === 'true';
+
+			const result = await this.stockItemService.getAllByStock(
+				stockId,
+				page,
+				pageSize,
+				filters,
+				report,
+			);
+
+			if (result.status !== 200) {
+				res.sendStatus(result.status);
+				return;
+			}
+
+			res.status(result.status).json(result.data);
 		} catch (error) {
 			next(error);
 		}
@@ -98,12 +119,26 @@ export class StockItemController {
 	getHistory: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
+			const page = parseInt(req.query.page as string) || 1;
+			const pageSize = parseInt(req.query.pageSize as string) || 30;
 
-			const result = await this.stockItemService.getHistory(id);
+			const filters = {
+				dateStart: req.query.dateStart as string,
+				dateEnd: req.query.dateEnd as string,
+				type: req.query.type as StockHistoryTransactionType,
+				identifier: req.query.identifier as string,
+			};
+
+			const result = await this.stockItemService.getHistory(
+				id,
+				page,
+				pageSize,
+				filters,
+			);
 
 			if (result?.status === 200) {
-				const { status, stockItem, history } = result;
-				res.status(status).json({ stockItem, history });
+				const { status, ...rest } = result;
+				res.status(status).json(rest);
 				return;
 			}
 

@@ -1,4 +1,11 @@
-import { Op, Transaction } from 'sequelize';
+import {
+	col,
+	FindAndCountOptions,
+	fn,
+	Op,
+	Transaction,
+	where,
+} from 'sequelize';
 import { sequelize } from '../../config/database';
 import { StockItemModel } from './model';
 import { ProductVariantModel } from '../product-variant/model';
@@ -13,6 +20,8 @@ import { StockModel } from '../stock/model';
 import {
 	CreateStockItemDto,
 	PartialStockItem,
+	StockItemFilters,
+	StockItemFiltersHistory,
 	StockOperation,
 	UpdateMultipleStockItemDto,
 	UpdateStockItemDto,
@@ -21,6 +30,7 @@ import {
 import { BillingStatus } from '../billing/types';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductCategoryGroupModel } from '../product-category-group/model';
+import { endOfDay, parseISO, startOfDay } from 'date-fns';
 
 export class StockItemService {
 	private stockItemModel;
@@ -31,15 +41,46 @@ export class StockItemService {
 		this.shopService = new ShopService(ShopModel);
 	}
 
-	getAllByStock = async (shopSlug: string) => {
-		try {
-			const shop = await this.shopService.getOneBySlug(shopSlug);
-			if (!shop) {
-				return { status: 400, message: 'Tienda no encontrada' };
-			}
+	getAllByStock = async (
+		stockId: string,
+		page: number = 1,
+		pageSize: number = 30,
+		filters: StockItemFilters = {},
+		report: boolean = false,
+	) => {
+		const offset = (page - 1) * pageSize;
 
-			const stockItems = await this.stockItemModel.findAll({
-				where: { stockId: shop.dataValues?.stockId },
+		const productWhere: Record<string, unknown> = {};
+		if (filters.productName) {
+			const normalizedSearch = filters.productName
+				.normalize('NFD')
+				.replace(/[\u0300-\u036f]/g, '')
+				.toLowerCase();
+
+			productWhere.name = where(
+				fn('unaccent', fn('lower', col('productVariants.product.name'))),
+				Op.iLike,
+				`%${normalizedSearch}%`,
+			);
+		}
+
+		const productVariantWhere: Record<string, unknown> = { deletedDate: null };
+		if (filters.productVariantName) {
+			const normalizedSearch = filters.productVariantName
+				.normalize('NFD')
+				.replace(/[\u0300-\u036f]/g, '')
+				.toLowerCase();
+
+			productVariantWhere.name = where(
+				fn('unaccent', fn('lower', col('productVariants.name'))),
+				Op.iLike,
+				`%${normalizedSearch}%`,
+			);
+		}
+
+		try {
+			const queryOptions: FindAndCountOptions = {
+				where: { stockId: stockId },
 				attributes: [
 					'id',
 					[sequelize.col('productVariants.product.name'), 'productName'],
@@ -78,8 +119,10 @@ export class StockItemService {
 						model: ProductVariantModel,
 						as: 'productVariants',
 						attributes: [],
-						where: { deletedDate: null },
 						required: true,
+						where: Object.keys(productVariantWhere).length
+							? productVariantWhere
+							: undefined,
 						through: { attributes: [] },
 						include: [
 							{
@@ -87,6 +130,9 @@ export class StockItemService {
 								as: 'product',
 								attributes: [],
 								required: true,
+								where: Object.keys(productWhere).length
+									? productWhere
+									: undefined,
 								include: [
 									{
 										model: ProductCategoryModel,
@@ -107,10 +153,28 @@ export class StockItemService {
 						],
 					},
 				],
-				order: [['productName', 'ASC']],
-			});
+				order: [[sequelize.col('productVariants.product.name'), 'ASC']],
+				subQuery: false,
+			};
 
-			return { status: 200, stockItems };
+			if (!report) {
+				queryOptions.limit = pageSize;
+				queryOptions.offset = offset;
+			}
+
+			const { rows: stockItems, count: total } =
+				await this.stockItemModel.findAndCountAll(queryOptions);
+
+			return {
+				status: 200,
+				data: {
+					stockItems,
+					total,
+					page,
+					pageSize,
+					totalPages: Math.ceil(total / pageSize),
+				},
+			};
 		} catch (error) {
 			console.error('Error getting stock items');
 			throw error;
@@ -191,7 +255,12 @@ export class StockItemService {
 		}
 	};
 
-	getHistory = async (id: string) => {
+	getHistory = async (
+		id: string,
+		page: number = 1,
+		pageSize: number = 30,
+		filters: StockItemFiltersHistory = {},
+	) => {
 		try {
 			const stockItem = await this.getOneById(id);
 			if (!stockItem) {
@@ -212,113 +281,309 @@ export class StockItemService {
 				attributes: ['id', 'shopId'],
 			});
 
-			const enters = await TransactionItemModel.findAll({
-				where: { productVariantId },
-				attributes: [
-					'id',
-					'transactionId',
-					'quantity',
-					'stockBefore',
-					'createdDate',
-					[sequelize.col('transaction.type'), 'type'],
-					[sequelize.col('transaction.fromId'), 'fromId'],
-					[sequelize.col('transaction.stockFrom.name'), 'fromName'],
-					[sequelize.col('transaction.toId'), 'toId'],
-					[sequelize.col('transaction.stockTo.name'), 'toName'],
-					[sequelize.col('transaction.description'), 'identifier'],
-					[sequelize.col('transaction.state'), 'state'],
-				],
-				include: [
-					{
-						model: TransactionModel,
-						as: 'transaction',
-						where: { type: 'ENTER', toId: stockId },
-						attributes: [],
+			const normalize = (str: string) =>
+				str
+					.normalize('NFD')
+					.replace(/[\u0300-\u036f]/g, '')
+					.toLowerCase();
+
+			// --- Filtros dinámicos ---
+			const dateFilter =
+				filters.dateStart && filters.dateEnd
+					? {
+							[Op.between]: [
+								startOfDay(parseISO(filters.dateStart)),
+								endOfDay(parseISO(filters.dateEnd)),
+							],
+						}
+					: undefined;
+
+			// Filtro de type múltiple
+			// Normaliza el filtro type a array y mayúsculas
+			const types = filters.type
+				? Array.isArray(filters.type)
+					? filters.type.map(t => (typeof t === 'string' ? t.toUpperCase() : t))
+					: [
+							typeof filters.type === 'string'
+								? filters.type.toUpperCase()
+								: filters.type,
+						]
+				: [];
+
+			const hasBillingType = types.includes('BILLING');
+			const hasTransactionType = types.some(t =>
+				['ENTER', 'EXIT', 'TRANSFER'].includes(t),
+			);
+
+			// Filtro identifier sin acentos ni mayúsculas
+			let identifierFilter: ReturnType<typeof where> | undefined = undefined;
+			if (filters.identifier) {
+				const normalized = normalize(filters.identifier);
+				identifierFilter = where(
+					fn('unaccent', fn('lower', col('transaction.description'))),
+					Op.iLike,
+					`%${normalized}%`,
+				);
+			}
+
+			let billingIdentifierFilter: ReturnType<typeof where> | undefined =
+				undefined;
+			if (filters.identifier) {
+				const normalized = normalize(filters.identifier);
+				billingIdentifierFilter = where(
+					fn('unaccent', fn('lower', col('billing.serialNumber'))),
+					Op.iLike,
+					`%${normalized}%`,
+				);
+			}
+			// --- CONSULTAS ---
+			let enters: TransactionItemModel[] = [];
+			let exits: TransactionItemModel[] = [];
+			let billings: BillingItemModel[] = [];
+
+			// Si no hay filtro de tipo o está vacío, devolver todo
+			if (!filters.type || types.length === 0) {
+				// Consultar BILLINGS
+				billings = await BillingItemModel.findAll({
+					where: {
+						productVariantId,
+						...(billingIdentifierFilter && {
+							'$billing.serialNumber$': billingIdentifierFilter,
+						}),
+						...(dateFilter && { '$billing.effectiveDate$': dateFilter }),
+					},
+					attributes: [
+						'id',
+						'billingId',
+						'currency',
+						'quantity',
+						[sequelize.col('billing.effectiveDate'), 'createdDate'],
+						[sequelize.literal(`'BILLING'`), 'type'],
+						[sequelize.col('billing.serialNumber'), 'identifier'],
+						[sequelize.col('billing.shopId'), 'shopId'],
+						[sequelize.col('billing.status'), 'state'],
+					],
+					include: [
+						{
+							model: BillingModel,
+							as: 'billing',
+							where: {
+								status: BillingStatus.PAID,
+								shopId: stock?.dataValues?.shopId,
+							},
+							attributes: [],
+						},
+					],
+					order: [['createdDate', 'DESC']],
+				});
+
+				// Consultar ENTRADAS
+				enters = await TransactionItemModel.findAll({
+					where: {
+						productVariantId,
+						...(identifierFilter && {
+							'$transaction.description$': identifierFilter,
+						}),
+						...(dateFilter && { createdDate: dateFilter }),
+					},
+					attributes: [
+						'id',
+						'transactionId',
+						'quantity',
+						'stockBefore',
+						'createdDate',
+						[sequelize.col('transaction.type'), 'type'],
+						[sequelize.col('transaction.fromId'), 'fromId'],
+						[sequelize.col('transaction.stockFrom.name'), 'fromName'],
+						[sequelize.col('transaction.toId'), 'toId'],
+						[sequelize.col('transaction.stockTo.name'), 'toName'],
+						[sequelize.col('transaction.description'), 'identifier'],
+						[sequelize.col('transaction.state'), 'state'],
+					],
+					include: [
+						{
+							model: TransactionModel,
+							as: 'transaction',
+							where: { type: 'ENTER', toId: stockId },
+							attributes: [],
+							include: [
+								{ model: StockModel, as: 'stockFrom', attributes: [] },
+								{ model: StockModel, as: 'stockTo', attributes: [] },
+							],
+						},
+					],
+					order: [['createdDate', 'DESC']],
+				});
+
+				// Consultar SALIDAS
+				exits = await TransactionItemModel.findAll({
+					where: {
+						productVariantId,
+						...(identifierFilter && {
+							'$transaction.description$': identifierFilter,
+						}),
+						...(dateFilter && { createdDate: dateFilter }),
+					},
+					attributes: [
+						'id',
+						'transactionId',
+						'quantity',
+						'stockBefore',
+						'createdDate',
+						[sequelize.col('transaction.type'), 'type'],
+						[sequelize.col('transaction.fromId'), 'fromId'],
+						[sequelize.col('transaction.stockFrom.name'), 'fromName'],
+						[sequelize.col('transaction.toId'), 'toId'],
+						[sequelize.col('transaction.stockTo.name'), 'toName'],
+						[sequelize.col('transaction.description'), 'identifier'],
+						[sequelize.col('transaction.state'), 'state'],
+					],
+					include: [
+						{
+							model: TransactionModel,
+							as: 'transaction',
+							where: {
+								type: { [Op.in]: ['EXIT', 'TRANSFER'] },
+								fromId: stockId,
+							},
+							attributes: [],
+							include: [
+								{ model: StockModel, as: 'stockFrom', attributes: [] },
+								{ model: StockModel, as: 'stockTo', attributes: [] },
+							],
+						},
+					],
+					order: [['createdDate', 'DESC']],
+				});
+			} else {
+				// Si hay filtro de tipo, consultar solo los tipos solicitados
+				if (hasBillingType) {
+					billings = await BillingItemModel.findAll({
+						where: {
+							productVariantId,
+							...(billingIdentifierFilter && {
+								'$billing.serialNumber$': billingIdentifierFilter,
+							}),
+							...(dateFilter && { '$billing.effectiveDate$': dateFilter }),
+						},
+						attributes: [
+							'id',
+							'billingId',
+							'currency',
+							'quantity',
+							[sequelize.col('billing.effectiveDate'), 'createdDate'],
+							[sequelize.literal(`'BILLING'`), 'type'],
+							[sequelize.col('billing.serialNumber'), 'identifier'],
+							[sequelize.col('billing.shopId'), 'shopId'],
+							[sequelize.col('billing.status'), 'state'],
+						],
 						include: [
 							{
-								model: StockModel,
-								as: 'stockFrom',
-								attributes: [],
-							},
-							{
-								model: StockModel,
-								as: 'stockTo',
+								model: BillingModel,
+								as: 'billing',
+								where: {
+									status: BillingStatus.PAID,
+									shopId: stock?.dataValues?.shopId,
+								},
 								attributes: [],
 							},
 						],
-					},
-				],
-				order: [['createdDate', 'DESC']],
-			});
+						order: [['createdDate', 'DESC']],
+					});
+				}
 
-			const exits = await TransactionItemModel.findAll({
-				where: { productVariantId },
-				attributes: [
-					'id',
-					'transactionId',
-					'quantity',
-					'stockBefore',
-					'createdDate',
-					[sequelize.col('transaction.type'), 'type'],
-					[sequelize.col('transaction.fromId'), 'fromId'],
-					[sequelize.col('transaction.stockFrom.name'), 'fromName'],
-					[sequelize.col('transaction.toId'), 'toId'],
-					[sequelize.col('transaction.stockTo.name'), 'toName'],
-					[sequelize.col('transaction.description'), 'identifier'],
-					[sequelize.col('transaction.state'), 'state'],
-				],
-				include: [
-					{
-						model: TransactionModel,
-						as: 'transaction',
-						where: {
-							type: { [Op.in]: ['EXIT', 'TRANSFER'] },
-							fromId: stockId,
-						},
-						attributes: [],
-						include: [
-							{
-								model: StockModel,
-								as: 'stockFrom',
-								attributes: [],
-							},
-							{
-								model: StockModel,
-								as: 'stockTo',
-								attributes: [],
-							},
-						],
-					},
-				],
-				order: [['createdDate', 'DESC']],
-			});
+				if (hasTransactionType) {
+					const transactionTypes = types.filter(t =>
+						['ENTER', 'EXIT', 'TRANSFER'].includes(t),
+					);
 
-			const billings = await BillingItemModel.findAll({
-				where: { productVariantId },
-				attributes: [
-					'id',
-					'billingId',
-					'currency',
-					'quantity',
-					[sequelize.col('billing.effectiveDate'), 'createdDate'],
-					[sequelize.literal(`'BILLING'`), 'type'],
-					[sequelize.col('billing.serialNumber'), 'identifier'],
-					[sequelize.col('billing.shopId'), 'shopId'],
-					[sequelize.col('billing.status'), 'state'],
-				],
-				include: [
-					{
-						model: BillingModel,
-						as: 'billing',
-						where: {
-							status: BillingStatus.PAID,
-							shopId: stock?.dataValues?.shopId,
-						},
-						attributes: [],
-					},
-				],
-				order: [['createdDate', 'DESC']],
-			});
+					// Si se filtra ENTER específicamente o hay tipos de transacción
+					if (transactionTypes.includes('ENTER')) {
+						enters = await TransactionItemModel.findAll({
+							where: {
+								productVariantId,
+								...(identifierFilter && {
+									'$transaction.description$': identifierFilter,
+								}),
+								...(dateFilter && { createdDate: dateFilter }),
+							},
+							attributes: [
+								'id',
+								'transactionId',
+								'quantity',
+								'stockBefore',
+								'createdDate',
+								[sequelize.col('transaction.type'), 'type'],
+								[sequelize.col('transaction.fromId'), 'fromId'],
+								[sequelize.col('transaction.stockFrom.name'), 'fromName'],
+								[sequelize.col('transaction.toId'), 'toId'],
+								[sequelize.col('transaction.stockTo.name'), 'toName'],
+								[sequelize.col('transaction.description'), 'identifier'],
+								[sequelize.col('transaction.state'), 'state'],
+							],
+							include: [
+								{
+									model: TransactionModel,
+									as: 'transaction',
+									where: { type: 'ENTER', toId: stockId },
+									attributes: [],
+									include: [
+										{ model: StockModel, as: 'stockFrom', attributes: [] },
+										{ model: StockModel, as: 'stockTo', attributes: [] },
+									],
+								},
+							],
+							order: [['createdDate', 'DESC']],
+						});
+					}
+
+					// Si se filtran EXIT o TRANSFER
+					const exitTypes = transactionTypes.filter(t =>
+						['EXIT', 'TRANSFER'].includes(t),
+					);
+					if (exitTypes.length > 0) {
+						exits = await TransactionItemModel.findAll({
+							where: {
+								productVariantId,
+								...(identifierFilter && {
+									'$transaction.description$': identifierFilter,
+								}),
+								...(dateFilter && { createdDate: dateFilter }),
+							},
+							attributes: [
+								'id',
+								'transactionId',
+								'quantity',
+								'stockBefore',
+								'createdDate',
+								[sequelize.col('transaction.type'), 'type'],
+								[sequelize.col('transaction.fromId'), 'fromId'],
+								[sequelize.col('transaction.stockFrom.name'), 'fromName'],
+								[sequelize.col('transaction.toId'), 'toId'],
+								[sequelize.col('transaction.stockTo.name'), 'toName'],
+								[sequelize.col('transaction.description'), 'identifier'],
+								[sequelize.col('transaction.state'), 'state'],
+							],
+							include: [
+								{
+									model: TransactionModel,
+									as: 'transaction',
+									where: {
+										type: { [Op.in]: exitTypes },
+										fromId: stockId,
+									},
+									attributes: [],
+									include: [
+										{ model: StockModel, as: 'stockFrom', attributes: [] },
+										{ model: StockModel, as: 'stockTo', attributes: [] },
+									],
+								},
+							],
+							order: [['createdDate', 'DESC']],
+						});
+					}
+				}
+			}
 
 			const historyAsc = [...enters, ...exits, ...billings].sort(
 				(a, b) =>
@@ -365,6 +630,10 @@ export class StockItemService {
 					new Date(b.createdDate).getTime() - new Date(a.createdDate).getTime(),
 			);
 
+			const total = history.length;
+			const offset = (page - 1) * pageSize;
+			const paginatedHistory = history.slice(offset, offset + pageSize);
+
 			if (history.length > 0) {
 				return {
 					status: 200,
@@ -375,7 +644,11 @@ export class StockItemService {
 						maxQty,
 						minQty,
 					},
-					history,
+					history: paginatedHistory,
+					page,
+					pageSize,
+					total,
+					totalPages: Math.ceil(total / pageSize),
 				};
 			}
 		} catch (error) {
