@@ -6,11 +6,13 @@ import { TransactionItemService } from '../transaction-item/service';
 import { TransactionModel } from './model';
 import {
 	CreateTransactionDto,
+	TransactionFilters,
 	TransactionState,
 	TransactionType,
 	UpdateTransactionDto,
 } from './types';
 import { Op } from 'sequelize';
+import { endOfDay, parseISO, startOfDay } from 'date-fns';
 
 export class TransactionService {
 	private transactionModel;
@@ -23,55 +25,163 @@ export class TransactionService {
 		);
 	}
 
-	getAll = async (toId?: string, stockId?: string) => {
+	getAll = async (
+		page: number = 1,
+		pageSize: number = 30,
+		filters: TransactionFilters,
+		stockId?: string,
+	) => {
 		try {
-			let condition = undefined;
+			const offset = (page - 1) * pageSize;
 
-			if (toId) {
-				condition = {
-					state: TransactionState.PROGRESS,
-					type: TransactionType.TRANSFER,
-					toId,
-				};
-			}
+			// Filtro de fechas
+			const dateFilter =
+				filters.dateStart && filters.dateEnd
+					? {
+							createdDate: {
+								[Op.between]: [
+									startOfDay(parseISO(filters.dateStart)),
+									endOfDay(parseISO(filters.dateEnd)),
+								],
+							},
+						}
+					: {};
+
+			// Filtros directos
+			const stateFilter = filters.state ? { state: filters.state } : {};
+			const typeFilter = filters.type ? { type: filters.type } : {};
+
+			let condition: Record<string, unknown> = {};
 
 			if (stockId) {
-				condition = {
-					[Op.or]: [{ fromId: stockId }, { toId: stockId }],
-				};
+				// Caso 1: No viene toId ni fromId
+				if (!filters.toId && !filters.fromId) {
+					condition = {
+						[Op.or]: [{ fromId: stockId }, { toId: stockId }],
+						...dateFilter,
+						...stateFilter,
+						...typeFilter,
+					};
+				}
+				// Caso 2: Vienen ambos y ninguno es igual al stockId
+				else if (
+					filters.toId &&
+					filters.fromId &&
+					filters.toId !== stockId &&
+					filters.fromId !== stockId
+				) {
+					condition = { id: null }; // Devuelve vacío
+				}
+				// Caso 3: Vienen ambos y ambos son igual al stockId
+				else if (
+					filters.toId &&
+					filters.fromId &&
+					filters.toId === stockId &&
+					filters.fromId === stockId
+				) {
+					condition = { id: null }; // Devuelve vacío
+				}
+				// Caso 4: Vienen ambos y uno es igual al stockId
+				else if (
+					filters.toId &&
+					filters.fromId &&
+					(filters.toId === stockId || filters.fromId === stockId)
+				) {
+					condition = {
+						fromId: filters.fromId,
+						toId: filters.toId,
+						...dateFilter,
+						...stateFilter,
+						...typeFilter,
+					};
+				}
+				// Caso 5: Solo viene uno (toId o fromId)
+				else if (filters.toId || filters.fromId) {
+					condition = {
+						[Op.or]: [{ fromId: stockId }, { toId: stockId }],
+						...(filters.toId && { toId: filters.toId }),
+						...(filters.fromId && { fromId: filters.fromId }),
+						...dateFilter,
+						...stateFilter,
+						...typeFilter,
+					};
+				}
+			} else {
+				// Sin stockId (admin)
+				if (filters.toId && filters.fromId) {
+					condition = {
+						[Op.and]: [{ fromId: filters.fromId }, { toId: filters.toId }],
+						...dateFilter,
+						...stateFilter,
+						...typeFilter,
+					};
+				} else if (filters.toId) {
+					condition = {
+						toId: filters.toId,
+						...dateFilter,
+						...stateFilter,
+						...typeFilter,
+					};
+				} else if (filters.fromId) {
+					condition = {
+						fromId: filters.fromId,
+						...dateFilter,
+						...stateFilter,
+						...typeFilter,
+					};
+				} else {
+					// Sin toId ni fromId: solo filtros generales
+					condition = {
+						...dateFilter,
+						...stateFilter,
+						...typeFilter,
+					};
+				}
 			}
 
-			const transactions = await this.transactionModel.findAll({
-				where: condition,
-				attributes: [
-					'id',
-					'name',
-					'state',
-					'type',
-					'fromId',
-					[sequelize.col('stockFrom.name'), 'fromName'],
-					'toId',
-					[sequelize.col('stockTo.name'), 'toName'],
-					'supplierId',
-					'description',
-					'createdDate',
-				],
-				include: [
-					{
-						model: StockModel,
-						as: 'stockFrom',
-						attributes: [],
-					},
-					{
-						model: StockModel,
-						as: 'stockTo',
-						attributes: [],
-					},
-				],
-				order: [['createdDate', 'DESC']],
-			});
+			const { rows: transactions, count: total } =
+				await this.transactionModel.findAndCountAll({
+					where: condition,
+					attributes: [
+						'id',
+						'name',
+						'state',
+						'type',
+						'fromId',
+						[sequelize.col('stockFrom.name'), 'fromName'],
+						'toId',
+						[sequelize.col('stockTo.name'), 'toName'],
+						'supplierId',
+						'description',
+						'createdDate',
+					],
+					include: [
+						{
+							model: StockModel,
+							as: 'stockFrom',
+							attributes: [],
+						},
+						{
+							model: StockModel,
+							as: 'stockTo',
+							attributes: [],
+						},
+					],
+					order: [['createdDate', 'DESC']],
+					limit: pageSize,
+					offset,
+				});
 
-			return { status: 200, transactions };
+			return {
+				status: 200,
+				data: {
+					transactions,
+					total,
+					page,
+					pageSize,
+					totalPages: Math.ceil(total / pageSize),
+				},
+			};
 		} catch (error) {
 			console.error('Error obteniendo transacciones');
 			throw error;

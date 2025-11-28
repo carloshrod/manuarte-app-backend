@@ -1,6 +1,6 @@
 import { Handler } from 'express';
 import { TransactionService } from './service';
-import { TransactionType } from './types';
+import { TransactionState, TransactionType } from './types';
 import { TransactionItemService } from '../transaction-item/service';
 import { TransactionItemModel } from '../transaction-item/model';
 
@@ -17,12 +17,28 @@ export class TransactionController {
 
 	getAll: Handler = async (req, res, next) => {
 		try {
-			const toId = (req.query.toId as string) || undefined;
+			const page = parseInt(req.query.page as string) || 1;
+			const pageSize = parseInt(req.query.pageSize as string) || 30;
+
 			const stockId = (req.query.stockId as string) || undefined;
 
-			const result = await this.transactionService.getAll(toId, stockId);
+			const filters = {
+				type: req.query.type as TransactionType,
+				state: req.query.state as TransactionState,
+				fromId: req.query.fromId as string,
+				toId: req.query.toId as string,
+				dateStart: req.query.dateStart as string,
+				dateEnd: req.query.dateEnd as string,
+			};
+
+			const result = await this.transactionService.getAll(
+				page,
+				pageSize,
+				filters,
+				stockId,
+			);
 			if (result.status === 200) {
-				res.status(200).json(result.transactions);
+				res.status(200).json(result.data);
 				return;
 			}
 

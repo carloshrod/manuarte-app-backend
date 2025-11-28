@@ -24,3 +24,12 @@ export interface CreateTransactionDto {
 }
 
 export type UpdateTransactionDto = Partial<CreateTransactionDto>;
+
+export type TransactionFilters = {
+	state?: TransactionState;
+	type?: TransactionType;
+	fromId?: string;
+	toId?: string;
+	dateStart?: string;
+	dateEnd?: string;
+};
