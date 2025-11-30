@@ -634,23 +634,21 @@ export class StockItemService {
 			const offset = (page - 1) * pageSize;
 			const paginatedHistory = history.slice(offset, offset + pageSize);
 
-			if (history.length > 0) {
-				return {
-					status: 200,
-					stockItem: {
-						productName,
-						productVariantName,
-						quantity,
-						maxQty,
-						minQty,
-					},
-					history: paginatedHistory,
-					page,
-					pageSize,
-					total,
-					totalPages: Math.ceil(total / pageSize),
-				};
-			}
+			return {
+				status: 200,
+				stockItem: {
+					productName,
+					productVariantName,
+					quantity,
+					maxQty,
+					minQty,
+				},
+				history: paginatedHistory,
+				page,
+				pageSize,
+				total,
+				totalPages: Math.ceil(total / pageSize),
+			};
 		} catch (error) {
 			console.error('Error getting stock item history');
 			throw error;

@@ -141,8 +141,6 @@ export class StockItemController {
 				res.status(status).json(rest);
 				return;
 			}
-
-			res.sendStatus(204);
 		} catch (error) {
 			next(error);
 		}
