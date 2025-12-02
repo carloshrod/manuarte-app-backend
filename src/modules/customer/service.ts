@@ -4,7 +4,7 @@ import { CustomError } from '../../middlewares/errorHandler';
 import { AddressModel } from '../address/model';
 import { PersonModel } from '../person/model';
 import { CustomerModel } from './model';
-import { CreateCustomerDto, UpdateCustomerDto } from './types';
+import { CountryCount, CreateCustomerDto, UpdateCustomerDto } from './types';
 import { Op } from 'sequelize';
 import { BillingModel } from '../billing/model';
 import { BillingStatus, Payment } from '../billing/types';
@@ -572,6 +572,7 @@ export class CustomerService {
 
 			const { rows: topCustomers, count } =
 				await this.customerModel.findAndCountAll({
+					where: { deletedDate: null },
 					attributes: [
 						'id',
 						'personId',
@@ -781,7 +782,86 @@ export class CustomerService {
 				customer: formattedCustomer,
 			};
 		} catch (error) {
-			console.error(error);
+			console.error('Error searching customer: ', error);
+			throw error;
+		}
+	};
+
+	countByCountry = async () => {
+		try {
+			const result = (await this.customerModel.findAll({
+				where: { deletedDate: null },
+				attributes: [
+					[sequelize.col('address.city.region.country.name'), 'countryName'],
+					[
+						sequelize.col('address.city.region.country.isoCode'),
+						'countryIsoCode',
+					],
+					[
+						sequelize.fn(
+							'COUNT',
+							sequelize.literal('DISTINCT "CustomerModel"."id"'),
+						),
+						'customerCount',
+					],
+				],
+				include: [
+					{
+						model: BillingModel,
+						as: 'billings',
+						required: true,
+						where: { status: BillingStatus.PAID },
+						attributes: [],
+					},
+					{
+						model: AddressModel,
+						as: 'address',
+						attributes: [],
+						required: true,
+						include: [
+							{
+								model: CityModel,
+								as: 'city',
+								attributes: [],
+								required: true,
+								include: [
+									{
+										model: RegionModel,
+										as: 'region',
+										attributes: [],
+										required: true,
+										include: [
+											{
+												model: CountryModel,
+												as: 'country',
+												attributes: [],
+												required: true,
+											},
+										],
+									},
+								],
+							},
+						],
+					},
+				],
+				group: [
+					'address.city.region.country.name',
+					'address.city.region.country.isoCode',
+				],
+				raw: true,
+			})) as unknown as CountryCount[];
+
+			const customersCountCO =
+				result.find(c => c.countryIsoCode === 'CO')?.customerCount ?? 0;
+			const customersCountEC =
+				result.find(c => c.countryIsoCode === 'EC')?.customerCount ?? 0;
+
+			return {
+				customersCountCO: Number(customersCountCO),
+				customersCountEC: Number(customersCountEC),
+			};
+		} catch (error) {
+			console.error('Error counting customers: ', error);
 			throw error;
 		}
 	};

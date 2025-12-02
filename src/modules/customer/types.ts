@@ -10,3 +10,9 @@ export interface CreateCustomerDto extends PersonDto {
 }
 
 export type UpdateCustomerDto = CreateCustomerDto;
+
+export interface CountryCount {
+	countryName: string;
+	countryIsoCode: string;
+	customerCount: number;
+}
