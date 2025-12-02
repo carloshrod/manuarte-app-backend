@@ -25,7 +25,7 @@ export class DashboardController {
 			const { customersCountCO, customersCountEC } =
 				await this.customerService.countByCountry();
 
-			const sales = await this.billingItemService.getMonthlySales();
+			const sales = await this.billingItemService.getSales();
 
 			const topSalesCurrentMonth =
 				await this.billingItemService.getTopSalesProducts(0);

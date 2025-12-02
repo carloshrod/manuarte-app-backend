@@ -71,7 +71,7 @@ export class BillingItemService {
 		}
 	};
 
-	getMonthlySales = async () => {
+	getSales = async () => {
 		try {
 			const currentYear = new Date().getFullYear();
 			const startOfYear = new Date(currentYear, 0, 1);
@@ -156,7 +156,16 @@ export class BillingItemService {
 				USD: item.USD ?? 0,
 			}));
 
-			return salesWithMonthNames;
+			const yearlyTotals = salesWithMonthNames.reduce(
+				(acc, item) => {
+					acc.COP += item.COP;
+					acc.USD += item.USD;
+					return acc;
+				},
+				{ COP: 0, USD: 0 },
+			);
+
+			return { monthlyTotals: salesWithMonthNames, yearlyTotals };
 		} catch (error) {
 			console.error('ServiceError obteniendo ventas por mes: ', error);
 			throw error;
