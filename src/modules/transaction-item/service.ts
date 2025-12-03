@@ -42,6 +42,7 @@ export class TransactionItemService {
 						],
 					},
 				],
+				order: [[sequelize.col('productVariants.product.name'), 'ASC']],
 			});
 
 			const formattedItems = [];
