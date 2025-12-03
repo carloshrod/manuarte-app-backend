@@ -9,9 +9,7 @@ import {
 import { sequelize } from '../../config/database';
 import { StockItemModel } from './model';
 import { ProductVariantModel } from '../product-variant/model';
-import { ShopModel } from '../shop/model';
 import { ProductModel } from '../product/model';
-import { ShopService } from '../shop/service';
 import { TransactionItemModel } from '../transaction-item/model';
 import { TransactionModel } from '../transaction/model';
 import { BillingItemModel } from '../billing-item/model';
@@ -34,11 +32,9 @@ import { endOfDay, parseISO, startOfDay } from 'date-fns';
 
 export class StockItemService {
 	private stockItemModel;
-	private shopService;
 
 	constructor(stockItemModel: typeof StockItemModel) {
 		this.stockItemModel = stockItemModel;
-		this.shopService = new ShopService(ShopModel);
 	}
 
 	getAllByStock = async (
@@ -79,41 +75,61 @@ export class StockItemService {
 		}
 
 		try {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const baseAttributes: any[] = [
+				'id',
+				[sequelize.col('productVariants.product.name'), 'productName'],
+				[sequelize.col('productVariants.name'), 'productVariantName'],
+				[
+					sequelize.col(
+						'productVariants.product.productCategory.productCategoryGroup.name',
+					),
+					'productCategoryGroupName',
+				],
+				[sequelize.col('productVariants.id'), 'productVariantId'],
+				[sequelize.col('productVariants.vId'), 'vId'],
+				'stockId',
+				'currency',
+				'price',
+				'quantity',
+				'cost',
+				'minQty',
+				'maxQty',
+				'updatedDate',
+				[
+					sequelize.literal(`(
+							SELECT COALESCE(SUM(ti.quantity), 0)
+							FROM transaction_item ti
+							INNER JOIN transaction t ON ti."transactionId" = t.id
+							WHERE ti."productVariantId" = "productVariants"."id"
+							AND t.type = 'TRANSFER' 
+							AND t."toId" = "StockItemModel"."stockId" 
+							AND t.state = 'PROGRESS'
+					)`),
+					'quantityInTransit',
+				],
+			];
+
+			if (report) {
+				const mainStock = await StockModel.findOne({ where: { isMain: true } });
+
+				if (mainStock && mainStock.dataValues.id !== stockId) {
+					baseAttributes.push([
+						sequelize.literal(`(
+						SELECT COALESCE(si.quantity, 0)
+						FROM stock_item si
+						INNER JOIN stock_item_product_variant sipv ON sipv."stockItemId" = si.id
+						WHERE sipv."productVariantId" = "productVariants"."id"
+						AND si."stockId" = '${mainStock.dataValues.id}'
+					)`),
+						'mainStockQuantity',
+					]);
+				}
+			}
+
 			const queryOptions: FindAndCountOptions = {
 				where: { stockId: stockId },
-				attributes: [
-					'id',
-					[sequelize.col('productVariants.product.name'), 'productName'],
-					[sequelize.col('productVariants.name'), 'productVariantName'],
-					[
-						sequelize.col(
-							'productVariants.product.productCategory.productCategoryGroup.name',
-						),
-						'productCategoryGroupName',
-					],
-					[sequelize.col('productVariants.id'), 'productVariantId'],
-					[sequelize.col('productVariants.vId'), 'vId'],
-					'stockId',
-					'currency',
-					'price',
-					'quantity',
-					'cost',
-					'minQty',
-					'maxQty',
-					'updatedDate',
-					[
-						sequelize.literal(`(
-								SELECT COALESCE(SUM(ti.quantity), 0)
-								FROM transaction_item ti
-								INNER JOIN transaction t ON ti."transactionId" = t.id
-								WHERE ti."productVariantId" = "productVariants"."id"
-								AND t.type = 'TRANSFER' 
-								AND t."toId" = "StockItemModel"."stockId" 
-								AND t.state = 'PROGRESS'
-						)`),
-						'quantityInTransit',
-					],
-				],
+				attributes: baseAttributes,
 				include: [
 					{
 						model: ProductVariantModel,
