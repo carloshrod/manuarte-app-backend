@@ -16,7 +16,7 @@ export class DashboardController {
 		this.billingItemService = new BillingItemService(BillingItemModel);
 	}
 
-	getStats: Handler = async (_req, res, next) => {
+	getStats: Handler = async (req, res, next) => {
 		try {
 			const productVariantsCount = await this.productVariantModel.count({
 				where: { deletedDate: null },
@@ -27,11 +27,33 @@ export class DashboardController {
 
 			const sales = await this.billingItemService.getSales();
 
-			const topSalesCurrentMonth =
-				await this.billingItemService.getTopSalesProducts(0);
+			// Obtener año y mes desde query params o usar fecha actual
+			const now = new Date();
+			const year = req.query.year
+				? parseInt(req.query.year as string)
+				: now.getFullYear();
+			const month = req.query.month
+				? parseInt(req.query.month as string) - 1
+				: now.getMonth(); // Restar 1 porque en la API el mes es 1-12 pero en JS es 0-11
 
+			// Validar mes (0-11 en JS)
+			if (month < 0 || month > 11) {
+				res
+					.status(400)
+					.json({ message: 'Mes inválido. Debe ser entre 1 y 12' });
+				return;
+			}
+
+			const topSalesCurrentMonth =
+				await this.billingItemService.getTopSalesProducts(year, month);
+
+			// Calcular mes anterior
+			const lastMonthDate = new Date(year, month - 1, 1);
 			const topSalesLastMonth =
-				await this.billingItemService.getTopSalesProducts(-1);
+				await this.billingItemService.getTopSalesProducts(
+					lastMonthDate.getFullYear(),
+					lastMonthDate.getMonth(),
+				);
 
 			res.status(200).json({
 				counts: {
@@ -43,6 +65,90 @@ export class DashboardController {
 				topSalesCurrentMonth,
 				topSalesLastMonth,
 			});
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	getTopSales: Handler = async (req, res, next) => {
+		try {
+			// Obtener año y mes desde query params o usar fecha actual
+			const now = new Date();
+			const year = req.query.year
+				? parseInt(req.query.year as string)
+				: now.getFullYear();
+			const month = req.query.month
+				? parseInt(req.query.month as string) - 1
+				: now.getMonth(); // Restar 1 porque en la API el mes es 1-12 pero en JS es 0-11
+
+			// Validar mes (0-11 en JS)
+			if (month < 0 || month > 11) {
+				res
+					.status(400)
+					.json({ message: 'Mes inválido. Debe ser entre 1 y 12' });
+				return;
+			}
+
+			const topSalesCurrentMonth =
+				await this.billingItemService.getTopSalesProducts(year, month);
+
+			// Calcular mes anterior
+			const lastMonthDate = new Date(year, month - 1, 1);
+			const topSalesLastMonth =
+				await this.billingItemService.getTopSalesProducts(
+					lastMonthDate.getFullYear(),
+					lastMonthDate.getMonth(),
+				);
+
+			res.status(200).json({
+				topSalesCurrentMonth,
+				topSalesLastMonth,
+			});
+		} catch (error) {
+			next(error);
+		}
+	};
+
+	getTopSalesReport: Handler = async (req, res, next) => {
+		try {
+			const currency = (req.query.currency as 'COP' | 'USD') || 'COP';
+
+			// Obtener año y mes desde query params o usar fecha actual
+			const now = new Date();
+			const year = req.query.year
+				? parseInt(req.query.year as string)
+				: now.getFullYear();
+			const month = req.query.month
+				? parseInt(req.query.month as string) - 1
+				: now.getMonth(); // Restar 1 porque en la API el mes es 1-12 pero en JS es 0-11
+
+			// Validar mes (0-11 en JS)
+			if (month < 0 || month > 11) {
+				res
+					.status(400)
+					.json({ message: 'Mes inválido. Debe ser entre 1 y 12' });
+				return;
+			}
+
+			// Validar currency
+			if (!['COP', 'USD'].includes(currency)) {
+				res.status(400).json({
+					message: 'Moneda inválida. Debe ser COP o USD',
+				});
+				return;
+			}
+
+			// Calcular inicio y fin del mes
+			const startDate = new Date(year, month, 1);
+			const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
+			const report = await this.billingItemService.getDetailedSalesReport(
+				currency,
+				startDate,
+				endDate,
+			);
+
+			res.status(200).json(report);
 		} catch (error) {
 			next(error);
 		}
