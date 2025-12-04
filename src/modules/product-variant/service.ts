@@ -56,7 +56,10 @@ export class ProductVariantService {
 
 			const { rows: productVariants, count: total } =
 				await this.productVariantModel.findAndCountAll({
-					where: { ...productVariantWhere },
+					where: {
+						active: filters?.showActiveOnly ?? true,
+						...productVariantWhere,
+					},
 					attributes: {
 						include: [
 							[sequelize.col('product.name'), 'productName'],
@@ -132,7 +135,12 @@ export class ProductVariantService {
 		}
 	};
 
-	update = async ({ id, name, requestedBy }: UpdateProductVariantDto) => {
+	update = async ({
+		id,
+		name,
+		active,
+		requestedBy,
+	}: UpdateProductVariantDto) => {
 		try {
 			const productVariantToUpdate =
 				await this.productVariantModel.findByPk(id);
@@ -144,6 +152,7 @@ export class ProductVariantService {
 
 			await productVariantToUpdate.update({
 				name,
+				active,
 				updatedBy: requestedBy,
 			});
 

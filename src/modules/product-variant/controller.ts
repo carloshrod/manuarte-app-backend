@@ -20,6 +20,7 @@ export class ProductVariantController {
 				variantName: req.query.name as string,
 				productDescription: req.query.productDescription as string,
 				productCategoryName: req.query.productCategoryName as string,
+				showActiveOnly: req.query.showActiveOnly === 'true',
 			};
 
 			const result = await this.productVariantService.getAll(
@@ -81,12 +82,13 @@ export class ProductVariantController {
 	update: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
-			const { name } = req.body;
+			const { name, active } = req.body;
 			const requestedBy = (req as CustomRequest).requestedBy;
 
 			await this.productVariantService.update({
 				id,
 				name,
+				active,
 				requestedBy,
 			});
 

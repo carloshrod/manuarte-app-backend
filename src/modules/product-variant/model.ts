@@ -111,6 +111,11 @@ ProductVariantModel.init(
 			allowNull: false,
 			unique: 'UQ_d7fc664d6233f126e71d2bcf367',
 		},
+		active: {
+			type: DataTypes.BOOLEAN,
+			allowNull: false,
+			defaultValue: true,
+		},
 		createdBy: {
 			type: DataTypes.STRING,
 			allowNull: false,

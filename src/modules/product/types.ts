@@ -26,6 +26,7 @@ export interface UpdateProductDto {
 	productVariantData: {
 		id: string;
 		name: string;
+		active: boolean;
 	};
 	requestedBy: string;
 }

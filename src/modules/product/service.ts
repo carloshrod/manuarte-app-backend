@@ -118,6 +118,7 @@ export class ProductService {
 			const updatedProductVariant = await this.productVariantService.update({
 				id: productVariantData.id,
 				name: productVariantData.name,
+				active: productVariantData.active,
 				requestedBy,
 			});
 

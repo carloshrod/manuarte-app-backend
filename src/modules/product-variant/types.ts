@@ -20,6 +20,7 @@ export interface CreateProductVariantDto {
 export interface UpdateProductVariantDto {
 	id: string;
 	name: string;
+	active: boolean;
 	requestedBy: string;
 }
 
@@ -29,4 +30,5 @@ export interface ProductVariantFilters {
 	variantName?: string;
 	productDescription?: string;
 	productCategoryName?: string;
+	showActiveOnly?: boolean;
 }
