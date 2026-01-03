@@ -2,6 +2,7 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { Op } from 'sequelize';
 import { QuoteItemModel } from '../quote-item/model';
+import { CustomerBalanceMovementModel } from '../customer-balance/movement-model';
 
 export class QuoteModel extends Model {
 	public id!: string;
@@ -156,6 +157,17 @@ QuoteModel.hasMany(QuoteItemModel, {
 });
 
 QuoteItemModel.belongsTo(QuoteModel, {
+	foreignKey: 'quoteId',
+	as: 'quote',
+});
+
+// ***** QuoteModel-CustomerBalanceMovementModel Relations *****
+QuoteModel.hasMany(CustomerBalanceMovementModel, {
+	foreignKey: 'quoteId',
+	as: 'balanceMovements',
+});
+
+CustomerBalanceMovementModel.belongsTo(QuoteModel, {
 	foreignKey: 'quoteId',
 	as: 'quote',
 });

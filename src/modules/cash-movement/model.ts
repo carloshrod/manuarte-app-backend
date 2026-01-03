@@ -32,6 +32,14 @@ CashMovementModel.init(
 				key: 'id',
 			},
 		},
+		customerBalanceMovementId: {
+			type: DataTypes.UUID,
+			allowNull: true,
+			references: {
+				model: 'customer_balance_movement',
+				key: 'id',
+			},
+		},
 		reference: {
 			type: DataTypes.STRING,
 			allowNull: true,

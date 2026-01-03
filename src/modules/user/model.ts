@@ -5,6 +5,7 @@ import { PermissionModel } from '../permission/model';
 import bcrypt from 'bcrypt';
 import { ShopModel } from '../shop/model';
 import { UserPermissionModel } from '../associations/user-permission-model';
+import { CustomerBalanceMovementModel } from '../customer-balance/movement-model';
 
 export class UserModel extends Model {
 	public id!: string;
@@ -169,4 +170,15 @@ UserModel.belongsTo(ShopModel, {
 ShopModel.hasMany(UserModel, {
 	foreignKey: 'shopId',
 	as: 'users',
+});
+
+// ***** UserModel-CustomerBalanceMovementModel Relations *****
+UserModel.hasMany(CustomerBalanceMovementModel, {
+	foreignKey: 'createdBy',
+	as: 'balanceMovements',
+});
+
+CustomerBalanceMovementModel.belongsTo(UserModel, {
+	foreignKey: 'createdBy',
+	as: 'creator',
 });

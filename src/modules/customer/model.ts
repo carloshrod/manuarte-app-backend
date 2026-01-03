@@ -2,6 +2,8 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { AddressModel } from '../address/model';
 import { QuoteModel } from '../quote/model';
+import { CustomerBalanceModel } from '../customer-balance/model';
+import { CustomerBalanceMovementModel } from '../customer-balance/movement-model';
 
 export class CustomerModel extends Model {
 	public id!: string;
@@ -94,6 +96,28 @@ CustomerModel.hasOne(AddressModel, {
 });
 
 AddressModel.belongsTo(CustomerModel, {
+	foreignKey: 'customerId',
+	as: 'customer',
+});
+
+// ***** CustomerModel-CustomerBalanceModel Relations *****
+CustomerModel.hasMany(CustomerBalanceModel, {
+	foreignKey: 'customerId',
+	as: 'balances',
+});
+
+CustomerBalanceModel.belongsTo(CustomerModel, {
+	foreignKey: 'customerId',
+	as: 'customer',
+});
+
+// ***** CustomerModel-CustomerBalanceMovementModel Relations *****
+CustomerModel.hasMany(CustomerBalanceMovementModel, {
+	foreignKey: 'customerId',
+	as: 'balanceMovements',
+});
+
+CustomerBalanceMovementModel.belongsTo(CustomerModel, {
 	foreignKey: 'customerId',
 	as: 'customer',
 });

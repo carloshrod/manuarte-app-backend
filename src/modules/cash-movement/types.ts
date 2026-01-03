@@ -1,7 +1,8 @@
-import { CashMovementModel } from "./model";
+import { CashMovementModel } from './model';
 
 export enum CashMovementCategory {
 	SALE = 'SALE',
+	ADVANCE_PAYMENT = 'ADVANCE_PAYMENT',
 	DELIVERY = 'DELIVERY',
 	INBOUND_SHIPPING = 'INBOUND_SHIPPING',
 	PURCHASE = 'PURCHASE',
@@ -14,6 +15,7 @@ export enum CashMovementCategory {
 export type CreateCashMovementDTO = {
 	shopId: string;
 	billingPaymentId?: string;
+	customerBalanceMovementId?: string;
 	reference?: string;
 	type: 'INCOME' | 'EXPENSE';
 	category: CashMovementCategory;
@@ -23,14 +25,13 @@ export type CreateCashMovementDTO = {
 };
 
 export type CashMovementWithCustomerName = CashMovementModel & {
-  billingPayment?: {
-    billing?: {
-      customer?: {
-        person?: {
-          fullName?: string;
-        };
-      };
-    };
-  };
+	billingPayment?: {
+		billing?: {
+			customer?: {
+				person?: {
+					fullName?: string;
+				};
+			};
+		};
+	};
 };
-

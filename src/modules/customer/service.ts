@@ -112,6 +112,7 @@ export class CustomerService {
 							sequelize.col('address.city.region.country.isoCode'),
 							'countryIsoCode',
 						],
+						[sequelize.col('address.city.region.country.currency'), 'currency'],
 					],
 					include: [
 						{
@@ -334,9 +335,23 @@ export class CustomerService {
 		}
 	};
 
-	getCustomerById = async (id: string) => {
+	getById = async (id: string) => {
 		try {
-			const customer = await this.customerModel.findByPk(id);
+			const customer = await this.customerModel.findByPk(id, {
+				attributes: {
+					include: [
+						[sequelize.col('person.fullName'), 'fullName'],
+						[sequelize.col('person.dni'), 'dni'],
+					],
+				},
+				include: [
+					{
+						model: this.personModel,
+						as: 'person',
+						attributes: [],
+					},
+				],
+			});
 
 			return customer;
 		} catch (error) {
@@ -366,6 +381,7 @@ export class CustomerService {
 						sequelize.col('address.city.region.country.isoCode'),
 						'countryIsoCode',
 					],
+					[sequelize.col('address.city.region.country.currency'), 'currency'],
 				],
 				include: [
 					{

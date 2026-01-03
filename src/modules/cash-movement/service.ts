@@ -26,6 +26,7 @@ export class CashMovementService {
 			const {
 				shopId,
 				billingPaymentId,
+				customerBalanceMovementId,
 				reference,
 				amount,
 				type,
@@ -95,6 +96,7 @@ export class CashMovementService {
 				{
 					cashSessionId: currentSession?.data?.id,
 					billingPaymentId: billingPaymentId ?? null,
+					customerBalanceMovementId,
 					reference,
 					amount,
 					type: billingPaymentId ? 'INCOME' : type,
@@ -182,6 +184,28 @@ export class CashMovementService {
 		}
 	};
 
+	updateByCustomerBalanceMovementId = async (
+		customerBalanceMovementId: string,
+		updateData: { billingPaymentId?: string; reference?: string },
+		transaction?: Transaction,
+	) => {
+		try {
+			const movement = await this.cashMovementModel.findOne({
+				where: { customerBalanceMovementId },
+				transaction,
+			});
+
+			if (movement) {
+				await movement.update(updateData, { transaction });
+			}
+		} catch (error) {
+			console.error(
+				'Error actualizando movimiento de caja por customerBalanceMovementId',
+			);
+			throw error;
+		}
+	};
+
 	private validateMovementTypeAndCategory = (
 		type: 'INCOME' | 'EXPENSE',
 		category: CashMovementCategory,
@@ -189,6 +213,7 @@ export class CashMovementService {
 		const incomeCategories = [
 			CashMovementCategory.SALE,
 			CashMovementCategory.SHORTAGE_COVER,
+			CashMovementCategory.ADVANCE_PAYMENT,
 			CashMovementCategory.OTHER,
 		];
 		const expenseCategories = [

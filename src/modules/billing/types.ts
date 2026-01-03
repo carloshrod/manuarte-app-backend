@@ -50,6 +50,8 @@ export interface CreateBillingDto {
 	requestedBy: string;
 	items: CreateBillingItemDto[];
 	clientRequestId: string;
+	balanceToUse?: number;
+	quoteId?: string;
 }
 
 export interface UpdateBillingDto extends CreateBillingDto {

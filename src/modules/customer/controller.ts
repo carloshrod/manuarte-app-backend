@@ -39,6 +39,20 @@ export class CustomerController {
 		}
 	};
 
+	getById: Handler = async (req, res, next) => {
+		try {
+			const { id } = req.params;
+			const customer = await this.customerService.getById(id);
+			if (!customer) {
+				res.sendStatus(404);
+				return;
+			}
+			res.status(200).json(customer);
+		} catch (error) {
+			next(error);
+		}
+	};
+
 	create: Handler = async (req, res, next) => {
 		try {
 			const result = await this.customerService.create(req.body);

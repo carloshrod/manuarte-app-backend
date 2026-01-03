@@ -14,6 +14,7 @@ import stockItemRouter from './modules/stock-item/routes';
 import transactionRouter from './modules/transaction/routes';
 import cityRouter from './modules/city/routes';
 import cashSessionRouter from './modules/cash-session/routes';
+import { customerBalanceRoutes } from './modules/customer-balance/routes';
 import { verifyJWT } from './middlewares/verifyJWT';
 
 const router = Router();
@@ -52,5 +53,6 @@ router.use('/api/v1/stock-items', stockItemRouter);
 router.use('/api/v1/transactions', transactionRouter);
 router.use('/api/v1/cities', cityRouter);
 router.use('/api/v1/cash-sessions', cashSessionRouter);
+router.use('/api/v1/customer-balance', customerBalanceRoutes);
 
 export default router;

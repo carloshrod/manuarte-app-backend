@@ -36,7 +36,10 @@ export class BankTransferMovementService {
 				attributes: {
 					include: [
 						[sequelize.col('payment.paymentMethod'), 'paymentMethod'],
-						[sequelize.col('payment.billing.customer.person.fullName'), 'customerName'],
+						[
+							sequelize.col('payment.billing.customer.person.fullName'),
+							'customerName',
+						],
 					],
 				},
 				include: [
@@ -85,6 +88,7 @@ export class BankTransferMovementService {
 			const {
 				shopId,
 				billingPaymentId,
+				customerBalanceMovementId,
 				reference,
 				amount,
 				type,
@@ -97,6 +101,7 @@ export class BankTransferMovementService {
 					{
 						shopId,
 						billingPaymentId: billingPaymentId ?? null,
+						customerBalanceMovementId: customerBalanceMovementId ?? null,
 						reference,
 						amount,
 						type: billingPaymentId ? 'INCOME' : type,
@@ -141,6 +146,28 @@ export class BankTransferMovementService {
 			}
 		} catch (error) {
 			console.error('Error anulando movimiento de transferencia bancaria');
+			throw error;
+		}
+	};
+
+	updateByCustomerBalanceMovementId = async (
+		customerBalanceMovementId: string,
+		updateData: { billingPaymentId?: string; reference?: string },
+		transaction?: Transaction,
+	) => {
+		try {
+			const movement = await this.bankTransferMovementModel.findOne({
+				where: { customerBalanceMovementId },
+				transaction,
+			});
+
+			if (movement) {
+				await movement.update(updateData, { transaction });
+			}
+		} catch (error) {
+			console.error(
+				'Error actualizando movimiento de transferencia por customerBalanceMovementId',
+			);
 			throw error;
 		}
 	};

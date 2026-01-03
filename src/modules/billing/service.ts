@@ -33,6 +33,9 @@ import {
 	PaymentMethod,
 	UpdateBillingDto,
 } from './types';
+import { CustomerBalanceService } from '../customer-balance/service';
+import { CustomerBalanceModel } from '../customer-balance/model';
+import { CustomerBalanceMovementCategory } from '../customer-balance/types';
 
 export class BillingService {
 	private billingModel;
@@ -40,6 +43,7 @@ export class BillingService {
 	private billingItemService;
 	private stockItemService;
 	private customerService;
+	private customerBalanceService;
 	private shopService;
 	private cashMovementService;
 	private bankTransferMovementService;
@@ -50,6 +54,9 @@ export class BillingService {
 		this.billingItemService = new BillingItemService(BillingItemModel);
 		this.stockItemService = new StockItemService(StockItemModel);
 		this.customerService = new CustomerService(CustomerModel);
+		this.customerBalanceService = new CustomerBalanceService(
+			CustomerBalanceModel,
+		);
 		this.shopService = new ShopService(ShopModel);
 		this.cashMovementService = new CashMovementService(CashMovementModel);
 		this.bankTransferMovementService = new BankTransferMovementService(
@@ -366,6 +373,7 @@ export class BillingService {
 				comments,
 				clientRequestId,
 				requestedBy,
+				balanceToUse,
 			} = billingData;
 
 			const shop = shopSlug && (await this.shopService.getOneBySlug(shopSlug));
@@ -401,7 +409,7 @@ export class BillingService {
 				customerId = result.customer.id;
 			} else if (customerId) {
 				await this.customerService.update(customerData, transaction);
-				const result = await this.customerService.getCustomerById(customerId);
+				const result = await this.customerService.getById(customerId);
 				if (!result) throw new Error('El cliente está inactivo');
 			}
 
@@ -412,7 +420,7 @@ export class BillingService {
 				customerId,
 				shopId: shop?.dataValues?.id,
 				status,
-				paymentMethod: payments[0].paymentMethod,
+				paymentMethod: payments?.[0]?.paymentMethod ?? PaymentMethod.OTHER,
 				discountType: discount > 0 && discountType ? discountType : null,
 				discount: discount || 0,
 				shipping,
@@ -426,11 +434,14 @@ export class BillingService {
 			await newBilling.save({ transaction });
 
 			// Crear pagos *****
-			const paymentEntries = payments.map(payment => ({
-				...payment,
-				billingId: newBilling.id,
-				paymentReference: payment?.paymentReference ?? null,
-			}));
+			const paymentEntries =
+				payments?.length > 0
+					? payments.map(payment => ({
+							...payment,
+							billingId: newBilling.id,
+							paymentReference: payment?.paymentReference ?? null,
+						}))
+					: [];
 
 			const createdPayments = await this.billingPaymentModel.bulkCreate(
 				paymentEntries,
@@ -439,6 +450,69 @@ export class BillingService {
 					returning: true,
 				},
 			);
+
+			// Usar saldo disponible del cliente si aplica *****
+			const paymentsFromBalance: PaymentMethod[] = [];
+			if (balanceToUse && Number(balanceToUse) > 0 && customerId) {
+				// Obtener movimientos de crédito con saldo disponible (ordenados por fecha FIFO)
+				const availableMovements =
+					await this.customerBalanceService.getAvailableMovements(
+						customerId,
+						shop?.dataValues?.currency as 'USD' | 'COP',
+						transaction,
+					);
+
+				// Crear pagos en billing_payment reflejando los métodos originales
+				let remainingBalance = Number(balanceToUse);
+
+				for (const movement of availableMovements) {
+					if (remainingBalance <= 0) break;
+
+					const amountToApply = Math.min(
+						remainingBalance,
+						Number(movement.availableAmount),
+					);
+
+					// Crear pago con el método de pago original
+					const balancePayment = await this.billingPaymentModel.create(
+						{
+							billingId: newBilling.id,
+							paymentMethod: movement.paymentMethod || PaymentMethod.OTHER,
+							amount: amountToApply,
+							paymentReference: `Saldo a favor - ${
+								movement.quoteId
+									? `Cotización ${movement.quoteSerialNumber || movement.quoteId}`
+									: 'Anticipo'
+							}`,
+						},
+						{ transaction },
+					);
+					paymentsFromBalance.push(movement.paymentMethod);
+
+					// Actualizar el movimiento de caja/transferencia con billingPaymentId y reference
+					await this.customerBalanceService.updateMovementsWithBillingInfo(
+						movement.id, // customerBalanceMovementId
+						balancePayment.id,
+						newBilling.serialNumber,
+						transaction,
+					);
+
+					remainingBalance -= amountToApply;
+				}
+
+				// Registrar el uso del saldo
+				await this.customerBalanceService.useBalance(
+					{
+						amount: balanceToUse,
+						customerId,
+						billingId: newBilling.id,
+						currency: shop?.dataValues?.currency as 'USD' | 'COP',
+						category: CustomerBalanceMovementCategory.PAYMENT_APPLIED,
+						createdBy: requestedBy,
+					},
+					transaction,
+				);
+			}
 
 			// Crear movimientos de caja *****
 			for (const payment of createdPayments) {
@@ -501,7 +575,10 @@ export class BillingService {
 					id: newBilling.id,
 					serialNumber: newBilling.serialNumber,
 					status,
-					paymentMethods: payments.map(p => p.paymentMethod),
+					paymentMethods: [
+						...(payments?.map(p => p.paymentMethod) || []),
+						...paymentsFromBalance,
+					],
 					subtotal,
 					customerId,
 					customerName: customerData?.fullName ?? null,

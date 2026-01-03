@@ -33,6 +33,14 @@ BankTransferMovementModel.init(
 				key: 'id',
 			},
 		},
+		customerBalanceMovementId: {
+			type: DataTypes.UUID,
+			allowNull: true,
+			references: {
+				model: 'customer_balance_movement',
+				key: 'id',
+			},
+		},
 		type: {
 			type: DataTypes.ENUM('INCOME', 'EXPENSE'),
 			allowNull: false,
