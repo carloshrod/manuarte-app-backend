@@ -25,13 +25,13 @@ export class DashboardController {
 			const { customersCountCO, customersCountEC } =
 				await this.customerService.countByCountry();
 
-			const sales = await this.billingItemService.getSales();
-
 			// Obtener año y mes desde query params o usar fecha actual
 			const now = new Date();
 			const year = req.query.year
 				? parseInt(req.query.year as string)
 				: now.getFullYear();
+
+			const sales = await this.billingItemService.getSales(year);
 			const month = req.query.month
 				? parseInt(req.query.month as string) - 1
 				: now.getMonth(); // Restar 1 porque en la API el mes es 1-12 pero en JS es 0-11
@@ -44,17 +44,6 @@ export class DashboardController {
 				return;
 			}
 
-			const topSalesCurrentMonth =
-				await this.billingItemService.getTopSalesProducts(year, month);
-
-			// Calcular mes anterior
-			const lastMonthDate = new Date(year, month - 1, 1);
-			const topSalesLastMonth =
-				await this.billingItemService.getTopSalesProducts(
-					lastMonthDate.getFullYear(),
-					lastMonthDate.getMonth(),
-				);
-
 			res.status(200).json({
 				counts: {
 					productVariantsCount,
@@ -62,8 +51,6 @@ export class DashboardController {
 					customersCountEC: customersCountEC,
 				},
 				sales,
-				topSalesCurrentMonth,
-				topSalesLastMonth,
 			});
 		} catch (error) {
 			next(error);

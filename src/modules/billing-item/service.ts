@@ -71,9 +71,9 @@ export class BillingItemService {
 		}
 	};
 
-	getSales = async () => {
+	getSales = async (year?: number) => {
 		try {
-			const currentYear = new Date().getFullYear();
+			const currentYear = year ?? new Date().getFullYear();
 			const startOfYear = new Date(currentYear, 0, 1);
 			const endOfYear = new Date(currentYear + 1, 0, 0);
 
