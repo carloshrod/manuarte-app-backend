@@ -13,6 +13,8 @@ import { ProductCategoryModel } from '../product-category/model';
 import { ProductCategoryGroupModel } from '../product-category-group/model';
 import { StockOperation } from '../stock-item/types';
 
+const FLETE = 'e0490768-3cdb-4abe-9a3d-c87cda126f45';
+
 export class BillingItemService {
 	private billingItemModel;
 	private stockItemService;
@@ -178,17 +180,19 @@ export class BillingItemService {
 			const targetYear = year ?? now.getFullYear();
 			const targetMonth = month ?? now.getMonth();
 
-			const topCOP = await this.getGroupByCurrencyAndProductCategoryGroup(
-				'COP',
-				targetYear,
-				targetMonth,
-			);
-
-			const topUSD = await this.getGroupByCurrencyAndProductCategoryGroup(
-				'USD',
-				targetYear,
-				targetMonth,
-			);
+			// Ejecutar consultas COP y USD en paralelo
+			const [topCOP, topUSD] = await Promise.all([
+				this.getGroupByCurrencyAndProductCategoryGroup(
+					'COP',
+					targetYear,
+					targetMonth,
+				),
+				this.getGroupByCurrencyAndProductCategoryGroup(
+					'USD',
+					targetYear,
+					targetMonth,
+				),
+			]);
 
 			const formatResults = (
 				data: BillingItemModel[],
@@ -227,8 +231,8 @@ export class BillingItemService {
 			const result = await this.billingItemModel.findAll({
 				where: {
 					currency,
-					name: {
-						[Op.notILike]: '%flete%',
+					productVariantId: {
+						[Op.ne]: FLETE,
 					},
 				},
 				attributes: [
@@ -440,7 +444,10 @@ export class BillingItemService {
 		endDate: Date,
 	) => {
 		const result = await this.billingItemModel.findAll({
-			where: { currency, name: { [Op.notILike]: '%flete%' } },
+			where: {
+				currency,
+				productVariantId: { [Op.ne]: FLETE },
+			},
 			attributes: [
 				[
 					sequelize.col(
@@ -546,7 +553,10 @@ export class BillingItemService {
 		endDate: Date,
 	) => {
 		const result = await this.billingItemModel.findAll({
-			where: { currency, name: { [Op.notILike]: '%flete%' } },
+			where: {
+				currency,
+				productVariantId: { [Op.ne]: FLETE },
+			},
 			attributes: [
 				[
 					sequelize.col(
@@ -669,7 +679,10 @@ export class BillingItemService {
 	) => {
 		// 1. Obtener el top 5 de grupos de categorías
 		const topGroups = await this.billingItemModel.findAll({
-			where: { currency, name: { [Op.notILike]: '%flete%' } },
+			where: {
+				currency,
+				productVariantId: { [Op.ne]: FLETE },
+			},
 			attributes: [
 				[
 					sequelize.col(
@@ -768,7 +781,12 @@ export class BillingItemService {
 		const groupsWithProducts = await Promise.all(
 			topGroupsData.map(async group => {
 				const topProducts = await this.billingItemModel.findAll({
-					where: { currency, name: { [Op.notILike]: '%flete%' } },
+					where: {
+						currency,
+						productVariantId: {
+							[Op.ne]: FLETE,
+						},
+					},
 					attributes: [
 						[
 							sequelize.col('BillingItemModel.productVariantId'),

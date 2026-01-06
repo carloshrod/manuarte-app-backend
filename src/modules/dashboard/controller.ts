@@ -76,16 +76,17 @@ export class DashboardController {
 				return;
 			}
 
-			const topSalesCurrentMonth =
-				await this.billingItemService.getTopSalesProducts(year, month);
-
 			// Calcular mes anterior
 			const lastMonthDate = new Date(year, month - 1, 1);
-			const topSalesLastMonth =
-				await this.billingItemService.getTopSalesProducts(
+
+			// Ejecutar consultas en paralelo
+			const [topSalesCurrentMonth, topSalesLastMonth] = await Promise.all([
+				this.billingItemService.getTopSalesProducts(year, month),
+				this.billingItemService.getTopSalesProducts(
 					lastMonthDate.getFullYear(),
 					lastMonthDate.getMonth(),
-				);
+				),
+			]);
 
 			res.status(200).json({
 				topSalesCurrentMonth,
