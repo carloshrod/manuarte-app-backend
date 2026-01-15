@@ -22,6 +22,11 @@ router.get(
 	customerController.searchCustomer,
 );
 router.get(
+	'/top',
+	authorize(CustomerPermissions.CUSTOMER_READ),
+	customerController.getTop,
+);
+router.get(
 	'/:id',
 	authorize(CustomerPermissions.CUSTOMER_READ),
 	customerController.getById,
@@ -30,11 +35,6 @@ router.get(
 	'/stats/:id',
 	authorize(CustomerPermissions.CUSTOMER_READ),
 	customerController.getStats,
-);
-router.get(
-	'/top',
-	authorize(CustomerPermissions.CUSTOMER_READ),
-	customerController.getTop,
 );
 router.post(
 	'/',
