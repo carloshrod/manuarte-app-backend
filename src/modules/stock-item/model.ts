@@ -4,6 +4,8 @@ import { ProductVariantModel } from '../product-variant/model';
 import { StockItemProductVariantModel } from '../associations/stock-item-product-variant-model';
 
 export class StockItemModel extends Model {
+	public id!: string;
+	public price!: string;
 	public quantity!: string;
 
 	public addProductVariant!: (

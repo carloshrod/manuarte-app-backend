@@ -6,12 +6,16 @@ import { CustomerModel } from '../customer/model';
 import { Op } from 'sequelize';
 import { BillingPaymentModel } from '../billing-payment/model';
 import { CustomerBalanceMovementModel } from '../customer-balance/movement-model';
+import { PriceTypeModel } from '../price-type/model';
 
 export class BillingModel extends Model {
 	public id!: string;
 	public serialNumber!: string;
 	public subtotal!: number;
 	public createdDate!: string;
+	public priceTypeId!: string;
+
+	public priceType?: PriceTypeModel;
 
 	async generateSerialNumber() {
 		try {
@@ -117,6 +121,14 @@ BillingModel.init(
 			type: DataTypes.DOUBLE,
 			allowNull: true,
 			defaultValue: 0,
+		},
+		priceTypeId: {
+			type: DataTypes.UUID,
+			allowNull: false,
+			references: {
+				model: 'price_type',
+				key: 'id',
+			},
 		},
 		clientRequestId: {
 			type: DataTypes.UUID,
@@ -234,4 +246,15 @@ BillingModel.hasMany(CustomerBalanceMovementModel, {
 CustomerBalanceMovementModel.belongsTo(BillingModel, {
 	foreignKey: 'billingId',
 	as: 'billing',
+});
+
+// ***** BillingModel-PriceTypeModel Relations *****
+BillingModel.belongsTo(PriceTypeModel, {
+	foreignKey: 'priceTypeId',
+	as: 'priceType',
+});
+
+PriceTypeModel.hasMany(BillingModel, {
+	foreignKey: 'priceTypeId',
+	as: 'billings',
 });

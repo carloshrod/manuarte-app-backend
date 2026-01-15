@@ -7,23 +7,29 @@ import { CustomerModel } from '../customer/model';
 import { CustomerService } from '../customer/service';
 import { CreateCustomerDto, UpdateCustomerDto } from '../customer/types';
 import { PersonModel } from '../person/model';
+import { PriceTypeModel } from '../price-type/model';
 import { QuoteItemModel } from '../quote-item/model';
 import { QuoteItemService } from '../quote-item/service';
 import { RegionModel } from '../region/model';
-import { ShopModel } from '../shop/model';
+import { StockItemModel } from '../stock-item/model';
+import { StockItemService } from '../stock-item/service';
 import { QuoteModel } from './model';
 import { CreateQuoteDto, QuoteFilters, UpdateQuoteDto } from './types';
 import { endOfDay, parseISO, startOfDay } from 'date-fns';
+import { ShopModel } from '../shop/model';
+import { StockModel } from '../stock/model';
 
 export class QuoteService {
 	private quoteModel;
 	private quoteItemService;
 	private customerService;
+	private stockItemService;
 
 	constructor(quoteModel: typeof QuoteModel) {
 		this.quoteModel = quoteModel;
 		this.quoteItemService = new QuoteItemService(QuoteItemModel);
 		this.customerService = new CustomerService(CustomerModel);
+		this.stockItemService = new StockItemService(StockItemModel);
 	}
 
 	getAll = async (
@@ -74,6 +80,7 @@ export class QuoteService {
 						'status',
 						'customerId',
 						[sequelize.col('customer.person.fullName'), 'customerName'],
+						[sequelize.col('priceType.code'), 'priceType'],
 						'createdDate',
 						'updatedDate',
 						'shopId',
@@ -97,6 +104,11 @@ export class QuoteService {
 								},
 							],
 							paranoid: false,
+						},
+						{
+							model: PriceTypeModel,
+							as: 'priceType',
+							attributes: [],
 						},
 					],
 					order: [['createdDate', 'DESC']],
@@ -152,6 +164,8 @@ export class QuoteService {
 						sequelize.col('customer.address.city.region.country.callingCode'),
 						'callingCode',
 					],
+					[sequelize.col('priceType.code'), 'priceTypeCode'],
+					[sequelize.col('shop.stock.id'), 'stockId'],
 					'createdDate',
 					'updatedDate',
 				],
@@ -207,6 +221,58 @@ export class QuoteService {
 							'quantity',
 							'price',
 							'totalPrice',
+							// Obtener precio PVP
+							[
+								sequelize.literal(`(
+                SELECT sip.price
+                FROM stock_item_product_variant sipv
+                INNER JOIN stock_item si ON sipv."stockItemId" = si.id
+                INNER JOIN stock s ON si."stockId" = s.id
+                INNER JOIN stock_item_price sip ON sip."stockItemId" = si.id
+                INNER JOIN price_type pt ON sip."priceTypeId" = pt.id
+                WHERE sipv."productVariantId" = "quoteItems"."productVariantId"
+                AND s."shopId" = "QuoteModel"."shopId"
+                AND pt.code = 'PVP'
+                LIMIT 1
+            )`),
+								'pricePvp',
+							],
+							// Obtener precio DIS
+							[
+								sequelize.literal(`(
+                SELECT sip.price
+                FROM stock_item_product_variant sipv
+                INNER JOIN stock_item si ON sipv."stockItemId" = si.id
+                INNER JOIN stock s ON si."stockId" = s.id
+                INNER JOIN stock_item_price sip ON sip."stockItemId" = si.id
+                INNER JOIN price_type pt ON sip."priceTypeId" = pt.id
+                WHERE sipv."productVariantId" = "quoteItems"."productVariantId"
+                AND s."shopId" = "QuoteModel"."shopId"
+                AND pt.code = 'DIS'
+                LIMIT 1
+            )`),
+								'priceDis',
+							],
+						],
+					},
+					{
+						model: PriceTypeModel,
+						as: 'priceType',
+						attributes: [],
+						required: true,
+					},
+					{
+						model: ShopModel,
+						as: 'shop',
+						required: true,
+						attributes: [],
+						include: [
+							{
+								model: StockModel,
+								as: 'stock',
+								required: true,
+								attributes: [],
+							},
 						],
 					},
 				],
@@ -261,38 +327,85 @@ export class QuoteService {
 				discountType,
 				discount,
 				shipping,
-				shopSlug,
+				shopId,
+				currency,
 				requestedBy,
+				priceType,
 			} = quoteData;
 
-			const shop = await ShopModel.findOne({
-				where: { slug: shopSlug },
-				attributes: ['id', 'currency'],
+			// Obtener tipo de precio (default PVP)
+			const priceTypeCode = priceType || 'PVP';
+			const priceTypeRecord = await PriceTypeModel.findOne({
+				where: { code: priceTypeCode, isActive: true },
+				transaction,
 			});
-			if (!shop) {
-				return { status: 400, message: 'Parece que la tienda no existe!' };
+
+			if (!priceTypeRecord) {
+				throw new Error(
+					`Tipo de precio ${priceTypeCode} no encontrado o inactivo`,
+				);
 			}
 
 			const newQuote = this.quoteModel.build({
 				customerId,
-				shopId: shop.id,
+				shopId,
 				status,
-				currency: shop.currency,
+				currency,
 				discountType: discount > 0 ? discountType : null,
 				discount,
 				shipping,
+				priceTypeId: priceTypeRecord.id,
 				createdBy: requestedBy,
 			});
 			await newQuote.generateSerialNumber();
 			await newQuote.save({ transaction });
 
+			// Crear items con el precio correcto según el tipo
 			for (const item of quoteData.items) {
+				// Validar que tenga al menos uno de los IDs
+				if (!item.stockItemId && !item.productVariantId) {
+					throw new Error(
+						'Cada item debe tener stockItemId o productVariantId',
+					);
+				}
+
+				// Obtener stockItemId: si no lo tiene, buscarlo por productVariantId
+				let stockItemId = item.stockItemId;
+				if (!stockItemId && item.productVariantId && shopId) {
+					const stockItem = await this.stockItemService.getOneByStock(
+						item.productVariantId,
+						shopId,
+					);
+					if (!stockItem) {
+						throw new Error(
+							`No se encontró stock para el producto ${item.name || item.productVariantId}`,
+						);
+					}
+					stockItemId = stockItem.id;
+				}
+
+				// Validación final: debe tener stockItemId en este punto
+				if (!stockItemId) {
+					throw new Error(
+						`No se pudo determinar el stockItemId para el producto ${item.name || 'sin nombre'}`,
+					);
+				}
+
+				// Obtener precio según el tipo (PVP o DIS)
+				const price = await this.stockItemService.getPrice(
+					stockItemId,
+					priceTypeCode,
+					transaction,
+				);
+
 				await this.quoteItemService.create(
 					{
 						...item,
 						id: undefined,
 						productVariantId: item?.productVariantId,
 						quoteId: newQuote.id,
+						price,
+						totalPrice: price * item.quantity,
 					},
 					transaction,
 				);
@@ -308,7 +421,7 @@ export class QuoteService {
 					status,
 					customerId,
 					customerName: customerData?.fullName ?? null,
-					shopId: shop.id,
+					shopId,
 					createdDate: newQuote.createdDate,
 				},
 			};
@@ -357,6 +470,34 @@ export class QuoteService {
 				throw new Error('Cotización no encontrada');
 			}
 
+			// Si se proporciona un tipo de precio, validarlo
+			let priceTypeId = quoteToUpdate.priceTypeId;
+			let priceTypeCode: 'PVP' | 'DIS' = 'PVP';
+
+			if (quoteData.priceType) {
+				const priceTypeRecord = await PriceTypeModel.findOne({
+					where: { code: quoteData.priceType, isActive: true },
+					transaction,
+				});
+
+				if (!priceTypeRecord) {
+					throw new Error(
+						`Tipo de precio ${quoteData.priceType} no encontrado o inactivo`,
+					);
+				}
+
+				priceTypeId = priceTypeRecord.id;
+				priceTypeCode = quoteData.priceType;
+			} else {
+				// Obtener el código del tipo de precio actual
+				const currentPriceType = await PriceTypeModel.findByPk(priceTypeId, {
+					transaction,
+				});
+				if (currentPriceType) {
+					priceTypeCode = currentPriceType.code as 'PVP' | 'DIS';
+				}
+			}
+
 			await quoteToUpdate.update(
 				{
 					customerId,
@@ -366,14 +507,73 @@ export class QuoteService {
 						quoteData?.discount > 0 ? quoteData?.discountType : null,
 					discount: quoteData?.discount || 0,
 					shipping: quoteData?.shipping,
+					priceTypeId,
 					requestedBy: quoteData?.requestedBy,
 				},
 				{ transaction },
 			);
 
 			if (quoteData?.items?.length > 0) {
+				// Actualizar items con precios correctos
+				const itemsWithPrices = await Promise.all(
+					quoteData.items.map(async item => {
+						// Si el item no tiene precio o se cambió el tipo de precio, calcularlo
+						if (!item.price || quoteData.priceType) {
+							if (!item.stockItemId && !item.productVariantId) {
+								throw new Error(
+									'Cada item debe tener stockItemId o productVariantId',
+								);
+							}
+
+							if (!quoteData.stockId) {
+								throw new Error('stockId es requerido para actualizar items');
+							}
+
+							// Obtener stockItemId: si no lo tiene, buscarlo por productVariantId
+							let stockItemId = item.stockItemId;
+							if (!stockItemId && item.productVariantId && quoteData.stockId) {
+								console.log(
+									'***********************',
+									item.productVariantId,
+									quoteData.stockId,
+								);
+								const stockItem = await this.stockItemService.getOneByStock(
+									item.productVariantId,
+									quoteData.stockId,
+								);
+								if (!stockItem) {
+									throw new Error(
+										`No se encontró stock para el producto ${item.name || item.productVariantId}`,
+									);
+								}
+								stockItemId = stockItem.id;
+							}
+
+							// Validación final: debe tener stockItemId en este punto
+							if (!stockItemId) {
+								throw new Error(
+									`No se pudo determinar el stockItemId para el producto ${item.name || 'sin nombre'}`,
+								);
+							}
+
+							const price = await this.stockItemService.getPrice(
+								stockItemId,
+								priceTypeCode,
+								transaction,
+							);
+
+							return {
+								...item,
+								price,
+								totalPrice: price * item.quantity,
+							};
+						}
+						return item;
+					}),
+				);
+
 				await this.quoteItemService.updateItems(
-					quoteData?.items,
+					itemsWithPrices,
 					quoteData.id,
 					transaction,
 				);

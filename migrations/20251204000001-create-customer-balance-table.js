@@ -58,6 +58,10 @@ module.exports = {
 	},
 
 	async down(queryInterface) {
+		await queryInterface.removeConstraint(
+			'customer_balances',
+			'UQ_customer_balance_customer_currency',
+		);
 		await queryInterface.dropTable('customer_balance');
 	},
 };

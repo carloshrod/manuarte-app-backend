@@ -11,6 +11,7 @@ export enum QuoteStatus {
 export interface CreateQuoteDto {
 	shopSlug?: string;
 	shopId?: string;
+	stockId?: string;
 	items: CreateQuoteItemDto[];
 	status: QuoteStatus;
 	discountType: string;
@@ -18,6 +19,7 @@ export interface CreateQuoteDto {
 	shipping: number;
 	requestedBy: string;
 	currency?: 'COP' | 'USD';
+	priceType?: 'PVP' | 'DIS';
 }
 
 export interface UpdateQuoteDto extends CreateQuoteDto {

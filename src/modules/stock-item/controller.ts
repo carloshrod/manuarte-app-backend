@@ -63,7 +63,23 @@ export class StockItemController {
 
 	create: Handler = async (req, res, next) => {
 		try {
-			const result = await this.stockItemService.create(req.body);
+			const { pvpCop, disCop, pvpUsd, disUsd, costCop, costUsd, ...restBody } =
+				req.body;
+
+			const sanitizedPrices = this.stockItemService.sanitizePrices({
+				currency: req.body.currency,
+				pvpCop,
+				disCop,
+				pvpUsd,
+				disUsd,
+				costCop,
+				costUsd,
+			});
+
+			const result = await this.stockItemService.create({
+				...restBody,
+				...sanitizedPrices,
+			});
 
 			if (result.status === 201) {
 				res.status(result.status).json({
@@ -79,13 +95,26 @@ export class StockItemController {
 	update: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
-			const { stockIds, ...restBody } = req.body;
+			const { stockIds, currency, ...restBody } = req.body;
+
+			const sanitizedPrices = this.stockItemService.sanitizePrices({
+				currency,
+				pvpCop: req.body.pvpCop,
+				disCop: req.body.disCop,
+				pvpUsd: req.body.pvpUsd,
+				disUsd: req.body.disUsd,
+				costCop: req.body.costCop,
+				costUsd: req.body.costUsd,
+			});
 
 			const result =
 				stockIds === undefined || stockIds?.length === 0
 					? await this.stockItemService.update({
 							id,
-							stockItemData: restBody,
+							stockItemData: {
+								...restBody,
+								...sanitizedPrices,
+							},
 						})
 					: await this.stockItemService.updateInMultipleStocks({
 							id,

@@ -3,10 +3,13 @@ import { sequelize } from '../../config/database';
 import { Op } from 'sequelize';
 import { QuoteItemModel } from '../quote-item/model';
 import { CustomerBalanceMovementModel } from '../customer-balance/movement-model';
+import { PriceTypeModel } from '../price-type/model';
+import { ShopModel } from '../shop/model';
 
 export class QuoteModel extends Model {
 	public id!: string;
 	public serialNumber!: string;
+	public priceTypeId!: string;
 	public createdDate!: string;
 
 	async generateSerialNumber() {
@@ -63,6 +66,10 @@ QuoteModel.init(
 				model: 'shop',
 				key: 'id',
 			},
+		},
+		priceTypeId: {
+			type: DataTypes.UUID,
+			allowNull: false,
 		},
 		status: {
 			type: DataTypes.ENUM(
@@ -161,6 +168,12 @@ QuoteItemModel.belongsTo(QuoteModel, {
 	as: 'quote',
 });
 
+// ***** QuoteModel-PriceTypeModel Relations *****
+QuoteModel.belongsTo(PriceTypeModel, {
+	foreignKey: 'priceTypeId',
+	as: 'priceType',
+});
+
 // ***** QuoteModel-CustomerBalanceMovementModel Relations *****
 QuoteModel.hasMany(CustomerBalanceMovementModel, {
 	foreignKey: 'quoteId',
@@ -170,4 +183,10 @@ QuoteModel.hasMany(CustomerBalanceMovementModel, {
 CustomerBalanceMovementModel.belongsTo(QuoteModel, {
 	foreignKey: 'quoteId',
 	as: 'quote',
+});
+
+// ***** QuoteModel-ShopModel Relations *****
+QuoteModel.belongsTo(ShopModel, {
+	foreignKey: 'shopId',
+	as: 'shop',
 });

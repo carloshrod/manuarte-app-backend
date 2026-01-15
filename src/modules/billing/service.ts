@@ -8,7 +8,6 @@ import { CustomerService } from '../customer/service';
 import { BillingItemService } from '../billing-item/service';
 import { BillingItemModel } from '../billing-item/model';
 import { AddressModel } from '../address/model';
-import { ShopService } from '../shop/service';
 import { StockModel } from '../stock/model';
 import { CityModel } from '../city/model';
 import { RegionModel } from '../region/model';
@@ -36,6 +35,7 @@ import {
 import { CustomerBalanceService } from '../customer-balance/service';
 import { CustomerBalanceModel } from '../customer-balance/model';
 import { CustomerBalanceMovementCategory } from '../customer-balance/types';
+import { PriceTypeModel } from '../price-type/model';
 
 export class BillingService {
 	private billingModel;
@@ -44,7 +44,6 @@ export class BillingService {
 	private stockItemService;
 	private customerService;
 	private customerBalanceService;
-	private shopService;
 	private cashMovementService;
 	private bankTransferMovementService;
 
@@ -57,7 +56,6 @@ export class BillingService {
 		this.customerBalanceService = new CustomerBalanceService(
 			CustomerBalanceModel,
 		);
-		this.shopService = new ShopService(ShopModel);
 		this.cashMovementService = new CashMovementService(CashMovementModel);
 		this.bankTransferMovementService = new BankTransferMovementService(
 			BankTransferMovementModel,
@@ -363,7 +361,9 @@ export class BillingService {
 		const transaction = await sequelize.transaction();
 		try {
 			const {
-				shopSlug,
+				shopId,
+				stockId,
+				currency,
 				status,
 				payments,
 				discountType,
@@ -374,13 +374,33 @@ export class BillingService {
 				clientRequestId,
 				requestedBy,
 				balanceToUse,
+				priceType,
 			} = billingData;
 
-			const shop = shopSlug && (await this.shopService.getOneBySlug(shopSlug));
-			if (!shop) {
-				await transaction.rollback();
-				return { status: 400, message: 'Tienda no encontrada' };
+			console.log(billingData);
+
+			if (!shopId) {
+				throw new Error('shopId es requerido para crear una factura');
 			}
+
+			if (!stockId) {
+				throw new Error('stockId es requerido para crear una factura');
+			}
+
+			// Obtener tipo de precio por código (default PVP si no se especifica)
+			const priceTypeCode = priceType || 'PVP';
+			const priceTypeRecord = await PriceTypeModel.findOne({
+				where: { code: priceTypeCode, isActive: true },
+				transaction,
+			});
+
+			if (!priceTypeRecord) {
+				throw new Error(
+					`Tipo de precio ${priceTypeCode} no encontrado o inactivo`,
+				);
+			}
+
+			const finalPriceTypeId = priceTypeRecord.id;
 
 			const existing = await this.billingModel.findOne({
 				where: { clientRequestId: billingData?.clientRequestId },
@@ -418,9 +438,10 @@ export class BillingService {
 			// Crear factura *****
 			const newBilling = this.billingModel.build({
 				customerId,
-				shopId: shop?.dataValues?.id,
+				shopId,
 				status,
 				paymentMethod: payments?.[0]?.paymentMethod ?? PaymentMethod.OTHER,
+				priceTypeId: finalPriceTypeId,
 				discountType: discount > 0 && discountType ? discountType : null,
 				discount: discount || 0,
 				shipping,
@@ -458,7 +479,7 @@ export class BillingService {
 				const availableMovements =
 					await this.customerBalanceService.getAvailableMovements(
 						customerId,
-						shop?.dataValues?.currency as 'USD' | 'COP',
+						currency as 'USD' | 'COP',
 						transaction,
 					);
 
@@ -506,7 +527,7 @@ export class BillingService {
 						amount: balanceToUse,
 						customerId,
 						billingId: newBilling.id,
-						currency: shop?.dataValues?.currency as 'USD' | 'COP',
+						currency: currency as 'USD' | 'COP',
 						category: CustomerBalanceMovementCategory.PAYMENT_APPLIED,
 						createdBy: requestedBy,
 					},
@@ -519,7 +540,7 @@ export class BillingService {
 				if (payment?.dataValues?.paymentMethod === PaymentMethod.CASH) {
 					await this.cashMovementService.create(
 						{
-							shopId: shop?.dataValues?.id,
+							shopId,
 							billingPaymentId: payment?.dataValues?.id,
 							reference: newBilling?.serialNumber,
 							amount: Number(payment?.dataValues?.amount),
@@ -532,7 +553,7 @@ export class BillingService {
 				} else {
 					await this.bankTransferMovementService.create(
 						{
-							shopId: shop?.dataValues?.id,
+							shopId,
 							billingPaymentId: payment?.dataValues?.id,
 							reference: newBilling?.serialNumber,
 							amount: Number(payment?.dataValues?.amount),
@@ -546,14 +567,29 @@ export class BillingService {
 
 			// Crear items de factura *****
 			for (const item of billingData.items) {
+				// Obtener el precio correcto según el tipo de precio seleccionado
+				let itemPrice = item.price;
+				if (item.stockItemId) {
+					const priceByType = await this.stockItemService.getPrice(
+						item.stockItemId,
+						priceTypeCode,
+						transaction,
+					);
+					if (priceByType) {
+						itemPrice = priceByType;
+					}
+				}
+
 				await this.billingItemService.create(
 					{
 						...item,
 						id: undefined,
 						productVariantId: item?.productVariantId,
 						billingId: newBilling.id,
-						stockId: shop?.dataValues?.stockId,
+						stockId,
 						currency: item.currency ?? billingData.currency,
+						price: itemPrice,
+						totalPrice: itemPrice * item.quantity,
 					},
 					deductFromStock,
 					transaction,
@@ -584,7 +620,7 @@ export class BillingService {
 					customerName: customerData?.fullName ?? null,
 					dni: customerData?.dni ?? null,
 					createdDate: newBilling.createdDate,
-					shopId: shop?.dataValues?.id,
+					shopId,
 				},
 				message: RES_MESSAGES[status],
 			};

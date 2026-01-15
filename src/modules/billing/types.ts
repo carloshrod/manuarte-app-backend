@@ -39,6 +39,7 @@ export interface Payment {
 export interface CreateBillingDto {
 	shopSlug?: string;
 	shopId?: string;
+	stockId?: string;
 	status: BillingStatus;
 	payments: Payment[];
 	subtotal: number;
@@ -52,6 +53,7 @@ export interface CreateBillingDto {
 	clientRequestId: string;
 	balanceToUse?: number;
 	quoteId?: string;
+	priceType?: 'PVP' | 'DIS';
 }
 
 export interface UpdateBillingDto extends CreateBillingDto {

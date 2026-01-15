@@ -48,4 +48,4 @@ router.get(
 	customerBalanceController.getMovements,
 );
 
-export { router as customerBalanceRoutes };
+export default router;

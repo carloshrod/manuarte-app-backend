@@ -3,6 +3,7 @@ import { Optional } from 'sequelize';
 interface QuoteItemDto {
 	id: string;
 	quoteId: string;
+	stockItemId?: string;
 	productVariantId: string;
 	name: string;
 	quantity: number;
@@ -17,5 +18,11 @@ interface QuoteItemDto {
 
 export type CreateQuoteItemDto = Optional<
 	QuoteItemDto,
-	'id' | 'tax' | 'createdDate' | 'updatedDate' | 'deletedDate'
+	| 'id'
+	| 'price'
+	| 'totalPrice'
+	| 'tax'
+	| 'createdDate'
+	| 'updatedDate'
+	| 'deletedDate'
 >;

@@ -348,6 +348,30 @@ export class ProductVariantService {
 						[sequelize.col('stockItems.id'), 'stockItemId'],
 						[sequelize.col('stockItems.quantity'), 'quantity'],
 						[sequelize.col('stockItems.price'), 'price'],
+						// Obtener precio PVP
+						[
+							sequelize.literal(`(
+																SELECT sip.price
+																FROM stock_item_price sip
+																INNER JOIN price_type pt ON sip."priceTypeId" = pt.id
+																WHERE sip."stockItemId" = "stockItems"."id"
+																AND pt.code = 'PVP'
+																LIMIT 1
+														)`),
+							'pricePvp',
+						],
+						// Obtener precio DIS
+						[
+							sequelize.literal(`(
+																SELECT sip.price
+																FROM stock_item_price sip
+																INNER JOIN price_type pt ON sip."priceTypeId" = pt.id
+																WHERE sip."stockItemId" = "stockItems"."id"
+																AND pt.code = 'DIS'
+																LIMIT 1
+														)`),
+							'priceDis',
+						],
 						[sequelize.col('stockItems.currency'), 'currency'],
 					],
 					include: [

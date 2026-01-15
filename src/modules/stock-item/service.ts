@@ -15,9 +15,12 @@ import { TransactionModel } from '../transaction/model';
 import { BillingItemModel } from '../billing-item/model';
 import { BillingModel } from '../billing/model';
 import { StockModel } from '../stock/model';
+import { StockItemPriceModel } from '../stock-item-price/model';
+import { PriceTypeModel } from '../price-type/model';
 import {
 	CreateStockItemDto,
 	PartialStockItem,
+	PricesAndCosts,
 	StockItemFilters,
 	StockItemFiltersHistory,
 	StockOperation,
@@ -29,12 +32,15 @@ import { BillingStatus } from '../billing/types';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductCategoryGroupModel } from '../product-category-group/model';
 import { endOfDay, parseISO, startOfDay } from 'date-fns';
+import { StockItemPriceService } from '../stock-item-price/service';
 
 export class StockItemService {
 	private stockItemModel;
+	private stockItemPriceService;
 
 	constructor(stockItemModel: typeof StockItemModel) {
 		this.stockItemModel = stockItemModel;
+		this.stockItemPriceService = new StockItemPriceService(StockItemPriceModel);
 	}
 
 	getAllByStock = async (
@@ -91,6 +97,30 @@ export class StockItemService {
 				'stockId',
 				'currency',
 				'price',
+				// Obtener precio PVP
+				[
+					sequelize.literal(`(
+                    SELECT sip.price
+                    FROM stock_item_price sip
+                    INNER JOIN price_type pt ON sip."priceTypeId" = pt.id
+                    WHERE sip."stockItemId" = "StockItemModel"."id"
+                    AND pt.code = 'PVP'
+                    LIMIT 1
+                )`),
+					'pricePvp',
+				],
+				// Obtener precio DIS
+				[
+					sequelize.literal(`(
+                    SELECT sip.price
+                    FROM stock_item_price sip
+                    INNER JOIN price_type pt ON sip."priceTypeId" = pt.id
+                    WHERE sip."stockItemId" = "StockItemModel"."id"
+                    AND pt.code = 'DIS'
+                    LIMIT 1
+                )`),
+					'priceDis',
+				],
 				'quantity',
 				'cost',
 				'minQty',
@@ -206,8 +236,42 @@ export class StockItemService {
 					'quantity',
 					'currency',
 					'price',
+					// Obtener precio PVP
+					[
+						sequelize.literal(`(
+                    SELECT sip.price
+                    FROM stock_item_price sip
+                    INNER JOIN price_type pt ON sip."priceTypeId" = pt.id
+                    WHERE sip."stockItemId" = "StockItemModel"."id"
+                    AND pt.code = 'PVP'
+                    LIMIT 1
+                )`),
+						'pricePvp',
+					],
+					// Obtener precio DIS
+					[
+						sequelize.literal(`(
+                    SELECT sip.price
+                    FROM stock_item_price sip
+                    INNER JOIN price_type pt ON sip."priceTypeId" = pt.id
+                    WHERE sip."stockItemId" = "StockItemModel"."id"
+                    AND pt.code = 'DIS'
+                    LIMIT 1
+                )`),
+						'priceDis',
+					],
 					'cost',
 					[sequelize.col('stock.name'), 'stockName'],
+					// Obtener array de stockIds donde existe este productVariant
+					[
+						sequelize.literal(`(
+                        SELECT ARRAY_AGG(DISTINCT si."stockId")
+                        FROM stock_item si
+                        INNER JOIN stock_item_product_variant sipv ON sipv."stockItemId" = si.id
+                        WHERE sipv."productVariantId" = '${productVariantId}'
+                    )`),
+						'stocks',
+					],
 				],
 				include: [
 					{
@@ -235,7 +299,7 @@ export class StockItemService {
 
 	getOneById = async (id: string, transaction?: Transaction) => {
 		try {
-			const stockItem = await StockItemModel.findByPk(id, {
+			const stockItem = await this.stockItemModel.findByPk(id, {
 				attributes: [
 					'id',
 					'quantity',
@@ -678,16 +742,26 @@ export class StockItemService {
 		transaction: Transaction,
 	) => {
 		try {
-			const { priceCop, costCop, priceUsd, costUsd, ...rest } = stockItemData;
+			const { pvpCop, pvpUsd, disCop, disUsd, costCop, costUsd, ...rest } =
+				stockItemData;
 
 			for (const stock of stocks) {
+				const sanitizedPrices = this.sanitizePrices({
+					pvpCop,
+					pvpUsd,
+					disCop,
+					disUsd,
+					costCop,
+					costUsd,
+					currency: stock.currency,
+				});
+
 				await this.create(
 					{
 						productVariantId,
 						stockId: stock.id,
 						currency: stock.currency,
-						price: stock.currency === 'COP' ? priceCop : priceUsd,
-						cost: stock.currency === 'COP' ? costCop : costUsd,
+						...sanitizedPrices,
 						...rest,
 					},
 					transaction,
@@ -707,7 +781,7 @@ export class StockItemService {
 	) => {
 		const transaction = externalTransaction ?? (await sequelize.transaction());
 		try {
-			const { productVariantId, ...stockItemRest } = stockItemData;
+			const { productVariantId, prices, ...stockItemRest } = stockItemData;
 
 			const newStockItem = await this.stockItemModel.create(
 				{ ...stockItemRest, quantity: 0 },
@@ -723,6 +797,61 @@ export class StockItemService {
 				transaction,
 			});
 
+			// Crear precios múltiples si se proporcionan
+			if (prices) {
+				// Obtener tipos de precio por código
+				const [pvpType, disType] = await Promise.all([
+					PriceTypeModel.findOne({ where: { code: 'PVP' }, transaction }),
+					PriceTypeModel.findOne({ where: { code: 'DIS' }, transaction }),
+				]);
+
+				if (!pvpType) {
+					throw new Error('Tipo de precio PVP no está configurado');
+				}
+
+				// Crear precios (DIS es opcional)
+				const pricePromises = [
+					this.stockItemPriceService.create(
+						newStockItem.id,
+						pvpType.id,
+						prices.PVP,
+						transaction,
+					),
+				];
+
+				// Solo crear precio DIS si está presente y es válido
+				if (prices.DIS !== undefined && prices.DIS !== null && disType) {
+					pricePromises.push(
+						this.stockItemPriceService.create(
+							newStockItem.id,
+							disType.id,
+							prices.DIS,
+							transaction,
+						),
+					);
+				}
+
+				await Promise.all(pricePromises);
+
+				// Sincronizar precio base con PVP
+				await newStockItem.update({ price: prices.PVP }, { transaction });
+			} else if (stockItemData.price) {
+				// Si no se especifican precios, crear solo PVP con el precio base
+				const pvpType = await PriceTypeModel.findOne({
+					where: { code: 'PVP' },
+					transaction,
+				});
+
+				if (pvpType) {
+					await this.stockItemPriceService.create(
+						newStockItem.id,
+						pvpType.id,
+						stockItemData.price,
+						transaction,
+					);
+				}
+			}
+
 			if (!externalTransaction) {
 				await transaction.commit();
 			}
@@ -734,6 +863,8 @@ export class StockItemService {
 					productName: productVariant?.dataValues.productName,
 					productVariantName: productVariant?.dataValues.name,
 					productVariantId: productVariant?.dataValues.id,
+					pricePvp: prices?.PVP || stockItemData.price || null,
+					priceDis: prices?.DIS || null,
 				},
 			};
 		} catch (error) {
@@ -788,14 +919,17 @@ export class StockItemService {
 
 			const results = await Promise.all(
 				stockItems.map(({ id, currency }) => {
-					const price =
-						currency === 'USD' ? stockItemData.priceUsd : stockItemData.price;
-					const cost =
-						currency === 'USD' ? stockItemData.costUsd : stockItemData.cost;
+					const sanitizedPrices = this.sanitizePrices({
+						...stockItemData,
+						currency,
+					});
 
 					return this.update({
 						id,
-						stockItemData: { ...stockItemData, price, cost },
+						stockItemData: {
+							...stockItemData,
+							...sanitizedPrices,
+						},
 					});
 				}),
 			);
@@ -814,7 +948,9 @@ export class StockItemService {
 
 	update = async ({ id, stockItemData }: UpdateStockItemDto) => {
 		try {
-			const { productVariantId, ...stockItemRest } = stockItemData;
+			// TODO: Corregir error de not null cuando intento ponerle el priceDis a un producto que no lo tiene, desde cascajal. El error sale cuando solo se manda disCop sin disUsd o viceversa.
+
+			const { productVariantId, prices, ...stockItemRest } = stockItemData;
 
 			if ('quantity' in stockItemData) {
 				throw new Error(
@@ -829,6 +965,42 @@ export class StockItemService {
 
 			await stockItemToUpdate.update({ ...stockItemRest });
 
+			// Actualizar precios si se proporcionan
+			if (prices && (prices.PVP !== undefined || prices.DIS !== undefined)) {
+				// Obtener tipos de precio por código
+				const [pvpType, disType] = await Promise.all([
+					PriceTypeModel.findOne({ where: { code: 'PVP' } }),
+					PriceTypeModel.findOne({ where: { code: 'DIS' } }),
+				]);
+
+				if (!pvpType) {
+					throw new Error('Tipo de precio PVP no está configurado');
+				}
+
+				// Upsert precios
+				const updatePromises = [];
+				if (prices.PVP !== undefined && prices.PVP !== null) {
+					updatePromises.push(
+						this.stockItemPriceService.update(id, pvpType.id, prices.PVP),
+					);
+
+					// Sincronizar precio base con PVP
+					updatePromises.push(stockItemToUpdate.update({ price: prices.PVP }));
+				}
+				// Solo actualizar DIS si está presente, es válido y el tipo existe
+				if (prices.DIS !== undefined && prices.DIS !== null && disType) {
+					updatePromises.push(
+						this.stockItemPriceService.update(id, disType.id, prices.DIS),
+					);
+				}
+
+				await Promise.all(updatePromises);
+			}
+
+			if (!productVariantId) {
+				throw new Error('No se pudo determinar el producto asociado');
+			}
+
 			const productVariant = await this.getProductAttrs(productVariantId);
 
 			return {
@@ -838,6 +1010,8 @@ export class StockItemService {
 					productName: productVariant?.dataValues.productName,
 					productVariantName: productVariant?.dataValues.name,
 					productVariantId: productVariant?.dataValues.id,
+					pricePvp: prices?.PVP || null,
+					priceDis: prices?.DIS || null,
 				},
 			};
 		} catch (error) {
@@ -915,6 +1089,62 @@ export class StockItemService {
 			console.error('Error deleting stock item');
 			throw error;
 		}
+	};
+
+	getPrice = async (
+		stockItemId: string,
+		priceTypeCode: 'PVP' | 'DIS',
+		transaction?: Transaction,
+	): Promise<number> => {
+		try {
+			const price = await this.stockItemPriceService.getPriceByType(
+				stockItemId,
+				priceTypeCode,
+				transaction,
+			);
+
+			if (price) return price;
+
+			// Fallback al precio base del stock_item
+			const stockItem = await StockItemModel.findByPk(stockItemId, {
+				transaction,
+			});
+			if (stockItem && stockItem.price) {
+				console.warn(
+					`Usando precio base para stock_item ${stockItemId} con tipo ${priceTypeCode}`,
+				);
+				return parseFloat(stockItem.price.toString());
+			}
+
+			throw new Error('Precio no encontrado para este tipo');
+		} catch (error) {
+			console.error('Error getting price by type');
+			throw error;
+		}
+	};
+
+	sanitizePrices = (
+		stockItemData: { currency: 'COP' | 'USD' } & PricesAndCosts,
+	) => {
+		const { currency, pvpCop, pvpUsd, disCop, disUsd, costCop, costUsd } =
+			stockItemData;
+
+		const disPrice = currency === 'COP' ? disCop : disUsd;
+
+		const prices: { PVP: number; DIS?: number } = {
+			PVP: currency === 'COP' ? pvpCop : pvpUsd,
+		};
+
+		// Solo incluir DIS si tiene un valor válido
+		if (disPrice !== undefined && disPrice !== null) {
+			prices.DIS = disPrice;
+		}
+
+		return {
+			price: currency === 'COP' ? pvpCop : pvpUsd,
+			prices,
+			cost: currency === 'COP' ? costCop : costUsd,
+		};
 	};
 
 	private getProductAttrs = async (

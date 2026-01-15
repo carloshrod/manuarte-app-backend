@@ -8,28 +8,42 @@ export interface StockItem {
 	maxQty: number;
 }
 
-export interface PartialStockItem
-	extends Omit<StockItem, 'stockId' | 'currency' | 'price' | 'cost'> {
-	priceCop: number;
+export interface PricesAndCosts {
+	pvpCop: number;
+	disCop?: number;
 	costCop: number;
-	priceUsd: number;
+	pvpUsd: number;
+	disUsd?: number;
 	costUsd: number;
 }
+
+export interface PartialStockItem
+	extends Omit<StockItem, 'stockId' | 'currency' | 'price' | 'cost'>,
+		PricesAndCosts {}
 
 export interface CreateStockItemDto extends StockItem {
 	productVariantId: string;
 	stockId: string;
+	prices?: {
+		PVP: number;
+		DIS?: number;
+	};
 }
 
 export interface UpdateStockItemDto {
 	id: string;
-	stockItemData: CreateStockItemDto;
+	stockItemData: Partial<CreateStockItemDto> & {
+		prices?: {
+			PVP?: number;
+			DIS?: number;
+		};
+	};
 }
 
 export interface UpdateMultipleStockItemDto {
 	id: string;
 	stockIds: string[];
-	stockItemData: CreateStockItemDto & { priceUsd: number; costUsd: number };
+	stockItemData: CreateStockItemDto & PricesAndCosts;
 }
 
 export interface UpdateStockItemQtyDto {
