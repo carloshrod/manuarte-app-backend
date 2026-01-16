@@ -32,17 +32,6 @@ export class DashboardController {
 				: now.getFullYear();
 
 			const sales = await this.billingItemService.getSales(year);
-			const month = req.query.month
-				? parseInt(req.query.month as string) - 1
-				: now.getMonth(); // Restar 1 porque en la API el mes es 1-12 pero en JS es 0-11
-
-			// Validar mes (0-11 en JS)
-			if (month < 0 || month > 11) {
-				res
-					.status(400)
-					.json({ message: 'Mes inválido. Debe ser entre 1 y 12' });
-				return;
-			}
 
 			res.status(200).json({
 				counts: {

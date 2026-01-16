@@ -77,7 +77,7 @@ export class BillingItemService {
 		try {
 			const currentYear = year ?? new Date().getFullYear();
 			const startOfYear = new Date(currentYear, 0, 1);
-			const endOfYear = new Date(currentYear + 1, 0, 0);
+			const startOfNextYear = new Date(currentYear + 1, 0, 1);
 
 			const rawSales = await BillingModel.findAll({
 				attributes: [
@@ -103,7 +103,8 @@ export class BillingItemService {
 				],
 				where: {
 					effectiveDate: {
-						[Op.between]: [startOfYear, endOfYear],
+						[Op.gte]: startOfYear,
+						[Op.lt]: startOfNextYear,
 					},
 					status: BillingStatus.PAID,
 				},
@@ -226,7 +227,7 @@ export class BillingItemService {
 	) => {
 		try {
 			const startOfMonth = new Date(targetYear, targetMonth, 1);
-			const endOfMonth = new Date(targetYear, targetMonth + 1, 0);
+			const startOfNextMonth = new Date(targetYear, targetMonth + 1, 1);
 
 			const result = await this.billingItemModel.findAll({
 				where: {
@@ -261,7 +262,8 @@ export class BillingItemService {
 						attributes: [],
 						where: {
 							effectiveDate: {
-								[Op.between]: [startOfMonth, endOfMonth],
+								[Op.gte]: startOfMonth,
+								[Op.lt]: startOfNextMonth,
 							},
 							status: BillingStatus.PAID,
 						},
