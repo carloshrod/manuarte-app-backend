@@ -377,8 +377,6 @@ export class BillingService {
 				priceType,
 			} = billingData;
 
-			console.log(billingData);
-
 			if (!shopId) {
 				throw new Error('shopId es requerido para crear una factura');
 			}
@@ -494,11 +492,11 @@ export class BillingService {
 						Number(movement.availableAmount),
 					);
 
-					// Crear pago con el método de pago original
+					// Crear pago con método BALANCE
 					const balancePayment = await this.billingPaymentModel.create(
 						{
 							billingId: newBilling.id,
-							paymentMethod: movement.paymentMethod || PaymentMethod.OTHER,
+							paymentMethod: PaymentMethod.BALANCE,
 							amount: amountToApply,
 							paymentReference: `Saldo a favor - ${
 								movement.quoteId
@@ -508,7 +506,7 @@ export class BillingService {
 						},
 						{ transaction },
 					);
-					paymentsFromBalance.push(movement.paymentMethod);
+					paymentsFromBalance.push(PaymentMethod.BALANCE);
 
 					// Actualizar el movimiento de caja/transferencia con billingPaymentId y reference
 					await this.customerBalanceService.updateMovementsWithBillingInfo(
@@ -558,6 +556,7 @@ export class BillingService {
 							reference: newBilling?.serialNumber,
 							amount: Number(payment?.dataValues?.amount),
 							type: 'INCOME',
+							paymentMethod: payment?.dataValues?.paymentMethod,
 							createdBy: billingData?.requestedBy,
 						},
 						transaction,
@@ -732,6 +731,7 @@ export class BillingService {
 								reference: billingToUpdate?.dataValues?.serialNumber,
 								amount: Number(payment?.dataValues?.amount),
 								type: 'INCOME',
+								paymentMethod: payment?.dataValues?.paymentMethod,
 								createdBy: billingData?.requestedBy,
 							},
 							transaction,
@@ -815,6 +815,12 @@ export class BillingService {
 			await this.bankTransferMovementService.cancel(
 				serialNumber,
 				updatedBy,
+				transaction,
+			);
+
+			// Revertir uso de balance del cliente *****
+			await this.customerBalanceService.revertBalanceUsage(
+				billing.id,
 				transaction,
 			);
 

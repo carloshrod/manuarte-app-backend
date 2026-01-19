@@ -12,6 +12,7 @@ import { CashMovementService } from '../cash-movement/service';
 import { CashMovementModel } from '../cash-movement/model';
 import { BankTransferMovementService } from '../bank-transfer-movement/service';
 import { BankTransferMovementModel } from '../bank-transfer-movement/model';
+import { ShopModel } from '../shop/model';
 import { CashMovementCategory } from '../cash-movement/types';
 
 export class CustomerBalanceService {
@@ -85,12 +86,24 @@ export class CustomerBalanceService {
 				{ transaction: localTransaction },
 			);
 
+			let shop;
+			if (data?.currency === 'COP') {
+				shop = await ShopModel.findOne({
+					where: { slug: 'manuarte-barranquilla', currency: data?.currency },
+				});
+			} else if (data?.currency === 'USD') {
+				shop = await ShopModel.findOne({
+					where: { slug: 'manuarte-quito', currency: data?.currency },
+				});
+			}
+			const shopId = shop?.dataValues?.id || data?.shopId;
+
 			// Crear movimiento de caja o transferencia
-			if (data?.paymentMethod && data?.shopId) {
+			if (data?.paymentMethod && shopId) {
 				if (data.paymentMethod === 'CASH') {
 					await this.cashMovementService.create(
 						{
-							shopId: data.shopId,
+							shopId,
 							customerBalanceMovementId: movement?.dataValues?.id, // Vincular con el movimiento de balance
 							amount: Number(data.amount),
 							type: 'INCOME',
@@ -102,10 +115,11 @@ export class CustomerBalanceService {
 				} else {
 					await this.bankTransferMovementService.create(
 						{
-							shopId: data.shopId,
+							shopId,
 							customerBalanceMovementId: movement?.dataValues?.id, // Vincular con el movimiento de balance
 							amount: Number(data.amount),
 							type: 'INCOME',
+							paymentMethod: data.paymentMethod,
 							createdBy: data.createdBy,
 						},
 						localTransaction,
@@ -186,6 +200,61 @@ export class CustomerBalanceService {
 		} catch (error) {
 			if (!externalTransaction) await localTransaction.rollback();
 			console.error('Error using customer balance');
+			throw error;
+		}
+	};
+
+	revertBalanceUsage = async (billingId: string, transaction?: Transaction) => {
+		try {
+			// Buscar el movimiento DEBIT asociado a esta factura
+			const debitMovement = await this.customerBalanceMovementModel.findOne({
+				where: {
+					billingId,
+					type: 'DEBIT',
+					category: 'PAYMENT_APPLIED',
+				},
+				transaction,
+			});
+
+			if (!debitMovement) return;
+
+			// Obtener el balance actual del cliente
+			const customerBalance = await this.customerBalanceModel.findOne({
+				where: {
+					customerId: debitMovement.customerId,
+					currency: debitMovement.currency,
+				},
+				transaction,
+			});
+
+			if (!customerBalance) {
+				throw new Error('Customer balance not found');
+			}
+
+			const balanceBefore = Number(customerBalance.balance);
+			const balanceAfter = balanceBefore + Number(debitMovement.amount);
+
+			// Actualizar saldo
+			await customerBalance.update({ balance: balanceAfter }, { transaction });
+
+			// Crear movimiento de reversión (CREDIT)
+			await this.customerBalanceMovementModel.create(
+				{
+					customerId: debitMovement.customerId,
+					billingId,
+					type: 'CREDIT',
+					category: 'REFUND',
+					currency: debitMovement.currency,
+					amount: debitMovement.amount,
+					balanceBefore,
+					balanceAfter,
+					comments: `Reversión por anulación de factura`,
+					createdBy: debitMovement.createdBy,
+				},
+				{ transaction },
+			);
+		} catch (error) {
+			console.error('Error reverting balance usage');
 			throw error;
 		}
 	};

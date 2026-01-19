@@ -4,6 +4,7 @@ export type CreateBankTransferMovementDTO = {
 	customerBalanceMovementId?: string;
 	reference?: string;
 	type: 'INCOME' | 'EXPENSE';
+	paymentMethod?: string;
 	amount: number;
 	comments?: string;
 	createdBy?: string;

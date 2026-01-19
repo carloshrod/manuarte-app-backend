@@ -4,11 +4,11 @@ import { CreateBankTransferMovementDTO } from './types';
 import { addDays, startOfDay } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { BillingPaymentModel } from '../billing-payment/model';
-import { sequelize } from '../../config/database';
 import { Op } from 'sequelize';
 import { BillingModel } from '../billing/model';
 import { CustomerModel } from '../customer/model';
 import { PersonModel } from '../person/model';
+import { CustomerBalanceMovementModel } from '../customer-balance/movement-model';
 
 const COLOMBIA_TZ = 'America/Bogota';
 
@@ -33,30 +33,21 @@ export class BankTransferMovementService {
 					shopId,
 					createdDate: { [Op.between]: [startDate, endDate] },
 				},
-				attributes: {
-					include: [
-						[sequelize.col('payment.paymentMethod'), 'paymentMethod'],
-						[
-							sequelize.col('payment.billing.customer.person.fullName'),
-							'customerName',
-						],
-					],
-				},
 				include: [
 					{
 						model: BillingPaymentModel,
 						as: 'payment',
-						attributes: [],
+						attributes: ['id'],
 						include: [
 							{
 								model: BillingModel,
 								as: 'billing',
-								attributes: [],
+								attributes: ['id'],
 								include: [
 									{
 										model: CustomerModel,
 										as: 'customer',
-										attributes: [],
+										attributes: ['id'],
 										include: [
 											{
 												model: PersonModel,
@@ -69,11 +60,44 @@ export class BankTransferMovementService {
 							},
 						],
 					},
+					{
+						model: CustomerBalanceMovementModel,
+						as: 'customerBalanceMovement',
+						attributes: ['id'],
+						include: [
+							{
+								model: CustomerModel,
+								as: 'customer',
+								attributes: ['id'],
+								include: [
+									{
+										model: PersonModel,
+										as: 'person',
+										attributes: ['fullName'],
+									},
+								],
+							},
+						],
+					},
 				],
 				order: [['createdDate', 'DESC']],
 			});
 
-			return movements;
+			return movements.map(m => {
+				const movement = m.toJSON();
+				const customerName =
+					movement.payment?.billing?.customer?.person?.fullName ??
+					movement.customerBalanceMovement?.customer?.person?.fullName ??
+					null;
+
+				delete movement.payment;
+				delete movement.customerBalanceMovement;
+
+				return {
+					...movement,
+					customerName,
+				};
+			});
 		} catch (error) {
 			console.error('Error obteniendo movimientos de transferencia bancaria');
 			throw error;
@@ -94,6 +118,7 @@ export class BankTransferMovementService {
 				type,
 				createdBy,
 				comments,
+				paymentMethod,
 			} = movementData;
 
 			const newBankTransferMovement =
@@ -105,6 +130,7 @@ export class BankTransferMovementService {
 						reference,
 						amount,
 						type: billingPaymentId ? 'INCOME' : type,
+						paymentMethod,
 						comments,
 						createdBy,
 					},

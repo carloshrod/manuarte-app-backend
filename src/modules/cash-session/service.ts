@@ -10,8 +10,38 @@ import { BillingModel } from '../billing/model';
 import { CustomerModel } from '../customer/model';
 import { PersonModel } from '../person/model';
 import { CashMovementWithCustomerName } from '../cash-movement/types';
+import { CustomerBalanceMovementModel } from '../customer-balance/movement-model';
 
 const COLOMBIA_TZ = 'America/Bogota';
+
+// export const cashMovementWithCustomerInclude = [
+// 	{
+// 		model: BillingPaymentModel,
+// 		as: 'billingPayment',
+// 		attributes: ['id'],
+// 		include: [
+// 			{
+// 				model: BillingModel,
+// 				as: 'billing',
+// 				attributes: ['id'],
+// 				include: [
+// 					{
+// 						model: CustomerModel,
+// 						as: 'customer',
+// 						attributes: ['id'],
+// 						include: [
+// 							{
+// 								model: PersonModel,
+// 								as: 'person',
+// 								attributes: ['fullName'],
+// 							},
+// 						],
+// 					},
+// 				],
+// 			},
+// 		],
+// 	},
+// ];
 
 export const cashMovementWithCustomerInclude = [
 	{
@@ -35,6 +65,25 @@ export const cashMovementWithCustomerInclude = [
 								attributes: ['fullName'],
 							},
 						],
+					},
+				],
+			},
+		],
+	},
+	{
+		model: CustomerBalanceMovementModel,
+		as: 'customerBalanceMovement',
+		attributes: ['id'],
+		include: [
+			{
+				model: CustomerModel,
+				as: 'customer',
+				attributes: ['id'],
+				include: [
+					{
+						model: PersonModel,
+						as: 'person',
+						attributes: ['fullName'],
 					},
 				],
 			},
@@ -412,9 +461,14 @@ export class CashSessionService {
 				const mov = {
 					...m.toJSON(),
 					customerName:
-						m.billingPayment?.billing?.customer?.person?.fullName ?? null,
+						m.billingPayment?.billing?.customer?.person?.fullName ??
+						m.customerBalanceMovement?.customer?.person?.fullName ??
+						null,
 				};
+
 				delete mov.billingPayment;
+				delete mov.customerBalanceMovement;
+
 				return mov;
 			});
 

@@ -34,4 +34,11 @@ export type CashMovementWithCustomerName = CashMovementModel & {
 			};
 		};
 	};
+	customerBalanceMovement?: {
+		customer?: {
+			person?: {
+				fullName?: string;
+			};
+		};
+	};
 };

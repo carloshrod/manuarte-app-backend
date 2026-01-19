@@ -2,6 +2,7 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { BillingPaymentModel } from '../billing-payment/model';
 import { UserModel } from '../user/model';
+import { CustomerBalanceMovementModel } from '../customer-balance/movement-model';
 
 export class CashMovementModel extends Model {
 	public type!: 'INCOME' | 'EXPENSE';
@@ -125,4 +126,15 @@ CashMovementModel.belongsTo(UserModel, {
 UserModel.hasMany(CashMovementModel, {
 	foreignKey: 'createdBy',
 	as: 'manualCashMovements',
+});
+
+// ***** CashMovementModel-CustomerBalanceMovementModel Relations *****
+CashMovementModel.belongsTo(CustomerBalanceMovementModel, {
+	foreignKey: 'customerBalanceMovementId',
+	as: 'customerBalanceMovement',
+});
+
+CustomerBalanceMovementModel.hasOne(CashMovementModel, {
+	foreignKey: 'customerBalanceMovementId',
+	as: 'cashMovement',
 });

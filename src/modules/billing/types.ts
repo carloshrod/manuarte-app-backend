@@ -22,6 +22,7 @@ export enum PaymentMethod {
 	PAYPHONE = 'PAYPHONE',
 	PAYPAL = 'PAYPAL',
 	BANK_DEPOSIT = 'BANK_DEPOSIT',
+	BALANCE = 'BALANCE',
 	OTHER = 'OTHER',
 }
 

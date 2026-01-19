@@ -3,6 +3,7 @@ import { sequelize } from '../../config/database';
 import { BillingPaymentModel } from '../billing-payment/model';
 import { UserModel } from '../user/model';
 import { ShopModel } from '../shop/model';
+import { CustomerBalanceMovementModel } from '../customer-balance/movement-model';
 
 export class BankTransferMovementModel extends Model {
 	public amount!: number;
@@ -32,6 +33,25 @@ BankTransferMovementModel.init(
 				model: 'billing_payment',
 				key: 'id',
 			},
+		},
+		paymentMethod: {
+			type: DataTypes.ENUM(
+				'CASH',
+				'BANK_TRANSFER',
+				'BANK_TRANSFER_RT',
+				'BANK_TRANSFER_RBT',
+				'DEBIT_CARD',
+				'CREDIT_CARD',
+				'NEQUI',
+				'BOLD',
+				'EFECTY',
+				'WOMPI',
+				'PAYPHONE',
+				'PAYPAL',
+				'BANK_DEPOSIT',
+				'OTHER',
+			),
+			allowNull: true,
 		},
 		customerBalanceMovementId: {
 			type: DataTypes.UUID,
@@ -120,4 +140,15 @@ BankTransferMovementModel.belongsTo(UserModel, {
 UserModel.hasMany(BankTransferMovementModel, {
 	foreignKey: 'createdBy',
 	as: 'bankTransferMovements',
+});
+
+// ***** BankTransferMovementModel-CustomerBalanceMovementModel Relations *****
+BankTransferMovementModel.belongsTo(CustomerBalanceMovementModel, {
+	foreignKey: 'customerBalanceMovementId',
+	as: 'customerBalanceMovement',
+});
+
+CustomerBalanceMovementModel.hasOne(BankTransferMovementModel, {
+	foreignKey: 'customerBalanceMovementId',
+	as: 'bankTransferMovement',
 });

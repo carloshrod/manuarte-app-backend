@@ -532,11 +532,6 @@ export class QuoteService {
 							// Obtener stockItemId: si no lo tiene, buscarlo por productVariantId
 							let stockItemId = item.stockItemId;
 							if (!stockItemId && item.productVariantId && quoteData.stockId) {
-								console.log(
-									'***********************',
-									item.productVariantId,
-									quoteData.stockId,
-								);
 								const stockItem = await this.stockItemService.getOneByStock(
 									item.productVariantId,
 									quoteData.stockId,

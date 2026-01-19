@@ -35,6 +35,7 @@ BillingPaymentModel.init(
 				'PAYPHONE',
 				'PAYPAL',
 				'BANK_DEPOSIT',
+				'BALANCE',
 				'OTHER',
 			),
 			allowNull: false,
