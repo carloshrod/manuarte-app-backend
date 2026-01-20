@@ -566,19 +566,6 @@ export class BillingService {
 
 			// Crear items de factura *****
 			for (const item of billingData.items) {
-				// Obtener el precio correcto según el tipo de precio seleccionado
-				let itemPrice = item.price;
-				if (item.stockItemId) {
-					const priceByType = await this.stockItemService.getPrice(
-						item.stockItemId,
-						priceTypeCode,
-						transaction,
-					);
-					if (priceByType) {
-						itemPrice = priceByType;
-					}
-				}
-
 				await this.billingItemService.create(
 					{
 						...item,
@@ -587,8 +574,8 @@ export class BillingService {
 						billingId: newBilling.id,
 						stockId,
 						currency: item.currency ?? billingData.currency,
-						price: itemPrice,
-						totalPrice: itemPrice * item.quantity,
+						price: item.price,
+						totalPrice: item.price * item.quantity,
 					},
 					deductFromStock,
 					transaction,
