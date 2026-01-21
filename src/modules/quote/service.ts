@@ -360,52 +360,16 @@ export class QuoteService {
 			await newQuote.generateSerialNumber();
 			await newQuote.save({ transaction });
 
-			// Crear items con el precio correcto según el tipo
+			// Crear items de cotización
 			for (const item of quoteData.items) {
-				// Validar que tenga al menos uno de los IDs
-				if (!item.stockItemId && !item.productVariantId) {
-					throw new Error(
-						'Cada item debe tener stockItemId o productVariantId',
-					);
-				}
-
-				// Obtener stockItemId: si no lo tiene, buscarlo por productVariantId
-				let stockItemId = item.stockItemId;
-				if (!stockItemId && item.productVariantId && shopId) {
-					const stockItem = await this.stockItemService.getOneByStock(
-						item.productVariantId,
-						shopId,
-					);
-					if (!stockItem) {
-						throw new Error(
-							`No se encontró stock para el producto ${item.name || item.productVariantId}`,
-						);
-					}
-					stockItemId = stockItem.id;
-				}
-
-				// Validación final: debe tener stockItemId en este punto
-				if (!stockItemId) {
-					throw new Error(
-						`No se pudo determinar el stockItemId para el producto ${item.name || 'sin nombre'}`,
-					);
-				}
-
-				// Obtener precio según el tipo (PVP o DIS)
-				const price = await this.stockItemService.getPrice(
-					stockItemId,
-					priceTypeCode,
-					transaction,
-				);
-
 				await this.quoteItemService.create(
 					{
 						...item,
 						id: undefined,
 						productVariantId: item?.productVariantId,
 						quoteId: newQuote.id,
-						price,
-						totalPrice: price * item.quantity,
+						price: item.price,
+						totalPrice: item.price && item.price * item.quantity,
 					},
 					transaction,
 				);
@@ -472,7 +436,6 @@ export class QuoteService {
 
 			// Si se proporciona un tipo de precio, validarlo
 			let priceTypeId = quoteToUpdate.priceTypeId;
-			let priceTypeCode: 'PVP' | 'DIS' = 'PVP';
 
 			if (quoteData.priceType) {
 				const priceTypeRecord = await PriceTypeModel.findOne({
@@ -487,15 +450,6 @@ export class QuoteService {
 				}
 
 				priceTypeId = priceTypeRecord.id;
-				priceTypeCode = quoteData.priceType;
-			} else {
-				// Obtener el código del tipo de precio actual
-				const currentPriceType = await PriceTypeModel.findByPk(priceTypeId, {
-					transaction,
-				});
-				if (currentPriceType) {
-					priceTypeCode = currentPriceType.code as 'PVP' | 'DIS';
-				}
 			}
 
 			await quoteToUpdate.update(
@@ -513,62 +467,10 @@ export class QuoteService {
 				{ transaction },
 			);
 
+			// Actualizar items de cotización
 			if (quoteData?.items?.length > 0) {
-				// Actualizar items con precios correctos
-				const itemsWithPrices = await Promise.all(
-					quoteData.items.map(async item => {
-						// Si el item no tiene precio o se cambió el tipo de precio, calcularlo
-						if (!item.price || quoteData.priceType) {
-							if (!item.stockItemId && !item.productVariantId) {
-								throw new Error(
-									'Cada item debe tener stockItemId o productVariantId',
-								);
-							}
-
-							if (!quoteData.stockId) {
-								throw new Error('stockId es requerido para actualizar items');
-							}
-
-							// Obtener stockItemId: si no lo tiene, buscarlo por productVariantId
-							let stockItemId = item.stockItemId;
-							if (!stockItemId && item.productVariantId && quoteData.stockId) {
-								const stockItem = await this.stockItemService.getOneByStock(
-									item.productVariantId,
-									quoteData.stockId,
-								);
-								if (!stockItem) {
-									throw new Error(
-										`No se encontró stock para el producto ${item.name || item.productVariantId}`,
-									);
-								}
-								stockItemId = stockItem.id;
-							}
-
-							// Validación final: debe tener stockItemId en este punto
-							if (!stockItemId) {
-								throw new Error(
-									`No se pudo determinar el stockItemId para el producto ${item.name || 'sin nombre'}`,
-								);
-							}
-
-							const price = await this.stockItemService.getPrice(
-								stockItemId,
-								priceTypeCode,
-								transaction,
-							);
-
-							return {
-								...item,
-								price,
-								totalPrice: price * item.quantity,
-							};
-						}
-						return item;
-					}),
-				);
-
 				await this.quoteItemService.updateItems(
-					itemsWithPrices,
+					quoteData?.items,
 					quoteData.id,
 					transaction,
 				);
