@@ -7,6 +7,7 @@ export class StockItemModel extends Model {
 	public id!: string;
 	public price!: string;
 	public quantity!: string;
+	public stockId!: string;
 
 	public addProductVariant!: (
 		productVariant: ProductVariantModel | string,
@@ -21,6 +22,11 @@ StockItemModel.init(
 			allowNull: false,
 			defaultValue: DataTypes.UUIDV4,
 			primaryKey: true,
+		},
+		active: {
+			type: DataTypes.BOOLEAN,
+			allowNull: false,
+			defaultValue: true,
 		},
 		currency: {
 			type: DataTypes.STRING,

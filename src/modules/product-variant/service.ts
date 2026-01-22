@@ -2,6 +2,7 @@ import { sequelize } from '../../config/database';
 import { ProductCategoryModel } from '../product-category/model';
 import { ProductModel } from '../product/model';
 import { StockItemModel } from '../stock-item/model';
+import { StockItemService } from '../stock-item/service';
 import { ProductVariantModel } from './model';
 import {
 	CreateProductVariantDto,
@@ -14,11 +15,13 @@ export class ProductVariantService {
 	private productVariantModel;
 	private productModel;
 	private productCategoryModel;
+	private stockItemService;
 
 	constructor(productVariantModel: typeof ProductVariantModel) {
 		this.productVariantModel = productVariantModel;
 		this.productModel = ProductModel;
 		this.productCategoryModel = ProductCategoryModel;
+		this.stockItemService = new StockItemService(StockItemModel);
 	}
 
 	getAll = async (
@@ -68,6 +71,17 @@ export class ProductVariantService {
 							[
 								sequelize.col('product.productCategory.name'),
 								'productCategoryName',
+							],
+							// Array de stockIds donde existe el producto y está activo
+							[
+								sequelize.literal(`(
+                                SELECT COALESCE(array_agg(DISTINCT si."stockId"), '{}')
+                                FROM stock_item_product_variant sipv
+                                INNER JOIN stock_item si ON si.id = sipv."stockItemId"
+                                WHERE sipv."productVariantId" = "ProductVariantModel"."id"
+																AND si.active = true
+                            )`),
+								'stockIds',
 							],
 						],
 					},
@@ -139,6 +153,7 @@ export class ProductVariantService {
 		id,
 		name,
 		active,
+		stockIds,
 		requestedBy,
 	}: UpdateProductVariantDto) => {
 		try {
@@ -155,6 +170,10 @@ export class ProductVariantService {
 				active,
 				updatedBy: requestedBy,
 			});
+
+			if (stockIds) {
+				await this.stockItemService.setActiveStocks(id, stockIds as string[]);
+			}
 
 			return productVariantToUpdate.dataValues;
 		} catch (error) {
@@ -384,7 +403,7 @@ export class ProductVariantService {
 						{
 							model: StockItemModel,
 							as: 'stockItems',
-							where: { stockId },
+							where: { stockId, active: true },
 							attributes: [],
 							through: { attributes: [] },
 						},

@@ -82,13 +82,14 @@ export class ProductVariantController {
 	update: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
-			const { name, active } = req.body;
+			const { name, active, stockIds } = req.body;
 			const requestedBy = (req as CustomRequest).requestedBy;
 
 			await this.productVariantService.update({
 				id,
 				name,
 				active,
+				stockIds,
 				requestedBy,
 			});
 

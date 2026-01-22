@@ -2,7 +2,9 @@ import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { StockItemModel } from '../stock-item/model';
 
-export class StockModel extends Model {}
+export class StockModel extends Model {
+	public name!: string;
+}
 
 StockModel.init(
 	{

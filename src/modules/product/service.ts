@@ -103,6 +103,7 @@ export class ProductService {
 		id,
 		productData,
 		productVariantData,
+		stockIds,
 		requestedBy,
 	}: UpdateProductDto) => {
 		try {
@@ -119,6 +120,7 @@ export class ProductService {
 				id: productVariantData.id,
 				name: productVariantData.name,
 				active: productVariantData.active,
+				stockIds,
 				requestedBy,
 			});
 

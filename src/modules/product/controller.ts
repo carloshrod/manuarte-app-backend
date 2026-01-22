@@ -46,13 +46,14 @@ export class ProductController {
 	update: Handler = async (req, res, next) => {
 		try {
 			const { id } = req.params;
-			const { productVariant, ...rest } = req.body;
+			const { productVariant, stockIds, ...rest } = req.body;
 			const requestedBy = (req as CustomRequest).requestedBy;
 
 			await this.productService.update({
 				id,
 				productData: { ...rest },
 				productVariantData: productVariant,
+				stockIds,
 				requestedBy,
 			});
 

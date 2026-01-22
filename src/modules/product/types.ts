@@ -28,6 +28,7 @@ export interface UpdateProductDto {
 		name: string;
 		active: boolean;
 	};
+	stockIds: string[];
 	requestedBy: string;
 }
 

@@ -6,6 +6,7 @@ export interface StockItem {
 	cost: number;
 	minQty: number;
 	maxQty: number;
+	active?: boolean;
 }
 
 export interface PricesAndCosts {

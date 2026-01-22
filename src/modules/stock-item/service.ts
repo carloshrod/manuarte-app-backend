@@ -158,7 +158,7 @@ export class StockItemService {
 			}
 
 			const queryOptions: FindAndCountOptions = {
-				where: { stockId: stockId },
+				where: { stockId: stockId, active: true },
 				attributes: baseAttributes,
 				include: [
 					{
@@ -948,8 +948,6 @@ export class StockItemService {
 
 	update = async ({ id, stockItemData }: UpdateStockItemDto) => {
 		try {
-			// TODO: Corregir error de not null cuando intento ponerle el priceDis a un producto que no lo tiene, desde cascajal. El error sale cuando solo se manda disCop sin disUsd o viceversa.
-
 			const { productVariantId, prices, ...stockItemRest } = stockItemData;
 
 			if ('quantity' in stockItemData) {
@@ -1145,6 +1143,67 @@ export class StockItemService {
 			prices,
 			cost: currency === 'COP' ? costCop : costUsd,
 		};
+	};
+
+	setActiveStocks = async (
+		productVariantId: string,
+		activeStockIds: string[], // Solo los stocks donde debe estar activo
+	) => {
+		try {
+			// Obtener todos los stock items del producto
+			const allStockItems = await this.stockItemModel.findAll({
+				include: [
+					{
+						model: ProductVariantModel,
+						as: 'productVariants',
+						where: { id: productVariantId },
+						through: { attributes: [] },
+					},
+				],
+			});
+
+			if (allStockItems.length === 0) {
+				throw new Error('No se encontraron items para este producto');
+			}
+
+			// Validar que todos los stockIds en activeStockIds existan
+			const existingStockIds = allStockItems.map(item => item.stockId);
+			const invalidStockIds = activeStockIds?.filter(
+				stockId => !existingStockIds.includes(stockId),
+			);
+
+			if (invalidStockIds.length > 0) {
+				const invalidStocks = await StockModel.findAll({
+					where: { id: { [Op.in]: invalidStockIds } },
+					attributes: ['id', 'name'],
+				});
+
+				const stockNames = invalidStocks.map(stock => stock.name).join(', ');
+
+				throw new Error(
+					`El producto no existe en los siguientes stocks: ${stockNames}`,
+				);
+			}
+
+			// Actualizar cada stock item según si está en la lista o no
+			await Promise.all(
+				allStockItems.map(item => {
+					const shouldBeActive = activeStockIds.includes(item.stockId);
+					return item.update({ active: shouldBeActive });
+				}),
+			);
+
+			const activatedCount = activeStockIds.length;
+			const deactivatedCount = allStockItems.length - activatedCount;
+
+			return {
+				status: 200,
+				message: `Producto configurado: ${activatedCount} stock(s) activo(s), ${deactivatedCount} desactivado(s)`,
+			};
+		} catch (error) {
+			console.error('Error setting active stocks');
+			throw error;
+		}
 	};
 
 	private getProductAttrs = async (
