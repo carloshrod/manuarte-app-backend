@@ -179,12 +179,22 @@ export class CustomerService {
 		const localTransaction = transaction || (await sequelize.transaction());
 		try {
 			const { fullName, dni, ...restCustomer } = customerData;
+
+			if (!fullName || !dni) {
+				throw new Error('El nombre y el número de documento son requeridos');
+			}
+
 			const person = await this.personModel.create(
 				{ fullName, dni },
 				{ transaction: localTransaction },
 			);
 
 			const { email, phoneNumber } = restCustomer;
+
+			if (!phoneNumber) {
+				throw new Error('El número de teléfono es requerido');
+			}
+
 			const customer = await this.customerModel.create(
 				{
 					email: email?.length > 0 ? email : undefined,
@@ -193,6 +203,10 @@ export class CustomerService {
 				},
 				{ transaction: localTransaction },
 			);
+
+			if (!restCustomer?.location && !restCustomer?.cityId) {
+				throw new Error('La dirección y la ciudad son requeridas');
+			}
 
 			if (restCustomer?.location) {
 				await this.addressModel.create(
@@ -253,6 +267,18 @@ export class CustomerService {
 			}
 
 			const { fullName, dni, email, phoneNumber, location, cityId } = rest;
+
+			if (!fullName || !dni) {
+				throw new Error('El nombre y el número de documento son requeridos');
+			}
+
+			if (!phoneNumber) {
+				throw new Error('El número de teléfono es requerido');
+			}
+
+			if (!location && !cityId) {
+				throw new Error('La dirección y la ciudad son requeridas');
+			}
 
 			await personToUpdate.update(
 				{ fullName, dni },

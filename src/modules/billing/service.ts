@@ -419,7 +419,11 @@ export class BillingService {
 
 			let customerId = customerData?.customerId ?? null;
 
-			if (customerData?.fullName && !customerData?.customerId) {
+			if (
+				customerData?.fullName &&
+				customerData?.dni &&
+				!customerData?.customerId
+			) {
 				const result = await this.customerService.create(
 					customerData,
 					transaction,

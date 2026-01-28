@@ -312,7 +312,11 @@ export class QuoteService {
 			}
 
 			let customerId = customerData?.customerId ?? null;
-			if (customerData?.fullName && !customerData?.customerId) {
+			if (
+				customerData?.fullName &&
+				customerData?.dni &&
+				!customerData?.customerId
+			) {
 				const result = await this.customerService.create(
 					customerData,
 					transaction,
@@ -408,7 +412,7 @@ export class QuoteService {
 			let customerId = null;
 
 			// Si se envía info de cliente
-			if (customerData?.fullName) {
+			if (customerData?.fullName && customerData?.dni) {
 				// Si no existe, créarlo
 				if (!customerData?.customerId) {
 					const result = await this.customerService.create(
