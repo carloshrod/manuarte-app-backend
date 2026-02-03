@@ -1159,6 +1159,11 @@ export class StockItemService {
 						where: { id: productVariantId },
 						through: { attributes: [] },
 					},
+					{
+						model: StockModel,
+						as: 'stock',
+						attributes: ['id', 'name'],
+					},
 				],
 			});
 
@@ -1189,6 +1194,15 @@ export class StockItemService {
 			await Promise.all(
 				allStockItems.map(item => {
 					const shouldBeActive = activeStockIds.includes(item.stockId);
+
+					if (!shouldBeActive && Number(item.quantity) > 0 && item.active) {
+						return Promise.reject(
+							new Error(
+								`No se puede desactivar el item en ${item.getDataValue('stock').name}, ya que tiene ${item.quantity} unidades en el stock.`,
+							),
+						);
+					}
+
 					return item.update({ active: shouldBeActive });
 				}),
 			);

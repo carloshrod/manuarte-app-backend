@@ -8,6 +8,7 @@ export class StockItemModel extends Model {
 	public price!: string;
 	public quantity!: string;
 	public stockId!: string;
+	public active!: boolean;
 
 	public addProductVariant!: (
 		productVariant: ProductVariantModel | string,
