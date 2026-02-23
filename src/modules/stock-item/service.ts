@@ -1168,7 +1168,7 @@ export class StockItemService {
 			});
 
 			if (allStockItems.length === 0) {
-				throw new Error('No se encontraron items para este producto');
+				throw new Error('El producto no existe en ningún stock');
 			}
 
 			// Validar que todos los stockIds en activeStockIds existan
