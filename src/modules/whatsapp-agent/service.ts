@@ -7,6 +7,7 @@ import { StockItemModel } from '../stock-item/model';
 import { StockModel } from '../stock/model';
 import { ShopModel } from '../shop/model';
 import { CountryModel } from '../country/model';
+import { WhatsAppQueryLogModel } from './query-log.model';
 
 const WHATSAPP_API_TIMEOUT_MS = 10_000;
 const BUFFER_WAIT_MS = 4_000; // espera antes de procesar mensajes acumulados
@@ -134,7 +135,22 @@ export class WhatsAppAgentService {
 		let replyText: string;
 
 		if (intent === 'buscar_producto') {
-			replyText = await this.buildProductReply(normalizedText, countryInfo);
+			const result = await this.buildProductReply(normalizedText, countryInfo);
+			replyText = result.replyText;
+			this.logQuery({
+				phoneNumber,
+				phoneNumberId,
+				rawText: text,
+				searchTerms: result.searchTerms,
+				productFound: result.productFound,
+				suggestionsShown: result.suggestionsShown,
+				replyText: result.replyText,
+				countryPrefix: countryInfo
+					? `+${phoneNumber.startsWith('593') ? '593' : '57'}`
+					: null,
+			}).catch(err =>
+				console.error('[WhatsApp Agent] Error saving query log:', err),
+			);
 		} else {
 			replyText = '¡Hola! Soy Gema 😊 ¿En qué te puedo ayudar el día de hoy?';
 		}
@@ -263,7 +279,12 @@ export class WhatsAppAgentService {
 	private buildProductReply = async (
 		normalizedText: string,
 		countryInfo: { currency: string; stockIds: string[] } | null,
-	): Promise<string> => {
+	): Promise<{
+		replyText: string;
+		searchTerms: string[];
+		productFound: boolean;
+		suggestionsShown: boolean;
+	}> => {
 		const stopWords = [
 			// intención
 			'producto',
@@ -346,7 +367,13 @@ export class WhatsAppAgentService {
 			.filter(w => w.length > 2 && !stopWords.includes(w) && !/^\d+$/.test(w));
 
 		if (searchTerms.length === 0) {
-			return '¿Qué producto estás buscando? Por favor indícame el nombre. 🔍';
+			return {
+				replyText:
+					'¿Qué producto estás buscando? Por favor indícame el nombre. 🔍',
+				searchTerms: [],
+				productFound: false,
+				suggestionsShown: false,
+			};
 		}
 
 		try {
@@ -445,20 +472,41 @@ export class WhatsAppAgentService {
 			}
 
 			if (lines.length === 0) {
-				return this.buildSuggestions(searchTerms, stockItemWhere);
+				const suggestionReply = await this.buildSuggestions(
+					searchTerms,
+					stockItemWhere,
+				);
+				return {
+					replyText: suggestionReply,
+					searchTerms,
+					productFound: false,
+					suggestionsShown: true,
+				};
 			}
 
 			const MAX_RESULTS = 5;
 			const displayed = lines.slice(0, MAX_RESULTS);
 			const hasMore = lines.length > MAX_RESULTS;
 			const footer = hasMore
-				? `\n\n_Mostrando ${MAX_RESULTS} de ${lines.length} resultados. Si no ves lo que buscas, sé más específico._ 🔍`
+				? `\n\n_Mostrando ${MAX_RESULTS} de ${lines.length} resultados. Si no ves lo que buscas, por favor sé más específico._ 🔍`
 				: '';
 
-			return `¡Claro! Aquí te cuento lo que tenemos disponible:\n\n${displayed.join('\n\n')}${footer}\n\n¿Te interesa alguno? 😊`;
+			const replyText = `¡Claro! Aquí te cuento lo que tenemos disponible:\n\n${displayed.join('\n\n')}${footer}\n\n¿Te interesa alguno? 😊`;
+			return {
+				replyText,
+				searchTerms,
+				productFound: true,
+				suggestionsShown: false,
+			};
 		} catch (error) {
 			console.error('[WhatsApp Agent] Error searching products:', error);
-			return 'Ocurrió un error al buscar el producto. Por favor intenta de nuevo. 🙏';
+			return {
+				replyText:
+					'Ocurrió un error al buscar el producto. Por favor intenta de nuevo. 🙏',
+				searchTerms: [],
+				productFound: false,
+				suggestionsShown: false,
+			};
 		}
 	};
 
@@ -527,6 +575,31 @@ export class WhatsAppAgentService {
 			console.error('[WhatsApp Agent] Error building suggestions:', error);
 			return 'Lo siento, no tenemos ese producto disponible en este momento. 😊';
 		}
+	};
+
+	private logQuery = async (data: {
+		phoneNumber: string;
+		phoneNumberId: string;
+		rawText: string;
+		searchTerms: string[];
+		productFound: boolean;
+		suggestionsShown: boolean;
+		replyText: string;
+		countryPrefix: string | null;
+	}) => {
+		await WhatsAppQueryLogModel.create({
+			phoneNumber: data.phoneNumber,
+			phoneNumberId: data.phoneNumberId,
+			rawText: data.rawText,
+			searchTerms: data.searchTerms,
+			productFound: data.productFound,
+			suggestionsShown: data.suggestionsShown,
+			replyText: data.replyText,
+			countryPrefix: data.countryPrefix,
+		});
+		console.log(
+			`[WhatsApp Agent] Query log saved for ${data.phoneNumber} — found: ${data.productFound}, suggestions: ${data.suggestionsShown}`,
+		);
 	};
 
 	private sendReply = async (
