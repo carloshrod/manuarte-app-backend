@@ -8,6 +8,7 @@ import { StockModel } from '../stock/model';
 import { ShopModel } from '../shop/model';
 import { CountryModel } from '../country/model';
 import { WhatsAppQueryLogModel } from './query-log.model';
+import { WhatsAppMessageLogModel } from './message-log.model';
 
 const WHATSAPP_API_TIMEOUT_MS = 10_000;
 const BUFFER_WAIT_MS = 4_000; // espera antes de procesar mensajes acumulados
@@ -131,6 +132,20 @@ export class WhatsAppAgentService {
 		console.log(`[WhatsApp Agent] Intent detected: ${intent}`);
 
 		const countryInfo = await this.detectCountryFromPhone(phoneNumber);
+		const countryPrefix = countryInfo
+			? `+${phoneNumber.startsWith('593') ? '593' : '57'}`
+			: null;
+
+		this.logMessage({
+			phoneNumber,
+			phoneNumberId,
+			direction: 'inbound',
+			text,
+			intent,
+			countryPrefix,
+		}).catch(err =>
+			console.error('[WhatsApp Agent] Error saving inbound message log:', err),
+		);
 
 		let replyText: string;
 
@@ -145,9 +160,7 @@ export class WhatsAppAgentService {
 				productFound: result.productFound,
 				suggestionsShown: result.suggestionsShown,
 				replyText: result.replyText,
-				countryPrefix: countryInfo
-					? `+${phoneNumber.startsWith('593') ? '593' : '57'}`
-					: null,
+				countryPrefix,
 			}).catch(err =>
 				console.error('[WhatsApp Agent] Error saving query log:', err),
 			);
@@ -157,6 +170,17 @@ export class WhatsAppAgentService {
 
 		await new Promise(resolve => setTimeout(resolve, REPLY_DELAY_MS));
 		await this.sendReply(phoneNumber, phoneNumberId, replyText);
+
+		this.logMessage({
+			phoneNumber,
+			phoneNumberId,
+			direction: 'outbound',
+			text: replyText,
+			intent: null,
+			countryPrefix,
+		}).catch(err =>
+			console.error('[WhatsApp Agent] Error saving outbound message log:', err),
+		);
 	};
 
 	private detectCountryFromPhone = async (
@@ -575,6 +599,27 @@ export class WhatsAppAgentService {
 			console.error('[WhatsApp Agent] Error building suggestions:', error);
 			return 'Lo siento, no tenemos ese producto disponible en este momento. 😊';
 		}
+	};
+
+	private logMessage = async (data: {
+		phoneNumber: string;
+		phoneNumberId: string;
+		direction: 'inbound' | 'outbound';
+		text: string;
+		intent: string | null;
+		countryPrefix: string | null;
+	}) => {
+		await WhatsAppMessageLogModel.create({
+			phoneNumber: data.phoneNumber,
+			phoneNumberId: data.phoneNumberId,
+			direction: data.direction,
+			text: data.text,
+			intent: data.intent,
+			countryPrefix: data.countryPrefix,
+		});
+		console.log(
+			`[WhatsApp Agent] Message log saved — direction: ${data.direction}, phone: ${data.phoneNumber}`,
+		);
 	};
 
 	private logQuery = async (data: {
