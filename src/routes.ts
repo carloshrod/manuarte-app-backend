@@ -16,6 +16,7 @@ import cityRouter from './modules/city/routes';
 import cashSessionRouter from './modules/cash-session/routes';
 import customerBalanceRouter from './modules/customer-balance/routes';
 import whatsAppRouter from './modules/whatsapp/routes';
+import whatsAppAgentRouter from './modules/whatsapp-agent/routes';
 import { verifyJWT } from './middlewares/verifyJWT';
 
 const router = Router();
@@ -36,7 +37,9 @@ router.get('/api/v1/ping', async (_req, res) => {
 	}
 });
 
+// Rutas públicas
 router.use('/api/v1/auth', authRouter);
+router.use('/api/v1/whatsapp-agent', whatsAppAgentRouter);
 
 router.use(verifyJWT as unknown as RequestHandler);
 
