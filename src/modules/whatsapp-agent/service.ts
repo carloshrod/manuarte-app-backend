@@ -7,8 +7,8 @@ import { StockItemModel } from '../stock-item/model';
 import { StockModel } from '../stock/model';
 import { ShopModel } from '../shop/model';
 import { CountryModel } from '../country/model';
-import { WhatsAppQueryLogModel } from './query-log.model';
-import { WhatsAppMessageLogModel } from './message-log.model';
+import { WhatsAppLogService } from './logs/log.service';
+import { formatPrice, normalizeText, stemTerm } from './utils';
 
 const WHATSAPP_API_TIMEOUT_MS = 10_000;
 const BUFFER_WAIT_MS = 4_000; // espera antes de procesar mensajes acumulados
@@ -22,6 +22,7 @@ interface BufferEntry {
 
 export class WhatsAppAgentService {
 	private messageBuffer = new Map<string, BufferEntry>();
+	private logService = new WhatsAppLogService();
 
 	verifyWebhook = (mode: string, token: string, challenge: string) => {
 		if (mode !== 'subscribe') {
@@ -68,6 +69,14 @@ export class WhatsAppAgentService {
 			const timestamp = messages?.timestamp ?? null;
 			const message_id = messages?.id ?? null;
 
+			if (phoneNumberId !== '977281432136078') {
+				console.log(
+					'[WhatsApp Agent]: Número no autorizado para pruebas. Ignorando mensaje de:',
+					phoneNumber,
+				);
+				return { status: 200, message: 'Número no autorizado para pruebas.' };
+			}
+
 			console.log('[WhatsApp Agent] Incoming message:', {
 				text,
 				phoneNumberId,
@@ -81,8 +90,15 @@ export class WhatsAppAgentService {
 				return { status: 200, message: 'Evento sin mensajes.' };
 			}
 
+			if (!text) {
+				console.warn(
+					'[WhatsApp Agent] Event without text (status update?), ignoring.',
+				);
+				return { status: 200, message: 'Evento sin texto.' };
+			}
+
 			if (phoneNumber && phoneNumberId) {
-				this.bufferMessage(phoneNumber, phoneNumberId, text ?? '');
+				this.bufferMessage(phoneNumber, phoneNumberId, text);
 			}
 		} catch (error) {
 			console.error('[WhatsApp Agent] Error processing message:', error);
@@ -127,7 +143,7 @@ export class WhatsAppAgentService {
 		phoneNumberId: string,
 		text: string,
 	) => {
-		const normalizedText = this.normalizeText(text);
+		const normalizedText = normalizeText(text);
 		const intent = this.detectIntent(normalizedText);
 		console.log(`[WhatsApp Agent] Intent detected: ${intent}`);
 
@@ -136,34 +152,41 @@ export class WhatsAppAgentService {
 			? `+${phoneNumber.startsWith('593') ? '593' : '57'}`
 			: null;
 
-		this.logMessage({
-			phoneNumber,
-			phoneNumberId,
-			direction: 'inbound',
-			text,
-			intent,
-			countryPrefix,
-		}).catch(err =>
-			console.error('[WhatsApp Agent] Error saving inbound message log:', err),
-		);
+		this.logService
+			.logMessage({
+				phoneNumber,
+				phoneNumberId,
+				direction: 'inbound',
+				text,
+				intent,
+				countryPrefix,
+			})
+			.catch(err =>
+				console.error(
+					'[WhatsApp Agent] Error saving inbound message log:',
+					err,
+				),
+			);
 
 		let replyText: string;
 
 		if (intent === 'buscar_producto') {
 			const result = await this.buildProductReply(normalizedText, countryInfo);
 			replyText = result.replyText;
-			this.logQuery({
-				phoneNumber,
-				phoneNumberId,
-				rawText: text,
-				searchTerms: result.searchTerms,
-				productFound: result.productFound,
-				suggestionsShown: result.suggestionsShown,
-				replyText: result.replyText,
-				countryPrefix,
-			}).catch(err =>
-				console.error('[WhatsApp Agent] Error saving query log:', err),
-			);
+			this.logService
+				.logQuery({
+					phoneNumber,
+					phoneNumberId,
+					rawText: text,
+					searchTerms: result.searchTerms,
+					productFound: result.productFound,
+					suggestionsShown: result.suggestionsShown,
+					replyText: result.replyText,
+					countryPrefix,
+				})
+				.catch(err =>
+					console.error('[WhatsApp Agent] Error saving query log:', err),
+				);
 		} else {
 			replyText = '¡Hola! Soy Gema 😊 ¿En qué te puedo ayudar el día de hoy?';
 		}
@@ -171,16 +194,21 @@ export class WhatsAppAgentService {
 		await new Promise(resolve => setTimeout(resolve, REPLY_DELAY_MS));
 		await this.sendReply(phoneNumber, phoneNumberId, replyText);
 
-		this.logMessage({
-			phoneNumber,
-			phoneNumberId,
-			direction: 'outbound',
-			text: replyText,
-			intent: null,
-			countryPrefix,
-		}).catch(err =>
-			console.error('[WhatsApp Agent] Error saving outbound message log:', err),
-		);
+		this.logService
+			.logMessage({
+				phoneNumber,
+				phoneNumberId,
+				direction: 'outbound',
+				text: replyText,
+				intent: null,
+				countryPrefix,
+			})
+			.catch(err =>
+				console.error(
+					'[WhatsApp Agent] Error saving outbound message log:',
+					err,
+				),
+			);
 	};
 
 	private detectCountryFromPhone = async (
@@ -240,32 +268,6 @@ export class WhatsAppAgentService {
 			console.error('[WhatsApp Agent] Error detecting country:', error);
 			return null;
 		}
-	};
-
-	private stemTerm = (word: string): string => {
-		// Elimina sufijos plurales del español para que el iLike encuentre
-		// tanto singular como plural: colorantes → colorante, colores → color
-		if (word.length > 4 && word.endsWith('es')) return word.slice(0, -2);
-		if (word.length > 3 && word.endsWith('s')) return word.slice(0, -1);
-		return word;
-	};
-
-	private formatPrice = (price: string | null, currency: string): string => {
-		if (!price) return 'precio no disponible';
-		const num = Number(price);
-		if (currency === 'COP') {
-			return `$${num.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
-		}
-		return `$${num.toFixed(2)}`;
-	};
-
-	private normalizeText = (text: string): string => {
-		return text
-			.toLowerCase()
-			.normalize('NFD')
-			.replace(/[\u0300-\u036f]/g, '') // quitar tildes
-			.replace(/[^a-z0-9\s]/g, '') // quitar caracteres especiales
-			.trim();
 	};
 
 	private detectIntent = (normalizedText: string): string => {
@@ -411,7 +413,7 @@ export class WhatsAppAgentService {
 				attributes: ['id', 'name'],
 				where: {
 					[Op.and]: searchTerms.map(term => ({
-						name: { [Op.iLike]: `%${this.stemTerm(term)}%` },
+						name: { [Op.iLike]: `%${stemTerm(term)}%` },
 					})),
 				},
 				include: [
@@ -488,7 +490,7 @@ export class WhatsAppAgentService {
 				if (availableVariants.length === 0) continue;
 
 				const variantLines = availableVariants.map(v => {
-					const priceText = this.formatPrice(v.price, currency);
+					const priceText = formatPrice(v.price, currency);
 					return `  - ${v.name}\n    Disponible: ${v.totalQty} unds · Precio: ${priceText}`;
 				});
 
@@ -545,7 +547,7 @@ export class WhatsAppAgentService {
 				attributes: ['id', 'productCategoryId'],
 				where: {
 					[Op.or]: searchTerms.map(term => ({
-						name: { [Op.iLike]: `%${this.stemTerm(term)}%` },
+						name: { [Op.iLike]: `%${stemTerm(term)}%` },
 					})),
 				},
 				limit: 10,
@@ -599,52 +601,6 @@ export class WhatsAppAgentService {
 			console.error('[WhatsApp Agent] Error building suggestions:', error);
 			return 'Lo siento, no tenemos ese producto disponible en este momento. 😊';
 		}
-	};
-
-	private logMessage = async (data: {
-		phoneNumber: string;
-		phoneNumberId: string;
-		direction: 'inbound' | 'outbound';
-		text: string;
-		intent: string | null;
-		countryPrefix: string | null;
-	}) => {
-		await WhatsAppMessageLogModel.create({
-			phoneNumber: data.phoneNumber,
-			phoneNumberId: data.phoneNumberId,
-			direction: data.direction,
-			text: data.text,
-			intent: data.intent,
-			countryPrefix: data.countryPrefix,
-		});
-		console.log(
-			`[WhatsApp Agent] Message log saved — direction: ${data.direction}, phone: ${data.phoneNumber}`,
-		);
-	};
-
-	private logQuery = async (data: {
-		phoneNumber: string;
-		phoneNumberId: string;
-		rawText: string;
-		searchTerms: string[];
-		productFound: boolean;
-		suggestionsShown: boolean;
-		replyText: string;
-		countryPrefix: string | null;
-	}) => {
-		await WhatsAppQueryLogModel.create({
-			phoneNumber: data.phoneNumber,
-			phoneNumberId: data.phoneNumberId,
-			rawText: data.rawText,
-			searchTerms: data.searchTerms,
-			productFound: data.productFound,
-			suggestionsShown: data.suggestionsShown,
-			replyText: data.replyText,
-			countryPrefix: data.countryPrefix,
-		});
-		console.log(
-			`[WhatsApp Agent] Query log saved for ${data.phoneNumber} — found: ${data.productFound}, suggestions: ${data.suggestionsShown}`,
-		);
 	};
 
 	private sendReply = async (
