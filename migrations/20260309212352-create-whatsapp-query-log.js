@@ -15,7 +15,7 @@ module.exports = {
 				type: Sequelize.STRING,
 				allowNull: false,
 			},
-			phoneNumberId: {
+			botPhoneNumberId: {
 				type: Sequelize.STRING,
 				allowNull: false,
 			},

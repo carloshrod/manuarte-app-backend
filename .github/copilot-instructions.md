@@ -262,6 +262,7 @@ export class ShopService {
 - No crear handlers como funciones sueltas.
 - Controllers y Services deben ser clases.
 - Seguir siempre la estructura existente de los módulos.
+- Commits siempre en inglés
 
 ---
 

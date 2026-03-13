@@ -7,7 +7,7 @@ import { StockItemModel } from '../stock-item/model';
 import { StockModel } from '../stock/model';
 import { ShopModel } from '../shop/model';
 import { CountryModel } from '../country/model';
-import { WhatsAppLogService } from './logs/log.service';
+import { WhatsAppLogService } from './logging/log.service';
 import { formatPrice, normalizeText, stemTerm } from './utils';
 
 const WHATSAPP_API_TIMEOUT_MS = 10_000;
@@ -15,7 +15,7 @@ const BUFFER_WAIT_MS = 4_000; // espera antes de procesar mensajes acumulados
 const REPLY_DELAY_MS = 2_500; // delay para simular tiempo de escritura humano
 
 interface BufferEntry {
-	phoneNumberId: string;
+	botPhoneNumberId: string;
 	texts: string[];
 	timer: ReturnType<typeof setTimeout>;
 }
@@ -47,6 +47,7 @@ export class WhatsAppAgentService {
 							timestamp?: string;
 							id?: string;
 						}>;
+						statuses?: unknown[];
 						metadata?: { phone_number_id?: string };
 					};
 				}>;
@@ -63,23 +64,51 @@ export class WhatsAppAgentService {
 			const value = changes?.value;
 			const messages = value?.messages?.[0];
 
+			if (value?.statuses) {
+				console.log('[WhatsApp Agent] Status update event, ignoring.');
+				return { status: 200, message: 'Status update ignorado.' };
+			}
+
 			const text = messages?.text?.body ?? null;
-			const phoneNumberId = value?.metadata?.phone_number_id ?? null;
+			const botPhoneNumberId = value?.metadata?.phone_number_id ?? null;
 			const phoneNumber = messages?.from ?? null;
 			const timestamp = messages?.timestamp ?? null;
 			const message_id = messages?.id ?? null;
 
-			if (phoneNumberId !== '977281432136078') {
+			if (timestamp) {
+				const ageMs = Date.now() - Number(timestamp) * 1000;
+				const MAX_AGE_MS = 5 * 60 * 1000; // 5 minutos
+				if (ageMs > MAX_AGE_MS) {
+					console.warn(
+						`[WhatsApp Agent] Stale message (${Math.round(ageMs / 1000)}s old), ignoring.`,
+					);
+					return { status: 200, message: 'Mensaje antiguo ignorado.' };
+				}
+			}
+
+			console.log(botPhoneNumberId);
+
+			if (!botPhoneNumberId) {
+				console.warn(
+					'[WhatsApp Agent] Event without phone_number_id (status update?), ignoring.',
+				);
+				return { status: 200, message: 'Evento sin phoneNumberId del bot.' };
+			}
+
+			if (
+				ENV.WHATSAPP_PHONE_NUMBER_ID &&
+				botPhoneNumberId !== ENV.WHATSAPP_PHONE_NUMBER_ID
+			) {
 				console.log(
-					'[WhatsApp Agent]: Número no autorizado para pruebas. Ignorando mensaje de:',
+					'[WhatsApp Agent] phoneNumberId no coincide con el configurado, ignorando mensaje de:',
 					phoneNumber,
 				);
-				return { status: 200, message: 'Número no autorizado para pruebas.' };
+				return { status: 200, message: 'phoneNumberId no autorizado.' };
 			}
 
 			console.log('[WhatsApp Agent] Incoming message:', {
 				text,
-				phoneNumberId,
+				botPhoneNumberId,
 				phoneNumber,
 				timestamp,
 				message_id,
@@ -97,11 +126,16 @@ export class WhatsAppAgentService {
 				return { status: 200, message: 'Evento sin texto.' };
 			}
 
-			if (phoneNumber && phoneNumberId) {
-				this.bufferMessage(phoneNumber, phoneNumberId, text);
+			if (phoneNumber && botPhoneNumberId) {
+				this.bufferMessage(phoneNumber, botPhoneNumberId, text);
 			}
 		} catch (error) {
 			console.error('[WhatsApp Agent] Error processing message:', error);
+			this.logService
+				.logError({ context: 'receiveMessage', error })
+				.catch(e =>
+					console.error('[WhatsApp Agent] Failed to save error log:', e),
+				);
 			return { status: 500, message: 'Error interno del servidor.' };
 		}
 		return { status: 200, message: 'Mensaje recibido.' };
@@ -109,7 +143,7 @@ export class WhatsAppAgentService {
 
 	private bufferMessage = (
 		phoneNumber: string,
-		phoneNumberId: string,
+		botPhoneNumberId: string,
 		text: string,
 	) => {
 		const existing = this.messageBuffer.get(phoneNumber);
@@ -119,7 +153,7 @@ export class WhatsAppAgentService {
 			existing.texts.push(text);
 		} else {
 			this.messageBuffer.set(phoneNumber, {
-				phoneNumberId,
+				botPhoneNumberId,
 				texts: [text],
 				timer: setTimeout(() => {}, 0), // placeholder, se reemplaza abajo
 			});
@@ -132,15 +166,22 @@ export class WhatsAppAgentService {
 			console.log(
 				`[WhatsApp Agent] Processing buffered messages from ${phoneNumber}: "${combined}"`,
 			);
-			this.processAndReply(phoneNumber, entry.phoneNumberId, combined).catch(
-				err => console.error('[WhatsApp Agent] Error in processAndReply:', err),
+			this.processAndReply(phoneNumber, entry.botPhoneNumberId, combined).catch(
+				err => {
+					console.error('[WhatsApp Agent] Error in processAndReply:', err);
+					this.logService
+						.logError({ context: 'processAndReply', error: err, phoneNumber })
+						.catch(e =>
+							console.error('[WhatsApp Agent] Failed to save error log:', e),
+						);
+				},
 			);
 		}, BUFFER_WAIT_MS);
 	};
 
 	private processAndReply = async (
 		phoneNumber: string,
-		phoneNumberId: string,
+		botPhoneNumberId: string,
 		text: string,
 	) => {
 		const normalizedText = normalizeText(text);
@@ -155,18 +196,28 @@ export class WhatsAppAgentService {
 		this.logService
 			.logMessage({
 				phoneNumber,
-				phoneNumberId,
+				botPhoneNumberId,
 				direction: 'inbound',
 				text,
 				intent,
 				countryPrefix,
 			})
-			.catch(err =>
+			.catch(err => {
 				console.error(
 					'[WhatsApp Agent] Error saving inbound message log:',
 					err,
-				),
-			);
+				);
+				this.logService
+					.logError({
+						context: 'logMessage:inbound',
+						error: err,
+						phoneNumber,
+						rawText: text,
+					})
+					.catch(e =>
+						console.error('[WhatsApp Agent] Failed to save error log:', e),
+					);
+			});
 
 		let replyText: string;
 
@@ -176,7 +227,7 @@ export class WhatsAppAgentService {
 			this.logService
 				.logQuery({
 					phoneNumber,
-					phoneNumberId,
+					botPhoneNumberId,
 					rawText: text,
 					searchTerms: result.searchTerms,
 					productFound: result.productFound,
@@ -184,31 +235,46 @@ export class WhatsAppAgentService {
 					replyText: result.replyText,
 					countryPrefix,
 				})
-				.catch(err =>
-					console.error('[WhatsApp Agent] Error saving query log:', err),
-				);
+				.catch(err => {
+					console.error('[WhatsApp Agent] Error saving query log:', err);
+					this.logService
+						.logError({
+							context: 'logQuery',
+							error: err,
+							phoneNumber,
+							rawText: text,
+						})
+						.catch(e =>
+							console.error('[WhatsApp Agent] Failed to save error log:', e),
+						);
+				});
 		} else {
 			replyText = '¡Hola! Soy Gema 😊 ¿En qué te puedo ayudar el día de hoy?';
 		}
 
 		await new Promise(resolve => setTimeout(resolve, REPLY_DELAY_MS));
-		await this.sendReply(phoneNumber, phoneNumberId, replyText);
+		await this.sendReply(phoneNumber, botPhoneNumberId, replyText);
 
 		this.logService
 			.logMessage({
 				phoneNumber,
-				phoneNumberId,
+				botPhoneNumberId,
 				direction: 'outbound',
 				text: replyText,
 				intent: null,
 				countryPrefix,
 			})
-			.catch(err =>
+			.catch(err => {
 				console.error(
 					'[WhatsApp Agent] Error saving outbound message log:',
 					err,
-				),
-			);
+				);
+				this.logService
+					.logError({ context: 'logMessage:outbound', error: err, phoneNumber })
+					.catch(e =>
+						console.error('[WhatsApp Agent] Failed to save error log:', e),
+					);
+			});
 	};
 
 	private detectCountryFromPhone = async (
@@ -266,6 +332,11 @@ export class WhatsAppAgentService {
 			return { currency, stockIds };
 		} catch (error) {
 			console.error('[WhatsApp Agent] Error detecting country:', error);
+			this.logService
+				.logError({ context: 'detectCountryFromPhone', error, phoneNumber })
+				.catch(e =>
+					console.error('[WhatsApp Agent] Failed to save error log:', e),
+				);
 			return null;
 		}
 	};
@@ -526,6 +597,15 @@ export class WhatsAppAgentService {
 			};
 		} catch (error) {
 			console.error('[WhatsApp Agent] Error searching products:', error);
+			this.logService
+				.logError({
+					context: 'buildProductReply',
+					error,
+					rawText: normalizedText,
+				})
+				.catch(e =>
+					console.error('[WhatsApp Agent] Failed to save error log:', e),
+				);
 			return {
 				replyText:
 					'Ocurrió un error al buscar el producto. Por favor intenta de nuevo. 🙏',
@@ -599,23 +679,37 @@ export class WhatsAppAgentService {
 			return `Lo siento, no tenemos ese producto en este momento. Pero tenemos:\n\n${suggestionLines}\n\n¿Te interesa alguno? 😊`;
 		} catch (error) {
 			console.error('[WhatsApp Agent] Error building suggestions:', error);
+			this.logService
+				.logError({ context: 'buildSuggestions', error })
+				.catch(e =>
+					console.error('[WhatsApp Agent] Failed to save error log:', e),
+				);
 			return 'Lo siento, no tenemos ese producto disponible en este momento. 😊';
 		}
 	};
 
 	private sendReply = async (
 		to: string,
-		phoneNumberId: string,
+		botPhoneNumberId: string,
 		replyText: string,
 	) => {
 		if (!ENV.WHATSAPP_ACCESS_TOKEN) {
 			console.error('[WhatsApp Agent] WHATSAPP_ACCESS_TOKEN not set.');
+			this.logService
+				.logError({
+					context: 'sendReply',
+					error: new Error('WHATSAPP_ACCESS_TOKEN not set'),
+					phoneNumber: to,
+				})
+				.catch(e =>
+					console.error('[WhatsApp Agent] Failed to save error log:', e),
+				);
 			return;
 		}
 
 		try {
 			await axios.post(
-				`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+				`https://graph.facebook.com/v21.0/${botPhoneNumberId}/messages`,
 				{
 					messaging_product: 'whatsapp',
 					to,
@@ -637,17 +731,36 @@ export class WhatsAppAgentService {
 			if (error instanceof AxiosError) {
 				if (error.code === 'ECONNABORTED') {
 					console.error(`[WhatsApp Agent] Timeout sending reply to ${to}`);
+					this.logService
+						.logError({ context: 'sendReply:timeout', error, phoneNumber: to })
+						.catch(e =>
+							console.error('[WhatsApp Agent] Failed to save error log:', e),
+						);
 				} else {
 					console.error(
 						`[WhatsApp Agent] WhatsApp API error [${error.response?.status}]:`,
 						error.response?.data,
 					);
+					this.logService
+						.logError({
+							context: `sendReply:apiError:${error.response?.status ?? 'unknown'}`,
+							error,
+							phoneNumber: to,
+						})
+						.catch(e =>
+							console.error('[WhatsApp Agent] Failed to save error log:', e),
+						);
 				}
 			} else {
 				console.error(
 					'[WhatsApp Agent] Unexpected error sending reply:',
 					error,
 				);
+				this.logService
+					.logError({ context: 'sendReply:unexpected', error, phoneNumber: to })
+					.catch(e =>
+						console.error('[WhatsApp Agent] Failed to save error log:', e),
+					);
 			}
 		}
 	};
