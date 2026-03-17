@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { Op } from 'sequelize';
+import { sequelize } from '../../config/database';
 import { ENV } from '../../config/env';
 import { ProductModel } from '../product/model';
 import { ProductVariantModel } from '../product-variant/model';
@@ -8,7 +9,13 @@ import { StockModel } from '../stock/model';
 import { ShopModel } from '../shop/model';
 import { CountryModel } from '../country/model';
 import { WhatsAppLogService } from './logging/log.service';
-import { formatPrice, normalizeText, stemTerm } from './utils';
+import {
+	formatPrice,
+	normalizeText,
+	stemTerm,
+	SYNONYMS,
+	SYNONYM_REPLACEMENTS,
+} from './utils';
 
 const WHATSAPP_API_TIMEOUT_MS = 10_000;
 const BUFFER_WAIT_MS = 4_000; // espera antes de procesar mensajes acumulados
@@ -37,6 +44,7 @@ export class WhatsAppAgentService {
 	};
 
 	receiveMessage = async (body: unknown) => {
+		console.log('**************** receiving message ****************');
 		const payload = body as {
 			entry?: Array<{
 				changes?: Array<{
@@ -370,6 +378,51 @@ export class WhatsAppAgentService {
 		);
 
 		if (hasProductKeyword) return 'buscar_producto';
+
+		// Detectar consultas de producto sin palabras clave explícitas (ej: "cera de palma")
+		// Si el mensaje contiene un término clave de producto conocido (SYNONYMS keys), es una búsqueda
+		const words = normalizedText.split(' ');
+		const knownProductTerms = new Set(Object.keys(SYNONYMS));
+		const hasKnownProductTerm = words.some(
+			w => knownProductTerms.has(w) || knownProductTerms.has(stemTerm(w)),
+		);
+		if (hasKnownProductTerm) return 'buscar_producto';
+
+		// Si quedan palabras sustantivas después de filtrar saludos y respuestas cortas,
+		// tratar como búsqueda de producto (ej: "cera de palma", "aceite de coco")
+		const pureGreetingOrAckWords = new Set([
+			'hola',
+			'ola',
+			'hey',
+			'buenos',
+			'buenas',
+			'buen',
+			'dias',
+			'tardes',
+			'noches',
+			'madrugada',
+			'como',
+			'estas',
+			'esta',
+			'tal',
+			'bien',
+			'todo',
+			'gracias',
+			'ok',
+			'perfecto',
+			'genial',
+			'entendido',
+			'listo',
+			'claro',
+			'dale',
+			'excelente',
+			'super',
+		]);
+		const substantiveWords = words.filter(
+			w => w.length > 2 && !pureGreetingOrAckWords.has(w),
+		);
+		if (substantiveWords.length > 0) return 'buscar_producto';
+
 		return 'saludo';
 	};
 
@@ -429,15 +482,11 @@ export class WhatsAppAgentService {
 			// conectores y filler words
 			'favor',
 			'tambien',
-			'también',
 			'mas',
-			'más',
 			'si',
 			'no',
 			'me',
-			'tengo',
 			'puedo',
-			'quiero',
 			'porfavor',
 			'gracias',
 			'hola',
@@ -463,6 +512,12 @@ export class WhatsAppAgentService {
 			.split(' ')
 			.filter(w => w.length > 2 && !stopWords.includes(w) && !/^\d+$/.test(w));
 
+		const expandedTerms = [
+			...new Set(
+				searchTerms.flatMap(t => [t, ...(SYNONYMS[stemTerm(t)] ?? [])]),
+			),
+		];
+
 		if (searchTerms.length === 0) {
 			return {
 				replyText:
@@ -479,34 +534,83 @@ export class WhatsAppAgentService {
 					? { stockId: { [Op.in]: countryInfo.stockIds } }
 					: {};
 
-			// Búsqueda AND: todos los términos deben aparecer en el nombre
+			const variantInclude = {
+				model: ProductVariantModel,
+				as: 'productVariants',
+				attributes: ['name', 'id'],
+				include: [
+					{
+						model: StockItemModel,
+						as: 'stockItems',
+						attributes: ['quantity', 'price'],
+						where: stockItemWhere,
+						required: false,
+					},
+				],
+			};
+
+			// Búsqueda AND: todos los términos deben aparecer en el nombre.
+			// Los términos en SYNONYM_REPLACEMENTS se reemplazan por su equivalente en BD
+			// (ej: "esencia" → "fragancia") para evitar falsos positivos por substring.
+			const effectiveTermsPerSearch = searchTerms.map(t => {
+				const stem = stemTerm(t);
+				return SYNONYM_REPLACEMENTS[stem] ?? [t];
+			});
+
 			let products = await ProductModel.findAll({
 				attributes: ['id', 'name'],
 				where: {
-					[Op.and]: searchTerms.map(term => ({
-						name: { [Op.iLike]: `%${stemTerm(term)}%` },
-					})),
+					[Op.and]: effectiveTermsPerSearch.map(terms =>
+						terms.length === 1
+							? sequelize.where(
+									sequelize.fn('unaccent', sequelize.col('ProductModel.name')),
+									{ [Op.iLike]: `%${stemTerm(terms[0])}%` },
+								)
+							: {
+									[Op.or]: terms.map(term =>
+										sequelize.where(
+											sequelize.fn(
+												'unaccent',
+												sequelize.col('ProductModel.name'),
+											),
+											{ [Op.iLike]: `%${stemTerm(term)}%` },
+										),
+									),
+								},
+					),
 				},
-				include: [
-					{
-						model: ProductVariantModel,
-						as: 'productVariants',
-						attributes: ['name', 'id'],
-						include: [
-							{
-								model: StockItemModel,
-								as: 'stockItems',
-								attributes: ['quantity', 'price'],
-								where: stockItemWhere,
-								required: false,
-							},
-						],
-					},
-				],
+				include: [variantInclude],
 				limit: 20,
 			});
 
-			// Fallback OR: si no encontró nada con AND, buscar con cualquier término
+			// Termsinos de sinónimos puros (no originales)
+			const synonymOnlyTerms = expandedTerms.filter(
+				t => !searchTerms.includes(t),
+			);
+
+			// Si hay sinónimos, siempre lanzar consulta adicional OR con esos términos y fusionar
+			if (synonymOnlyTerms.length > 0) {
+				const synonymProducts = await ProductModel.findAll({
+					attributes: ['id', 'name'],
+					where: {
+						[Op.or]: synonymOnlyTerms.map(term =>
+							sequelize.where(
+								sequelize.fn('unaccent', sequelize.col('ProductModel.name')),
+								{ [Op.iLike]: `%${stemTerm(term)}%` },
+							),
+						),
+					},
+					include: [variantInclude],
+					limit: 20,
+				});
+				// Fusionar deduplicando por id
+				const existingIds = new Set(products.map(p => p.id));
+				for (const p of synonymProducts) {
+					if (!existingIds.has(p.id)) products.push(p);
+				}
+			}
+
+			// Fallback OR: si no encontró nada con AND ni con sinónimos, buscar con cualquier término original
 			if (products.length === 0 && searchTerms.length > 1) {
 				console.log(
 					'[WhatsApp Agent] AND search returned 0 results, trying OR fallback.',
@@ -514,26 +618,14 @@ export class WhatsAppAgentService {
 				products = await ProductModel.findAll({
 					attributes: ['id', 'name'],
 					where: {
-						[Op.or]: searchTerms.map(term => ({
-							name: { [Op.iLike]: `%${term}%` },
-						})),
+						[Op.or]: expandedTerms.map(term =>
+							sequelize.where(
+								sequelize.fn('unaccent', sequelize.col('ProductModel.name')),
+								{ [Op.iLike]: `%${stemTerm(term)}%` },
+							),
+						),
 					},
-					include: [
-						{
-							model: ProductVariantModel,
-							as: 'productVariants',
-							attributes: ['name', 'id'],
-							include: [
-								{
-									model: StockItemModel,
-									as: 'stockItems',
-									attributes: ['quantity', 'price'],
-									where: stockItemWhere,
-									required: false,
-								},
-							],
-						},
-					],
+					include: [variantInclude],
 					limit: 20,
 				});
 			}
@@ -542,10 +634,14 @@ export class WhatsAppAgentService {
 			type Variant = { name: string; stockItems: StockItem[] };
 
 			const currency = countryInfo?.currency ?? 'USD';
-			const lines: string[] = [];
+
+			// Scoring: relevancia textual + disponibilidad
+			type ScoredProduct = { score: number; line: string };
+			const scored: ScoredProduct[] = [];
 
 			for (const p of products) {
 				const variants = p.get('productVariants') as Variant[] | undefined;
+				const nameLower = normalizeText(p.name);
 
 				const availableVariants = (variants ?? [])
 					.map(v => {
@@ -560,13 +656,40 @@ export class WhatsAppAgentService {
 
 				if (availableVariants.length === 0) continue;
 
+				// Relevancia textual: cuántos términos coinciden y con qué precisión
+				const matchCount = searchTerms.filter(t =>
+					nameLower.includes(stemTerm(t)),
+				).length;
+				const exactMatch = nameLower === searchTerms.join(' ') ? 100 : 0;
+				const startsWithMatch = searchTerms.some(t =>
+					nameLower.startsWith(stemTerm(t)),
+				)
+					? 10
+					: 0;
+				const totalStock = availableVariants.reduce(
+					(sum, v) => sum + v.totalQty,
+					0,
+				);
+				const score =
+					exactMatch +
+					matchCount * 20 +
+					startsWithMatch +
+					availableVariants.length +
+					totalStock;
+
 				const variantLines = availableVariants.map(v => {
 					const priceText = formatPrice(v.price, currency);
 					return `  - ${v.name}\n    Disponible: ${v.totalQty} unds · Precio: ${priceText}`;
 				});
 
-				lines.push(`• *${p.name}*\n${variantLines.join('\n')}`);
+				scored.push({
+					score,
+					line: `• *${p.name}*\n${variantLines.join('\n')}`,
+				});
 			}
+
+			scored.sort((a, b) => b.score - a.score);
+			const lines = scored.map(s => s.line);
 
 			if (lines.length === 0) {
 				const suggestionReply = await this.buildSuggestions(
@@ -626,9 +749,12 @@ export class WhatsAppAgentService {
 			const matchingProducts = await ProductModel.findAll({
 				attributes: ['id', 'productCategoryId'],
 				where: {
-					[Op.or]: searchTerms.map(term => ({
-						name: { [Op.iLike]: `%${stemTerm(term)}%` },
-					})),
+					[Op.or]: searchTerms.map(term =>
+						sequelize.where(
+							sequelize.fn('unaccent', sequelize.col('ProductModel.name')),
+							{ [Op.iLike]: `%${stemTerm(term)}%` },
+						),
+					),
 				},
 				limit: 10,
 			});
