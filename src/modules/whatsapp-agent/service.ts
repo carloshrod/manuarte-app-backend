@@ -9,6 +9,7 @@ import { StockModel } from '../stock/model';
 import { ShopModel } from '../shop/model';
 import { CountryModel } from '../country/model';
 import { WhatsAppLogService } from './logging/log.service';
+import { OpenAIService } from './openai.service';
 import {
 	formatPrice,
 	normalizeText,
@@ -29,19 +30,27 @@ interface BufferEntry {
 
 interface ProductListEntry {
 	name: string;
+	description?: string;
 	variants: Array<{ name: string; totalQty: number; price: string | null }>;
 }
 
 interface UserSession {
 	lastProductList?: ProductListEntry[];
+	remainingProductList?: ProductListEntry[];
+	awaitingMoreProducts?: boolean;
 	lastCountryInfo?: { currency: string; stockIds: string[] } | null;
 	selectedProduct?: string;
+	lastActivityAt?: number;
+	lastBotMessage?: string;
 }
+
+const MAX_PRODUCT_RESULTS = 5;
 
 export class WhatsAppAgentService {
 	private messageBuffer = new Map<string, BufferEntry>();
 	private logService = new WhatsAppLogService();
 	private userSessions = new Map<string, UserSession>();
+	private openai = new OpenAIService();
 
 	verifyWebhook = (mode: string, token: string, challenge: string) => {
 		if (mode !== 'subscribe') {
@@ -211,14 +220,39 @@ export class WhatsAppAgentService {
 			: null;
 
 		const session = this.userSessions.get(phoneNumber) ?? {};
-		const selectionIndex = this.detectSelection(normalizedText);
+		const now = Date.now();
+		const RESUMPTION_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutos
 		const hasActiveList = (session.lastProductList?.length ?? 0) > 0;
+		const isFirstInteraction = !session.lastActivityAt;
+		const isResumption =
+			!isFirstInteraction &&
+			now - session.lastActivityAt! > RESUMPTION_THRESHOLD_MS &&
+			hasActiveList;
 
+		session.lastActivityAt = now;
+		this.userSessions.set(phoneNumber, session);
+
+		const selectionIndex = this.detectSelection(normalizedText);
+		const nameSelectionIndex =
+			selectionIndex === null && hasActiveList
+				? this.detectSelectionByName(
+						normalizedText,
+						session.lastProductList ?? [],
+					)
+				: null;
+		const effectiveSelectionIndex = selectionIndex ?? nameSelectionIndex;
+		const detectedIntent = this.detectIntent(normalizedText);
 		const intent =
-			selectionIndex !== null && hasActiveList
-				? 'select_product'
-				: this.detectIntent(normalizedText);
-		console.log(`[WhatsApp Agent] Intent detected: ${intent}`);
+			isResumption && detectedIntent !== 'search_product'
+				? 'resumption'
+				: effectiveSelectionIndex !== null && hasActiveList
+					? 'select_product'
+					: detectedIntent === 'show_more' && !session.awaitingMoreProducts
+						? 'search_product'
+						: detectedIntent;
+		console.log(
+			`[WhatsApp Agent] Intent detected: ${intent} (resumption: ${isResumption})`,
+		);
 
 		this.logService
 			.logMessage({
@@ -248,25 +282,53 @@ export class WhatsAppAgentService {
 
 		let replyText: string;
 
-		if (intent === 'select_product') {
-			const selected = session.lastProductList![selectionIndex! - 1];
+		if (intent === 'resumption') {
+			const lastProduct = session.lastProductList![0];
+			const currency =
+				session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+			replyText = await this.openai
+				.generateReply({
+					userMessage: text,
+					resumptionProduct: lastProduct,
+					currency,
+				})
+				.catch(() => this.buildResumptionReply(lastProduct));
+		} else if (intent === 'select_product') {
+			const selected = session.lastProductList![effectiveSelectionIndex! - 1];
 			if (selected) {
 				session.selectedProduct = selected.name;
 				this.userSessions.set(phoneNumber, session);
 				const currency =
 					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
-				replyText = this.buildSelectionReply(selected, currency);
+				replyText = await this.openai
+					.generateReply({
+						userMessage: text,
+						selectedProduct: selected,
+						currency,
+					})
+					.catch(() => this.buildSelectionReply(selected, currency));
 			} else {
 				const count = session.lastProductList!.length;
-				replyText = `Solo tengo ${count} opción${count !== 1 ? 'es' : ''} en la lista. Dime un número del 1 al ${count}. 😊`;
+				replyText = `Solo tengo ${count} opción${count !== 1 ? 'es' : ''} en la lista. Dime un número del 1 al ${count}.`;
 			}
 		} else if (intent === 'search_product') {
 			session.selectedProduct = undefined;
 			const result = await this.buildProductReply(normalizedText, countryInfo);
-			replyText = result.replyText;
 			session.lastProductList = result.products;
+			session.remainingProductList = result.remainingProducts;
+			session.awaitingMoreProducts = result.remainingProducts.length > 0;
 			session.lastCountryInfo = countryInfo;
 			this.userSessions.set(phoneNumber, session);
+			const currency = countryInfo?.currency ?? 'USD';
+			replyText = await this.openai
+				.generateReply({
+					userMessage: text,
+					products: result.products.length > 0 ? result.products : undefined,
+					hasMoreProducts: result.remainingProducts.length > 0,
+					isFirstInteraction,
+					currency,
+				})
+				.catch(() => result.replyText);
 			this.logService
 				.logQuery({
 					phoneNumber,
@@ -275,7 +337,7 @@ export class WhatsAppAgentService {
 					searchTerms: result.searchTerms,
 					productFound: result.productFound,
 					suggestionsShown: result.suggestionsShown,
-					replyText: result.replyText,
+					replyText,
 					countryPrefix,
 				})
 				.catch(err => {
@@ -291,10 +353,69 @@ export class WhatsAppAgentService {
 							console.error('[WhatsApp Agent] Failed to save error log:', e),
 						);
 				});
+		} else if (intent === 'show_more') {
+			const currency =
+				session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+			const nextBatch = (session.remainingProductList ?? []).slice(
+				0,
+				MAX_PRODUCT_RESULTS,
+			);
+			const newRemaining = (session.remainingProductList ?? []).slice(
+				MAX_PRODUCT_RESULTS,
+			);
+			session.lastProductList = nextBatch;
+			session.remainingProductList = newRemaining;
+			session.awaitingMoreProducts = newRemaining.length > 0;
+			this.userSessions.set(phoneNumber, session);
+			replyText = await this.openai
+				.generateReply({
+					userMessage: text,
+					products: nextBatch,
+					hasMoreProducts: newRemaining.length > 0,
+					isShowingMore: true,
+					currency,
+				})
+				.catch(() => 'Aquí hay más opciones, dime cuál te interesa.');
+		} else if (intent === 'objection') {
+			const currency =
+				session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+			const selectedProductEntry = session.lastProductList?.find(
+				p => p.name === session.selectedProduct,
+			);
+			replyText = await this.openai
+				.generateReply({
+					userMessage: text,
+					intent: 'objection',
+					selectedProduct: selectedProductEntry,
+					products: session.lastProductList?.length
+						? session.lastProductList
+						: undefined,
+					currency,
+				})
+				.catch(() => 'Sin problema, aquí estaré cuando lo necesites. 🙌');
+		} else if (intent === 'affirmation') {
+			const currency =
+				session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+			replyText = await this.openai
+				.generateReply({
+					userMessage: text,
+					intent: 'affirmation',
+					lastBotMessage: session.lastBotMessage,
+					products: session.lastProductList?.length
+						? session.lastProductList
+						: undefined,
+					currency,
+				})
+				.catch(() => 'Claro, ¿en qué te puedo ayudar?');
 		} else {
-			replyText =
-				'Hola 👋 Soy Gema, asesora de Manuarte. ¿En qué te puedo ayudar?';
+			replyText = await this.openai
+				.generateReply({ userMessage: text, isFirstInteraction })
+				.catch(() => 'Hola, soy Gema 👋 ¿En qué te puedo ayudar?');
 		}
+
+		// Guardar último mensaje del bot en la sesión para contexto en próximas respuestas
+		session.lastBotMessage = replyText;
+		this.userSessions.set(phoneNumber, session);
 
 		await new Promise(resolve => setTimeout(resolve, REPLY_DELAY_MS));
 		await this.sendReply(phoneNumber, botPhoneNumberId, replyText);
@@ -386,6 +507,78 @@ export class WhatsAppAgentService {
 	};
 
 	private detectIntent = (normalizedText: string): string => {
+		const objectionPhrases = [
+			'muy caro',
+			'esta caro',
+			'es caro',
+			'caro',
+			'no me alcanza',
+			'no tengo',
+			'sin dinero',
+			'sin plata',
+			'no tengo plata',
+			'no tengo dinero',
+			'lo pienso',
+			'lo voy a pensar',
+			'voy a pensar',
+			'pensarlo',
+			'despues',
+			'luego',
+			'mas adelante',
+			'otro dia',
+			'ahorita no',
+			'por ahora no',
+			'no por ahora',
+			'lo consulto',
+			'te aviso',
+			'no me interesa',
+			'ya no',
+			'dejalo',
+			'dejame pensar',
+		];
+
+		const hasObjection = objectionPhrases.some(phrase =>
+			normalizedText.includes(phrase),
+		);
+
+		if (hasObjection) return 'objection';
+
+		// Detect "show more products" intent (before affirmation check)
+		const showMorePhrases = [
+			'ver mas',
+			'mas opciones',
+			'quiero ver mas',
+			'muestrame mas',
+			'muestra mas',
+			'hay mas',
+			'tienes mas',
+			'mostrar mas',
+			'ver otras',
+			'ver otros',
+			'otras opciones',
+			'otras alternativas',
+			'mas productos',
+			'ver mas opciones',
+			'quiero ver otras',
+			'quiero mas',
+			'ver siguiente',
+			'ver siguientes',
+		];
+		// Short single-word exact matches that only mean "show more" in context
+		const showMoreExact = /^(mas|otros|otras|siguiente|siguientes)[,!.\s?]*$/i;
+		if (
+			showMorePhrases.some(p => normalizedText.includes(p)) ||
+			showMoreExact.test(normalizedText.trim())
+		)
+			return 'show_more';
+
+		// Detect affirmation-only messages (e.g. "Vale", "Sí", "Ok", "Dale")
+		const isAffirmationOnly =
+			/^(si|vale|ok|dale|claro|listo|perfecto|bueno|de acuerdo|va|venga|obvio)[,!.\s?]*$/i.test(
+				normalizedText.trim(),
+			);
+		if (isAffirmationOnly) return 'affirmation';
+
 		const productKeywords = [
 			'producto',
 			'precio',
@@ -451,6 +644,10 @@ export class WhatsAppAgentService {
 			'dale',
 			'excelente',
 			'super',
+			'vale',
+			'si',
+			'bueno',
+			'venga',
 		]);
 		const substantiveWords = words.filter(
 			w => w.length > 2 && !pureGreetingOrAckWords.has(w),
@@ -458,6 +655,69 @@ export class WhatsAppAgentService {
 		if (substantiveWords.length > 0) return 'search_product';
 
 		return 'greeting';
+	};
+
+	private detectSelectionByName = (
+		normalizedText: string,
+		productList: ProductListEntry[],
+	): number | null => {
+		const stopWords = new Set([
+			'el',
+			'la',
+			'los',
+			'las',
+			'un',
+			'una',
+			'de',
+			'del',
+			'al',
+			'en',
+			'con',
+			'por',
+			'para',
+			'me',
+			'que',
+			'se',
+			'mi',
+			'tu',
+			'su',
+			'ese',
+			'esa',
+			'eso',
+			'esta',
+			'este',
+			'y',
+			'o',
+			'a',
+		]);
+
+		const msgWords = normalizedText
+			.split(/\s+/)
+			.filter(w => w.length > 2 && !stopWords.has(w));
+
+		if (msgWords.length === 0) return null;
+
+		let bestIndex: number | null = null;
+		let bestScore = 0;
+
+		productList.forEach((product, i) => {
+			const productNorm = normalizeText(product.name);
+			const variantNorm = product.variants
+				.map(v => normalizeText(v.name ?? ''))
+				.join(' ');
+			const combined = `${productNorm} ${variantNorm}`;
+			const productWords = combined
+				.split(/\s+/)
+				.filter(w => w.length > 2 && !stopWords.has(w));
+
+			const score = msgWords.filter(w => productWords.includes(w)).length;
+			if (score > bestScore) {
+				bestScore = score;
+				bestIndex = i + 1;
+			}
+		});
+
+		return bestScore >= 1 ? bestIndex : null;
 	};
 
 	private detectSelection = (normalizedText: string): number | null => {
@@ -510,6 +770,16 @@ export class WhatsAppAgentService {
 		);
 	};
 
+	private buildResumptionReply = (product: ProductListEntry): string => {
+		const variantLines = product.variants.map(v => `• ${v.name}`).join('\n');
+		return (
+			`Hola 😊 retomamos donde lo dejamos.\n\nEstábamos viendo:\n\n*${product.name}*` +
+			(product.description ? `\n_${product.description}_` : '') +
+			(product.variants.length > 1 ? `\n${variantLines}` : '') +
+			`\n\n¿Quieres continuar con ese o buscas algo diferente?`
+		);
+	};
+
 	private buildProductReply = async (
 		normalizedText: string,
 		countryInfo: { currency: string; stockIds: string[] } | null,
@@ -519,6 +789,7 @@ export class WhatsAppAgentService {
 		productFound: boolean;
 		suggestionsShown: boolean;
 		products: ProductListEntry[];
+		remainingProducts: ProductListEntry[];
 	}> => {
 		const stopWords = [
 			// intención
@@ -610,6 +881,7 @@ export class WhatsAppAgentService {
 				productFound: false,
 				suggestionsShown: false,
 				products: [],
+				remainingProducts: [],
 			};
 		}
 
@@ -643,26 +915,23 @@ export class WhatsAppAgentService {
 			});
 
 			let products = await ProductModel.findAll({
-				attributes: ['id', 'name'],
+				attributes: ['id', 'name', 'description'],
 				where: {
-					[Op.and]: effectiveTermsPerSearch.map(terms =>
-						terms.length === 1
-							? sequelize.where(
-									sequelize.fn('unaccent', sequelize.col('ProductModel.name')),
-									{ [Op.iLike]: `%${stemTerm(terms[0])}%` },
-								)
-							: {
-									[Op.or]: terms.map(term =>
-										sequelize.where(
-											sequelize.fn(
-												'unaccent',
-												sequelize.col('ProductModel.name'),
-											),
-											{ [Op.iLike]: `%${stemTerm(term)}%` },
-										),
-									),
-								},
-					),
+					[Op.and]: effectiveTermsPerSearch.map(terms => ({
+						[Op.or]: terms.flatMap(term => [
+							sequelize.where(
+								sequelize.fn('unaccent', sequelize.col('ProductModel.name')),
+								{ [Op.iLike]: `%${stemTerm(term)}%` },
+							),
+							sequelize.where(
+								sequelize.fn(
+									'unaccent',
+									sequelize.col('ProductModel.description'),
+								),
+								{ [Op.iLike]: `%${stemTerm(term)}%` },
+							),
+						]),
+					})),
 				},
 				include: [variantInclude],
 				limit: 20,
@@ -676,14 +945,21 @@ export class WhatsAppAgentService {
 			// Si hay sinónimos, siempre lanzar consulta adicional OR con esos términos y fusionar
 			if (synonymOnlyTerms.length > 0) {
 				const synonymProducts = await ProductModel.findAll({
-					attributes: ['id', 'name'],
+					attributes: ['id', 'name', 'description'],
 					where: {
-						[Op.or]: synonymOnlyTerms.map(term =>
+						[Op.or]: synonymOnlyTerms.flatMap(term => [
 							sequelize.where(
 								sequelize.fn('unaccent', sequelize.col('ProductModel.name')),
 								{ [Op.iLike]: `%${stemTerm(term)}%` },
 							),
-						),
+							sequelize.where(
+								sequelize.fn(
+									'unaccent',
+									sequelize.col('ProductModel.description'),
+								),
+								{ [Op.iLike]: `%${stemTerm(term)}%` },
+							),
+						]),
 					},
 					include: [variantInclude],
 					limit: 20,
@@ -701,14 +977,21 @@ export class WhatsAppAgentService {
 					'[WhatsApp Agent] AND search returned 0 results, trying OR fallback.',
 				);
 				products = await ProductModel.findAll({
-					attributes: ['id', 'name'],
+					attributes: ['id', 'name', 'description'],
 					where: {
-						[Op.or]: expandedTerms.map(term =>
+						[Op.or]: expandedTerms.flatMap(term => [
 							sequelize.where(
 								sequelize.fn('unaccent', sequelize.col('ProductModel.name')),
 								{ [Op.iLike]: `%${stemTerm(term)}%` },
 							),
-						),
+							sequelize.where(
+								sequelize.fn(
+									'unaccent',
+									sequelize.col('ProductModel.description'),
+								),
+								{ [Op.iLike]: `%${stemTerm(term)}%` },
+							),
+						]),
 					},
 					include: [variantInclude],
 					limit: 20,
@@ -724,6 +1007,7 @@ export class WhatsAppAgentService {
 			type ScoredProduct = {
 				score: number;
 				name: string;
+				description?: string;
 				variants: Array<{
 					name: string;
 					totalQty: number;
@@ -735,6 +1019,7 @@ export class WhatsAppAgentService {
 			for (const p of products) {
 				const variants = p.get('productVariants') as Variant[] | undefined;
 				const nameLower = normalizeText(p.name);
+				const description = (p.get('description') as string | undefined) ?? '';
 
 				const availableVariants = (variants ?? [])
 					.map(v => {
@@ -753,6 +1038,9 @@ export class WhatsAppAgentService {
 				const matchCount = searchTerms.filter(t =>
 					nameLower.includes(stemTerm(t)),
 				).length;
+				const descMatchCount = searchTerms.filter(t =>
+					normalizeText(description).includes(stemTerm(t)),
+				).length;
 				const exactMatch = nameLower === searchTerms.join(' ') ? 100 : 0;
 				const startsWithMatch = searchTerms.some(t =>
 					nameLower.startsWith(stemTerm(t)),
@@ -766,11 +1054,17 @@ export class WhatsAppAgentService {
 				const score =
 					exactMatch +
 					matchCount * 20 +
+					descMatchCount * 5 +
 					startsWithMatch +
 					availableVariants.length +
 					totalStock;
 
-				scored.push({ score, name: p.name, variants: availableVariants });
+				scored.push({
+					score,
+					name: p.name,
+					description: description || undefined,
+					variants: availableVariants,
+				});
 			}
 
 			scored.sort((a, b) => b.score - a.score);
@@ -786,11 +1080,12 @@ export class WhatsAppAgentService {
 					productFound: false,
 					suggestionsShown: true,
 					products: [],
+					remainingProducts: [],
 				};
 			}
 
-			const MAX_RESULTS = 5;
-			const displayedScored = scored.slice(0, MAX_RESULTS);
+			const displayedScored = scored.slice(0, MAX_PRODUCT_RESULTS);
+			const remainingScored = scored.slice(MAX_PRODUCT_RESULTS);
 			const lines = displayedScored.map((s, i) => {
 				if (s.variants.length === 1) {
 					const v = s.variants[0];
@@ -806,21 +1101,23 @@ export class WhatsAppAgentService {
 			});
 			const productList: ProductListEntry[] = displayedScored.map(s => ({
 				name: s.name,
+				description: s.description,
+				variants: s.variants,
+			}));
+			const remainingProducts: ProductListEntry[] = remainingScored.map(s => ({
+				name: s.name,
+				description: s.description,
 				variants: s.variants,
 			}));
 
-			const hasMore = scored.length > MAX_RESULTS;
-			const footer = hasMore
-				? `\n\n_Hay ${scored.length} opciones en total. Puedes afinar la búsqueda siendo más específico._`
-				: '';
-
-			const replyText = `Claro 😊 te muestro lo que tenemos:\n\n${lines.join('\n\n')}${footer}\n\n¿Cuál te interesa?`;
+			const replyText = `Claro 😊 te muestro lo que tenemos:\n\n${lines.join('\n\n')}`;
 			return {
 				replyText,
 				searchTerms,
 				productFound: true,
 				suggestionsShown: false,
 				products: productList,
+				remainingProducts,
 			};
 		} catch (error) {
 			console.error('[WhatsApp Agent] Error searching products:', error);
@@ -840,6 +1137,7 @@ export class WhatsAppAgentService {
 				productFound: false,
 				suggestionsShown: false,
 				products: [],
+				remainingProducts: [],
 			};
 		}
 	};
