@@ -2,6 +2,7 @@ import axios, { AxiosError } from 'axios';
 import { Op } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { ENV } from '../../config/env';
+import { redis } from '../../config/redis';
 import { ProductModel } from '../product/model';
 import { ProductVariantModel } from '../product-variant/model';
 import { StockItemModel } from '../stock-item/model';
@@ -19,8 +20,9 @@ import {
 } from './utils';
 
 const WHATSAPP_API_TIMEOUT_MS = 10_000;
-const BUFFER_WAIT_MS = 4_000; // espera antes de procesar mensajes acumulados
+const BUFFER_WAIT_MS = 5_000; // espera antes de procesar mensajes acumulados
 const REPLY_DELAY_MS = 2_500; // delay para simular tiempo de escritura humano
+const SESSION_TTL_SECONDS = 60 * 60 * 2; // 2 horas
 
 interface BufferEntry {
 	botPhoneNumberId: string;
@@ -49,7 +51,6 @@ const MAX_PRODUCT_RESULTS = 5;
 export class WhatsAppAgentService {
 	private messageBuffer = new Map<string, BufferEntry>();
 	private logService = new WhatsAppLogService();
-	private userSessions = new Map<string, UserSession>();
 	private openai = new OpenAIService();
 
 	verifyWebhook = (mode: string, token: string, challenge: string) => {
@@ -219,7 +220,8 @@ export class WhatsAppAgentService {
 			? `+${phoneNumber.startsWith('593') ? '593' : '57'}`
 			: null;
 
-		const session = this.userSessions.get(phoneNumber) ?? {};
+		const raw = await redis.get(`session:${phoneNumber}`);
+		const session: UserSession = raw ? JSON.parse(raw) : {};
 		const now = Date.now();
 		const RESUMPTION_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutos
 		const hasActiveList = (session.lastProductList?.length ?? 0) > 0;
@@ -230,7 +232,12 @@ export class WhatsAppAgentService {
 			hasActiveList;
 
 		session.lastActivityAt = now;
-		this.userSessions.set(phoneNumber, session);
+		await redis.set(
+			`session:${phoneNumber}`,
+			JSON.stringify(session),
+			'EX',
+			SESSION_TTL_SECONDS,
+		);
 
 		const selectionIndex = this.detectSelection(normalizedText);
 		const nameSelectionIndex =
@@ -297,7 +304,12 @@ export class WhatsAppAgentService {
 			const selected = session.lastProductList![effectiveSelectionIndex! - 1];
 			if (selected) {
 				session.selectedProduct = selected.name;
-				this.userSessions.set(phoneNumber, session);
+				await redis.set(
+					`session:${phoneNumber}`,
+					JSON.stringify(session),
+					'EX',
+					SESSION_TTL_SECONDS,
+				);
 				const currency =
 					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
 				replyText = await this.openai
@@ -318,7 +330,12 @@ export class WhatsAppAgentService {
 			session.remainingProductList = result.remainingProducts;
 			session.awaitingMoreProducts = result.remainingProducts.length > 0;
 			session.lastCountryInfo = countryInfo;
-			this.userSessions.set(phoneNumber, session);
+			await redis.set(
+				`session:${phoneNumber}`,
+				JSON.stringify(session),
+				'EX',
+				SESSION_TTL_SECONDS,
+			);
 			const currency = countryInfo?.currency ?? 'USD';
 			replyText = await this.openai
 				.generateReply({
@@ -366,7 +383,12 @@ export class WhatsAppAgentService {
 			session.lastProductList = nextBatch;
 			session.remainingProductList = newRemaining;
 			session.awaitingMoreProducts = newRemaining.length > 0;
-			this.userSessions.set(phoneNumber, session);
+			await redis.set(
+				`session:${phoneNumber}`,
+				JSON.stringify(session),
+				'EX',
+				SESSION_TTL_SECONDS,
+			);
 			replyText = await this.openai
 				.generateReply({
 					userMessage: text,
@@ -415,7 +437,12 @@ export class WhatsAppAgentService {
 
 		// Guardar último mensaje del bot en la sesión para contexto en próximas respuestas
 		session.lastBotMessage = replyText;
-		this.userSessions.set(phoneNumber, session);
+		await redis.set(
+			`session:${phoneNumber}`,
+			JSON.stringify(session),
+			'EX',
+			SESSION_TTL_SECONDS,
+		);
 
 		await new Promise(resolve => setTimeout(resolve, REPLY_DELAY_MS));
 		await this.sendReply(phoneNumber, botPhoneNumberId, replyText);
@@ -726,6 +753,12 @@ export class WhatsAppAgentService {
 			/^(?:(?:el|la)\s+)?(?:numero\s+)?(\d+)$/,
 		);
 		if (numMatch) return parseInt(numMatch[1], 10);
+
+		// "me interesa la 2", "quiero el 3", "dame la 2 por favor"
+		const contextNumMatch = normalizedText.match(
+			/(?:el|la)\s+(?:numero\s+)?(\d+)(?:\s|$)/,
+		);
+		if (contextNumMatch) return parseInt(contextNumMatch[1], 10);
 
 		// Ordinales en español
 		const ordinals: Record<string, number> = {
