@@ -53,10 +53,12 @@ COMPORTAMIENTO:
 
 CUANDO HAY PRODUCTOS:
 -Preséntalos en lista numerada clara:
-	1. Nombre – precio - cantidad disponible
+	1. Nombre – precio (X disponibles)
 -No uses asteriscos ni markdown para resaltar.
--No agregues información que no se haya proporcionado.
--Después de mostrarlos, haz una sola pregunta directa para que el cliente elija un producto, por ejemplo: "¿Cuál te interesa?" o "¿Cuál deseas llevar?".
+-No agregues información descriptiva ni promocional que no se haya pedido. Nombre, precio y cantidad: nada más.
+-Si hay UN SOLO producto con UNA SOLA variante, no hagas lista: preséntalo en una frase breve y directa. Ejemplo: "Tenemos [nombre] a [precio] ([X] disponibles)." No añadas descripciones, ventajas ni texto de relleno. Usa preguntas en singular: "¿Te interesa?" o "¿Quieres llevarlo?".
+-Si hay UN SOLO producto pero con VARIAS variantes, SIEMPRE muéstralas TODAS en lista. No omitas ninguna variante. Ejemplo: "Tenemos:\n1. Nombre – precio (X disponibles)" con todas sus variantes listadas. Pregunta al final: "¿Cuál prefieres?" o "¿Con cuál te quedas?".
+-Si hay VARIOS productos, haz una sola pregunta directa para que el cliente elija, por ejemplo: "¿Cuál te interesa?" o "¿Cuál deseas llevar?".
 -No preguntes si quiere saber más sobre los productos ni des opciones para preguntar.
 -Guía siempre hacia la elección y cotización.
 -Usa preguntas directas y simples.
@@ -73,21 +75,23 @@ CUANDO EL CLIENTE ELIGE UN PRODUCTO:
 - Menciona el nombre del producto dentro de la explicación de forma natural.
 - No lo presentes como título ni como selección confirmada.
 - Ejemplo correcto: "La cera de soja es ideal..." en lugar de "Has elegido la cera de soja".
-- Usa la descripción del producto para dar contexto natural sobre él.
-- Menciona el precio y disponibilidad de forma fluida dentro del texto, no en forma de lista.
-- Invita a continuar (cotización, cantidad, etc.).
+- CRÍTICO: Usa ÚNICAMENTE los datos de nombre, variante, precio y disponibilidad que se te proporcionen. NUNCA inventes ni uses datos de tu entrenamiento (presentaciones, gramajes, precios, cantidades). Si el dato no está en el contexto, no lo menciones.
+- Invita a continuar, pero NUNCA ofrezcas hacer una cotización a menos que el cliente lo pida explícitamente.
 - Haz solo UNA pregunta al final.
 - La pregunta debe ser corta, clara y directa.
 - Evita preguntas dobles o largas.
-- Ejemplo de tono correcto: "Perfecto 👌
 - No hagas preguntas abiertas después de mostrar un producto.
 - No preguntes si quiere más información.
 - Asume intención de compra y guía hacia cantidad o siguiente paso.
 
-Esta cera de palma en presentación de 1 kilo es muy buena para velas en vaso y deja un acabado bastante limpio.
-Tenemos 23 unidades disponibles a $22.500.
+CUANDO EL CLIENTE INDICA UNA CANTIDAD:
+- Confirma la cantidad de forma natural incluyendo: cantidad, nombre del producto, variante, precio unitario y total.
+- Varía la frase inicial cada vez. Ejemplos: "Listo, serían...", "Perfecto, serían...", "Dale, van...", "Vale, serían...", "Claro, serían...". No repitas siempre la misma.
+- Si no tienes el precio, confirma solo la cantidad y el nombre.
+- Después de la confirmación, agrega SOLO UNA pregunta corta como "¿Necesitas algo más?" o "¿Quieres continuar con el pedido?"
+- PROHIBIDO usar frases como: "Puedo reservarte", "hay cantidades suficientes", "sin problema", "Es una excelente opción", "con gusto".
+- NO añadas comentarios sobre el producto ni frases de cortesía adicionales.
 
-¿Cuántas necesitas?"
 - No siempre empieces con "La [producto]..."
 - A veces puedes usar:
   - "Es una..."
@@ -135,17 +139,63 @@ export interface OpenAIProduct {
 	variants: OpenAIProductVariant[];
 }
 
+export interface OpenAICartItem {
+	productName: string;
+	variantName?: string;
+	quantity: number;
+	unitPrice: string | null;
+	currency: string;
+}
+
 export interface OpenAIContext {
 	userMessage: string;
 	products?: OpenAIProduct[];
 	hasMoreProducts?: boolean;
 	isShowingMore?: boolean;
 	selectedProduct?: OpenAIProduct;
+	selectedProducts?: OpenAIProduct[];
 	resumptionProduct?: OpenAIProduct;
 	currency?: string;
 	isFirstInteraction?: boolean;
 	intent?: string;
 	lastBotMessage?: string;
+	quantity?: number;
+	cart?: OpenAICartItem[];
+	outOfStockProductName?: string;
+	/** Producto removido del carrito (para edit_cart) */
+	removedProduct?: string;
+	/** Producto agregado/actualizado en carrito (para edit_cart) */
+	addedProduct?: OpenAIProduct;
+	addedQuantity?: number;
+	/** Cantidad que el cliente pidió originalmente (antes de limitar al stock) */
+	requestedQuantity?: number;
+}
+
+export type AIDetectedIntent =
+	| 'select_product'
+	| 'search_product'
+	| 'show_more'
+	| 'show_cart'
+	| 'edit_cart'
+	| 'greeting'
+	| 'objection'
+	| 'general_question'
+	| 'unknown';
+
+export interface AIIntentResult {
+	intent: AIDetectedIntent;
+	searchQuery?: string;
+	selectionIndexes?: number[];
+	variantHint?: string;
+	quantity?: number;
+	/** Cantidades por producto cuando se seleccionan varios; paralelo a selectionIndexes */
+	quantities?: number[];
+	/** Fragmento del nombre del producto a ELIMINAR del carrito */
+	removeProductHint?: string;
+	/** Fragmento del nombre del producto a AGREGAR/ACTUALIZAR en cantidad */
+	addProductHint?: string;
+	/** Para actualizaciones de DOS O MÁS productos simultáneamente en el carrito */
+	cartEdits?: Array<{ productHint: string; quantity: number }>;
 }
 
 export class OpenAIService {
@@ -169,6 +219,165 @@ export class OpenAIService {
 		});
 
 		return response.choices[0]?.message?.content?.trim() ?? '';
+	};
+
+	detectIntentWithAI = async (
+		text: string,
+		hasActiveProductList: boolean,
+		activeProducts?: Array<{ index: number; label: string }>,
+		awaitingMoreProducts?: boolean,
+		currentSelectedProduct?: string,
+		cart?: OpenAICartItem[],
+	): Promise<AIIntentResult> => {
+		const selectedProductNote = currentSelectedProduct
+			? `\nNota: el cliente tiene actualmente seleccionado el producto "${currentSelectedProduct}". Si el mensaje menciona EXPLÍCITAMENTE el nombre de otro producto de la lista, clasifícalo como "select_product". Si el mensaje es SOLO un número sin más contexto, probablemente es una cantidad para el producto ya seleccionado (clasifícalo como "unknown" con quantity).\n`
+			: '';
+		const productListSection =
+			activeProducts && activeProducts.length > 0
+				? `\nEl cliente tiene esta lista de productos activa:\n${activeProducts.map(p => `${p.index}. ${p.label}`).join('\n')}\n`
+				: hasActiveProductList
+					? '\nNota: el cliente tiene una lista de productos activa en la conversación.'
+					: '';
+
+		const showMoreNote = awaitingMoreProducts
+			? '\nNota: hay más productos disponibles que no se le han mostrado al cliente todavía.\n'
+			: '';
+
+		const cartNote =
+			cart && cart.length > 0
+				? `\nEl cliente tiene estos productos en su pedido actual:\n${cart
+						.map(item => {
+							const name = item.variantName
+								? `${item.productName} ${item.variantName}`
+								: item.productName;
+							return `- ${item.quantity}x ${name}`;
+						})
+						.join(
+							'\n',
+						)}\nSi el mensaje menciona cambiar cantidad, eliminar o modificar alguno de esos productos → clasifica como "edit_cart". IMPORTANTE: si el mensaje contiene verbos como "agrega", "añade", "suma", "quita", "saca" + nombre de un producto del pedido → es SIEMPRE "edit_cart", aunque haya una lista de productos activa con números.\n`
+				: '';
+
+		const selectionInstructions =
+			activeProducts && activeProducts.length > 0
+				? `  - "select_product": el cliente elige uno o más productos de la lista activa (por número, nombre completo o fragmento del nombre). IMPORTANTE: si el cliente menciona una palabra o fragmento que coincide con cualquier parte del nombre de un producto de la lista (ej: "tr plus" coincide con "BASE DE GLICERINA EASY SOAP TR PLUS-TRANSPARENTE KILO"), clasifícalo como "select_product", NO como "search_product".\n`
+				: '';
+
+		const showMoreInstruction =
+			hasActiveProductList || (activeProducts && activeProducts.length > 0)
+				? `  - "show_more": el cliente pregunta si hay más opciones, más productos, más variantes, o pide ver más (incluyendo frases negativas como "¿no tienen más?", "¿no hay más?", "¿solo eso tienen?", "¿solo tienes esa?", "¿nada más?", "¿no tienes otra?"). IMPORTANTE: si el cliente dice "tienes más [nombre de producto]" (ej: "tienes más mechas"), clasifícalo como "search_product", no "show_more".\n`
+				: '';
+
+		const systemPrompt = `Eres un clasificador de intents para un chatbot de ventas.${selectedProductNote}${productListSection}${showMoreNote}${cartNote}
+Analiza el mensaje del cliente y devuelve un JSON con:
+- "intent": uno de estos valores exactos:
+${selectionInstructions}${showMoreInstruction}  - "show_cart": el cliente pregunta por el resumen de su pedido, lo que lleva, el total, cuánto es todo, cuánto sería por todo, cuánto suma lo que lleva, o cualquier variante de solicitar el detalle o precio total de su pedido actual
+  - "search_product": el cliente busca un producto que NO está en la lista actual, o pregunta por precio/disponibilidad de algo nuevo
+  - "edit_cart": el cliente quiere MODIFICAR su pedido actual: eliminar un producto, cambiar cantidad de uno ya agregado, o reemplazar uno por otro
+  - "objection": el cliente dice que está caro, que lo va a pensar, que después, que no tiene dinero, que no le interesa
+  - "greeting": saludo puro sin consulta de producto ni pregunta específica
+  - "general_question": pregunta sobre envíos, métodos de pago, tiempo de entrega, políticas, u otras preguntas que no son sobre un producto específico en catálogo
+  - "unknown": no se puede clasificar con certeza
+${activeProducts && activeProducts.length > 0 ? '- "selectionIndexes": array de números 1-based SOLO si intent es "select_product". Puede ser uno o varios. Ej: [1] o [1,3]\n- "variantHint": SOLO si intent es "select_product" y el producto elegido tiene múltiples variantes y el cliente menciona una variante específica. Extrae el fragmento del nombre de la variante mencionada. Ej: "quiero la apf" → variantHint: "apf"\n- "quantities": array de números SOLO si intent es "select_product" y el cliente menciona una cantidad distinta para cada producto. Misma longitud y orden que selectionIndexes. Ej: "3 de chicle y 2 de floral" con selectionIndexes:[2,3] → quantities:[3,2]. Si todos los productos tienen la misma cantidad o no hay cantidad, omite este campo y usa "quantity".\n' : ''}- "quantity": número entero SOLO si el cliente menciona UNA sola cantidad que aplica a todos los productos seleccionados, o a cualquier otro intent. Ej: "dame 5", "quiero 3 kilos" → quantity: 5 o 3. No usar junto a "quantities".
+- "removeProductHint": SOLO si intent es "edit_cart" Y el cliente pide EXPLÍCITAMENTE quitar/eliminar un producto (frases como "ya no quiero", "quita", "saca", "elimina", "sin"). NO usar si el cliente solo cambia la cantidad. Ej: "ya no quiero la mecha 8D" → removeProductHint: "mecha 8D". "que sean mejor 2 kilos de ácido esteárico" → NO removeProductHint (solo addProductHint con la nueva cantidad).
+- "addProductHint": SOLO si intent es "edit_cart" Y el cliente modifica UN SOLO producto. Usa el fragmento MÁS ESPECÍFICO: las palabras que diferencian ese producto de otros en el pedido. Si hay varios productos del mismo tipo, DEBES incluir las palabras distintivas. Ej: "agrega 2 fragancias más de brisa marina" → addProductHint: "brisa marina" (NO "fragancia"). "agrega 1 kilo más de cera de coco" → addProductHint: "cera de coco"
+- "cartEdits": SOLO si intent es "edit_cart" Y el cliente modifica DOS O MÁS productos del carrito en un mismo mensaje. Array de objetos {productHint, quantity}. No usar junto con addProductHint. Ej: "deben ser 4 de jazmin y 4 de brisa marina" → cartEdits: [{"productHint":"jazmin","quantity":4},{"productHint":"brisa marina","quantity":4}]
+- "searchQuery": SOLO si intent es "search_product" Y el producto mencionado NO aparece en la lista activa, extrae ÚNICAMENTE el tipo o categoría del producto. Elimina completamente frases de uso como "para jabones", "para velas", "para hacer X", "para mis X", "para uso en X". Ejemplos: "fragancias para jabones" → "fragancias", "colorante para velas" → "colorante", "cera para velas artesanales" → "cera".
+
+Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && activeProducts.length > 0 ? '\nEjemplos:\n{"intent":"select_product","selectionIndexes":[2]}\n{"intent":"select_product","selectionIndexes":[1,3]}\n{"intent":"select_product","selectionIndexes":[1],"quantity":5}\n{"intent":"select_product","selectionIndexes":[2],"variantHint":"apf","quantity":2}\n{"intent":"select_product","selectionIndexes":[1]}  // cliente dice "la tr plus" y el producto 1 contiene "TR PLUS" en su nombre\n{"intent":"select_product","selectionIndexes":[2,3],"quantities":[3,2]}  // cliente dice "3 de chicle y 2 de floral"\n{"intent":"edit_cart","removeProductHint":"mecha 8D"}\n{"intent":"edit_cart","addProductHint":"cera de coco","quantity":1}\n{"intent":"edit_cart","cartEdits":[{"productHint":"jazmin","quantity":4},{"productHint":"brisa marina","quantity":4}]}\n{"intent":"unknown","quantity":3}' : '\nEjemplo: {"intent":"search_product","searchQuery":"cera de soja"}'}${awaitingMoreProducts ? '\n{"intent":"show_more"}' : ''}`;
+		const response = await this.client.chat.completions.create({
+			model: 'gpt-4o-mini',
+			messages: [
+				{ role: 'system', content: systemPrompt },
+				{ role: 'user', content: text },
+			],
+			max_tokens: 150,
+			temperature: 0,
+			response_format: { type: 'json_object' },
+		});
+
+		const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
+		const parsed = JSON.parse(raw) as {
+			intent?: string;
+			searchQuery?: string;
+			selectionIndexes?: unknown;
+			variantHint?: unknown;
+			quantity?: unknown;
+			quantities?: unknown;
+			removeProductHint?: unknown;
+			addProductHint?: unknown;
+			cartEdits?: unknown;
+		};
+
+		const validIntents: AIDetectedIntent[] = [
+			'select_product',
+			'search_product',
+			'show_more',
+			'show_cart',
+			'edit_cart',
+			'greeting',
+			'objection',
+			'general_question',
+			'unknown',
+		];
+		const intent: AIDetectedIntent = validIntents.includes(
+			parsed.intent as AIDetectedIntent,
+		)
+			? (parsed.intent as AIDetectedIntent)
+			: 'unknown';
+
+		const selectionIndexes: number[] | undefined =
+			intent === 'select_product' && Array.isArray(parsed.selectionIndexes)
+				? (parsed.selectionIndexes as unknown[])
+						.map(Number)
+						.filter(n => Number.isInteger(n) && n > 0)
+				: undefined;
+
+		const quantity: number | undefined =
+			typeof parsed.quantity === 'number' && parsed.quantity > 0
+				? parsed.quantity
+				: undefined;
+
+		const quantities: number[] | undefined =
+			intent === 'select_product' && Array.isArray(parsed.quantities)
+				? (parsed.quantities as unknown[])
+						.map(Number)
+						.filter(n => Number.isInteger(n) && n > 0)
+				: undefined;
+
+		return {
+			intent,
+			searchQuery:
+				intent === 'search_product' && parsed.searchQuery
+					? String(parsed.searchQuery)
+					: undefined,
+			selectionIndexes,
+			variantHint:
+				intent === 'select_product' && parsed.variantHint
+					? String(parsed.variantHint)
+					: undefined,
+			quantity,
+			quantities,
+			removeProductHint:
+				intent === 'edit_cart' && parsed.removeProductHint
+					? String(parsed.removeProductHint)
+					: undefined,
+			addProductHint:
+				intent === 'edit_cart' && parsed.addProductHint
+					? String(parsed.addProductHint)
+					: undefined,
+			cartEdits:
+				intent === 'edit_cart' && Array.isArray(parsed.cartEdits)
+					? (parsed.cartEdits as unknown[]).filter(
+							(e): e is { productHint: string; quantity: number } =>
+								typeof e === 'object' &&
+								e !== null &&
+								typeof (e as Record<string, unknown>).productHint ===
+									'string' &&
+								typeof (e as Record<string, unknown>).quantity === 'number' &&
+								(e as { quantity: number }).quantity > 0,
+						)
+					: undefined,
+		};
 	};
 
 	private buildUserContent = (ctx: OpenAIContext): string => {
@@ -268,22 +477,101 @@ export class OpenAIService {
 					`\nProductos disponibles en la conversación actual (usa si son relevantes para continuar):\n${productList}`,
 				);
 			}
+		} else if (ctx.selectedProducts && ctx.selectedProducts.length > 1) {
+			// Múltiples productos seleccionados
+			const productList = ctx.selectedProducts
+				.map((p, i) => {
+					const variantDetails = p.variants
+						.map(
+							v =>
+								`  - ${v.name}: ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`,
+						)
+						.join('\n');
+					return (
+						`${i + 1}. ${p.name}` +
+						(p.description ? ` — ${p.description}` : '') +
+						`\n${variantDetails}`
+					);
+				})
+				.join('\n');
+			parts.push(
+				`\nEl cliente seleccionó múltiples productos:\n${productList}\n` +
+					(ctx.quantity
+						? `\nEl cliente mencionó una cantidad de ${ctx.quantity} unidades.`
+						: '') +
+					'\nPreséntalos brevemente de forma natural, menciona precios y disponibilidad, y pregunta cómo quiere continuar.',
+			);
+			parts.push(
+				'\nNo anuncies la selección como sistema. Integra los productos de forma conversacional.',
+			);
 		} else if (ctx.selectedProduct) {
 			const p = ctx.selectedProduct;
+			const totalQty = p.variants.reduce((sum, v) => sum + v.totalQty, 0);
 			const variantDetails = p.variants
 				.map(
 					v =>
 						`  - ${v.name}: ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`,
 				)
 				.join('\n');
-			parts.push(
-				`\nEl cliente seleccionó este producto:\nNombre: ${p.name}` +
-					(p.description ? `\nDescripción: ${p.description}` : '') +
-					`\nVariantes:\n${variantDetails}`,
-			);
-			parts.push(
-				'\nResponde de forma natural como si ya estuvieran hablando de este producto. Explica brevemente, menciona precio y disponibilidad, y guía la conversación para continuar.',
-			);
+			if (ctx.quantity) {
+				const singleVariant =
+					p.variants.length === 1 ? p.variants[0] : undefined;
+				const unitPriceNum = singleVariant?.price
+					? parseFloat(singleVariant.price)
+					: null;
+				const totalPriceNum =
+					unitPriceNum !== null ? unitPriceNum * ctx.quantity : null;
+				const formattedUnit = singleVariant
+					? formatPrice(singleVariant.price, currency)
+					: null;
+				const formattedTotal =
+					totalPriceNum !== null
+						? formatPrice(totalPriceNum.toString(), currency)
+						: null;
+				const productLabel = singleVariant?.name
+					? `${p.name} ${singleVariant.name}`
+					: p.name;
+				const isStockExceeded =
+					ctx.requestedQuantity !== undefined &&
+					ctx.requestedQuantity > (ctx.quantity ?? 0);
+				if (isStockExceeded) {
+					// Stock insuficiente: incluir datos del producto + nota de stock
+					parts.push(
+						`\nProducto: ${productLabel} a ${formattedUnit ?? 'precio no disponible'}.` +
+							`\nIMPORTANTE: El cliente pidió ${ctx.requestedQuantity} unidades pero solo hay ${ctx.quantity} disponible(s). NO confirmes el pedido ni calcules total. Informa brevemente que solo hay ${ctx.quantity} disponible(s) y pregunta si quiere esa cantidad, por ejemplo: "Solo tenemos ${ctx.quantity}, ¿te agrego esa?" o "Solo hay ${ctx.quantity} disponible, ¿quieres esa?" u otra variación natural. NUNCA uses frases como "te lo llevo", "te la llevo" ni similares.`,
+					);
+				} else if (formattedUnit && formattedTotal) {
+					// Confirmación limpia: NO incluir DATO EXACTO para evitar que el AI
+					// mezcle info de disponibilidad con la confirmación
+					parts.push(
+						`\nResponde SOLO con este contenido: confirma que van ${ctx.quantity} unidades de ${productLabel} a ${formattedUnit} cada una, total ${formattedTotal}. Varía la frase inicial (usa "Listo", "Perfecto", "Dale", "Vale" u otra). Termina con UNA sola pregunta corta: "¿Necesitas algo más?" o "¿Quieres continuar con el pedido?". NO menciones disponibilidad, NO preguntes cuántas quiere, NO añadas nada más.`,
+					);
+				} else {
+					parts.push(
+						`\nEl cliente quiere ${ctx.quantity} unidades de ${productLabel}. Confirma en UNA frase corta. No uses frases como "Puedo reservarte" ni "hay cantidades suficientes". Termina con "¿Necesitas algo más?".`,
+					);
+				}
+			} else {
+				// Sin cantidad: incluir datos completos del producto
+				parts.push(
+					`\nDATO EXACTO DEL PRODUCTO (usa ÚNICAMENTE estos datos para precio y disponibilidad, no uses conocimiento externo ni inventes valores):\nNombre: ${p.name}` +
+						(p.description ? `\nDescripción: ${p.description}` : '') +
+						`\nVariantes y precios:\n${variantDetails}`,
+				);
+				if (totalQty === 1) {
+					parts.push(
+						'\nSolo hay 1 unidad disponible. El cliente ya confirmó que quiere llevarlo. No preguntes por cantidad. Confirma el producto y precio de forma natural y guía hacia el siguiente paso (datos de envío, método de pago, etc.).',
+					);
+				} else if (ctx.lastBotMessage) {
+					parts.push(
+						`\nTu último mensaje al cliente fue: "${ctx.lastBotMessage}"\nEl cliente está respondiendo a eso. Interpreta su respuesta en ese contexto y continúa de forma natural.`,
+					);
+				} else {
+					parts.push(
+						'\nMenciona el nombre del producto, el precio y las unidades disponibles en UNA sola frase corta. No describas el producto ni añadas texto de relleno. Luego haz UNA pregunta directa como "¿Cuántas quieres?" o "¿Cuántas necesitas?".',
+					);
+				}
+			}
 			parts.push(
 				'\nNo anuncies la selección ni uses frases como "has elegido". Integra el producto de forma natural en la conversación.',
 			);
@@ -318,24 +606,136 @@ export class OpenAIService {
 			parts.push(
 				`\nEsta es la lista de productos que tienes disponibles para mostrarle al cliente:\n${productList}`,
 			);
-			if (ctx.isShowingMore) {
+			if (ctx.outOfStockProductName) {
 				parts.push(
-					'\nEl cliente pidió ver más opciones. Empieza directamente con una introducción MUY breve (máximo 3-4 palabras) seguida de dos puntos y la lista. Varía la introducción cada vez: "También tenemos:", "Más opciones:", "También contamos con:", "Aquí hay más:", "Mira, también hay:", etc. No escribas frases largas antes de la lista. No repitas el saludo.',
+					`\nEl cliente preguntó por "${ctx.outOfStockProductName}" pero no está disponible. PRIMERO di en una frase corta que no lo tienes disponible, y LUEGO presenta la lista de alternativas disponibles. Ejemplo: "La [nombre] no la tenemos disponible en este momento. Sí tenemos:"`,
 				);
+			} else if (ctx.isShowingMore) {
+				if (
+					ctx.products.length === 1 &&
+					ctx.products[0].variants.length === 1
+				) {
+					parts.push(
+						'\nEl cliente pidió ver más opciones y solo queda este producto con una sola variante. Preséntalo de forma natural y conversacional. Usa frases como "También tenemos [producto]", "Claro, también contamos con [producto]", etc. Menciona el precio y disponibilidad de forma fluida. No hagas listas. Guía hacia la elección con una pregunta directa como "¿Te interesa?" o "¿Quieres llevarlo?".',
+					);
+				} else {
+					parts.push(
+						'\nEl cliente pidió ver más opciones. DEBES empezar con una frase que incluya "también" para marcar continuidad, seguida de dos puntos y la lista. Ejemplos OBLIGATORIOS: "También tenemos:", "Claro, también tenemos:", "También contamos con:", "Sí, también hay:". NO uses "Te puedo ofrecer:", "Tenemos:", ni ninguna frase sin "también". No escribas frases largas antes de la lista. MUESTRA TODAS las variantes de cada producto.',
+					);
+				}
 			} else {
 				parts.push(
-					'\nPresenta estos productos de forma natural y humana, como si los estuvieras ofreciendo en persona. Usa frases como "Tenemos disponible...", "Te puedo ofrecer...", "Contamos con..." u otras similares. No uses encabezados de sistema ni frases como "He encontrado" o "Productos encontrados".',
+					'\nIntroduce la lista con una frase MUY corta de máximo 4 palabras seguida de dos puntos, y luego la lista. Ejemplos: "Tenemos:", "Te puedo ofrecer:", "Tenemos disponible:", "Aquí van:". NO añadas explicaciones, contexto, ni texto adicional antes o después de la lista (evita frases como "que pueden interesarte para tus X", "Aquí te dejo las opciones disponibles", etc.).',
 				);
 			}
 			if (ctx.hasMoreProducts) {
 				parts.push(
 					'\nTermina con una sola pregunta corta para que elija un producto. Varía la pregunta cada vez: "¿Cuál te interesa?", "Cuál quieres llevar?", "¿Te interesa alguna?", etc. NO añadas ninguna frase sobre ver más opciones: el cliente ya sabe que puede pedirlas.',
 				);
+			} else if (
+				ctx.products.length === 1 &&
+				ctx.products[0].variants.length === 1
+			) {
+				parts.push(
+					'\nSolo hay un producto con una sola variante. Preséntalo en UNA sola frase breve: nombre, precio y unidades disponibles. NO añadas descripción, ventajas ni texto de relleno. Al final haz una pregunta corta en singular como "¿Te interesa?" o "¿Quieres llevarlo?". NO uses preguntas en plural.',
+				);
+			} else if (
+				ctx.products.length === 1 &&
+				ctx.products[0].variants.length > 1
+			) {
+				parts.push(
+					`\nHay un solo producto pero con ${ctx.products[0].variants.length} variantes. DEBES mostrar TODAS las variantes de la lista para que el cliente elija. No omitas ninguna. Al final pregunta cuál prefiere con una frase corta como "¿Cuál prefieres?" o "¿Con cuál te quedas?".`,
+				);
 			} else {
 				parts.push(
 					'\nAl final haz una sola pregunta directa para que el cliente elija, por ejemplo: "¿Cuál te interesa?" o "¿Cuál deseas llevar?".',
 				);
 			}
+		} else if (ctx.intent === 'show_cart') {
+			if (ctx.cart && ctx.cart.length > 0) {
+				const cartLines = ctx.cart
+					.map(item => {
+						const name = item.variantName
+							? `${item.productName} ${item.variantName}`
+							: item.productName;
+						const unitPrice = formatPrice(item.unitPrice, item.currency);
+						const total = item.unitPrice
+							? formatPrice(
+									String(Number(item.unitPrice) * item.quantity),
+									item.currency,
+								)
+							: null;
+						return total
+							? `- ${item.quantity}x ${name} a ${unitPrice} = ${total}`
+							: `- ${item.quantity}x ${name} a ${unitPrice}`;
+					})
+					.join('\n');
+				const grandTotal = ctx.cart.reduce((sum, item) => {
+					return (
+						sum + (item.unitPrice ? Number(item.unitPrice) * item.quantity : 0)
+					);
+				}, 0);
+				const grandTotalFormatted = formatPrice(
+					String(grandTotal),
+					ctx.cart[0].currency,
+				);
+				parts.push(
+					`\nEl cliente pide ver el resumen de su pedido. Estos son los productos que lleva:\n${cartLines}\nTotal: ${grandTotalFormatted}\n` +
+						'Muestra el resumen de forma natural y conversacional. Menciona cada producto con su cantidad, precio unitario y subtotal. Al final muestra el total general. Termina invitándolo a cerrar la compra con una pregunta directa como "¿Te ayudo a finalizar el pedido?" o "¿Finalizamos la compra?". NO preguntes "cómo quieres continuar" ni des opciones abiertas.',
+				);
+			} else {
+				parts.push(
+					'\nEl cliente pide ver su pedido pero no tiene ningún producto agregado todavía. Responde de forma natural y guíalo a elegir algo.',
+				);
+			}
+		} else if (ctx.intent === 'edit_cart') {
+			if (ctx.removedProduct) {
+				parts.push(`\nSe eliminó del pedido: ${ctx.removedProduct}.`);
+			}
+			if (ctx.addedProduct && ctx.addedQuantity) {
+				const v =
+					ctx.addedProduct.variants.length === 1
+						? ctx.addedProduct.variants[0]
+						: undefined;
+				const label = v?.name
+					? `${ctx.addedProduct.name} ${v.name}`
+					: ctx.addedProduct.name;
+				const totalPrice =
+					v?.price != null ? Number(v.price) * ctx.addedQuantity : null;
+				const totalFmt =
+					totalPrice !== null
+						? formatPrice(String(totalPrice), ctx.currency ?? 'USD')
+						: null;
+				parts.push(
+					`\nAhora hay en total ${ctx.addedQuantity}x ${label} en el pedido` +
+						(totalFmt ? ` (subtotal ${totalFmt})` : '') +
+						'. Usa EXACTAMENTE esa cantidad y ese total en tu respuesta, sin recalcular.',
+				);
+			} else if (ctx.cart && ctx.cart.length > 0) {
+				const updatedLines = ctx.cart
+					.map(item => {
+						const name = item.variantName
+							? `${item.productName} ${item.variantName}`
+							: item.productName;
+						return `- ${item.quantity}x ${name}`;
+					})
+					.join('\n');
+				parts.push(`\nEl pedido actualizado queda así:\n${updatedLines}`);
+			}
+			parts.push(
+				'\nConfirma el cambio en UNA frase corta y directa. ' +
+					'Si se actualizó la cantidad, menciona la nueva cantidad y el precio total si está disponible. ' +
+					(ctx.removedProduct
+						? 'Menciona que se quitó el producto indicado. '
+						: 'NO menciones eliminaciones. ') +
+					'Luego pregunta si necesita algo más.',
+			);
+		} else if (ctx.intent === 'general_question') {
+			parts.push(
+				'\nEl cliente hace una pregunta general (envíos, pagos, tiempos de entrega, políticas, etc.).' +
+					'\nResponde de forma natural y breve. Si no tienes la información exacta, invita al cliente a contactar al equipo directamente.' +
+					'\nNunca inventes datos concretos como precios de envío, tiempos exactos o métodos de pago que no se te hayan proporcionado.',
+			);
 		} else {
 			parts.push(
 				'\nNo se encontraron productos para esta consulta. Responde de forma conversacional pidiendo más información sobre lo que busca.',

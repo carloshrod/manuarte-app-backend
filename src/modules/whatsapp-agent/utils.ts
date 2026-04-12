@@ -44,9 +44,6 @@ export const SYNONYMS: Record<string, string[]> = {
 
 	btms: ['emulsionante', 'emulsificante', 'cetilico'],
 
-	// Fragancias - expansión desde el término real en BD
-	fragancia: ['esencia', 'perfume', 'aroma'],
-
 	// Ceras
 	soja: ['soya'],
 	soya: ['soja'],
