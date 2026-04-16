@@ -18,6 +18,14 @@ import {
 	SYNONYMS,
 	SYNONYM_REPLACEMENTS,
 } from './utils';
+import { QuoteService } from '../quote/service';
+import { QuoteModel } from '../quote/model';
+import { QuoteStatus } from '../quote/types';
+import { CustomerService } from '../customer/service';
+import { CustomerModel } from '../customer/model';
+import { CityService } from '../city/service';
+import { CityModel } from '../city/model';
+import { PersonModel } from '../person/model';
 
 const WHATSAPP_API_TIMEOUT_MS = 10_000;
 const BUFFER_WAIT_MS = 5_000; // espera antes de procesar mensajes acumulados
@@ -54,17 +62,44 @@ interface CartItem {
 	currency: string;
 }
 
+interface PendingQuoteFlow {
+	step:
+		| 'awaiting_customer_data'
+		| 'awaiting_address'
+		| 'awaiting_city_selection'
+		| 'awaiting_confirmation';
+	collectedData?: {
+		fullName?: string;
+		dni?: string;
+		phoneNumber?: string;
+		location?: string;
+		cityId?: number;
+		cityName?: string;
+		customerId?: string;
+		personId?: string;
+	};
+	cityCandidates?: Array<{ id: number; name: string; regionName: string }>;
+}
+
 interface UserSession {
 	lastProductList?: ProductListEntry[];
 	remainingProductList?: ProductListEntry[];
 	awaitingMoreProducts?: boolean;
 	lastSearchQuery?: string;
-	lastCountryInfo?: { currency: string; stockIds: string[] } | null;
+	lastCountryInfo?: {
+		currency: string;
+		stockIds: string[];
+		shopId: string;
+		isoCode: string;
+	} | null;
 	selectedProduct?: string;
 	selectedVariantName?: string;
 	lastActivityAt?: number;
 	lastBotMessage?: string;
 	cart?: CartItem[];
+	pendingQuoteFlow?: PendingQuoteFlow | null;
+	/** Cantidad capeada al stock cuando fue insuficiente; el siguiente "Sí" la confirma */
+	pendingStockConfirmQty?: number;
 }
 
 const MAX_PRODUCT_RESULTS = 5;
@@ -74,6 +109,9 @@ export class WhatsAppAgentService {
 	private processingQueue = new Map<string, Promise<void>>();
 	private logService = new WhatsAppLogService();
 	private openai = new OpenAIService();
+	private quoteService = new QuoteService(QuoteModel);
+	private customerService = new CustomerService(CustomerModel);
+	private cityService = new CityService(CityModel);
 
 	verifyWebhook = (mode: string, token: string, challenge: string) => {
 		if (mode !== 'subscribe') {
@@ -288,6 +326,45 @@ export class WhatsAppAgentService {
 			SESSION_TTL_SECONDS,
 		);
 
+		// ── Interceptor: flujo de cotización activo ──
+		if (session.pendingQuoteFlow) {
+			const quoteReply = await this.handleQuoteFlowStep(
+				phoneNumber,
+				botPhoneNumberId,
+				text,
+				normalizedText,
+				session,
+				countryInfo,
+			);
+			if (quoteReply !== null) {
+				session.lastBotMessage = quoteReply;
+				await redis.set(
+					`session:${phoneNumber}`,
+					JSON.stringify(session),
+					'EX',
+					SESSION_TTL_SECONDS,
+				);
+				const countryPrefix = countryInfo
+					? `+${phoneNumber.startsWith('593') ? '593' : '57'}`
+					: null;
+				await new Promise(resolve => setTimeout(resolve, REPLY_DELAY_MS));
+				await this.sendReply(phoneNumber, botPhoneNumberId, quoteReply);
+				this.logService
+					.logMessage({
+						phoneNumber,
+						botPhoneNumberId,
+						direction: 'outbound',
+						text: quoteReply,
+						intent: 'quote_flow',
+						countryPrefix,
+					})
+					.catch(err =>
+						console.error('[WhatsApp Agent] Error saving outbound log:', err),
+					);
+				return;
+			}
+		}
+
 		const selectionIndex = this.detectSelection(normalizedText);
 		const nameSelectionIndex =
 			selectionIndex === null && hasActiveList
@@ -371,6 +448,7 @@ export class WhatsAppAgentService {
 								const resolvedV = this.resolveVariant(
 									mentionedProduct,
 									undefined,
+									normalizedText,
 								);
 								const vGrams = resolvedV
 									? this.parseVariantWeightGrams(resolvedV.name)
@@ -462,30 +540,17 @@ export class WhatsAppAgentService {
 					const requestedGrams =
 						this.detectRequestedWeightGrams(normalizedText);
 					if (requestedGrams !== null) {
-						const variantWeights = weightProductEntry.variants
-							.map(v => ({
-								variant: v,
-								grams: this.parseVariantWeightGrams(v.name),
-							}))
-							.filter(
-								(
-									vw,
-								): vw is {
-									variant: ProductListEntry['variants'][0];
-									grams: number;
-								} => vw.grams !== null,
-							);
-						if (variantWeights.length > 0) {
-							const largest = variantWeights.reduce((a, b) =>
-								b.grams > a.grams ? b : a,
-							);
-							const unitsNeeded = Math.ceil(requestedGrams / largest.grams);
+						const resolved = this.resolveVariantByWeight(
+							weightProductEntry.variants,
+							requestedGrams,
+						);
+						if (resolved) {
 							intent = 'product_followup';
-							aiQuantity = unitsNeeded;
+							aiQuantity = resolved.units;
 							session.selectedProduct = weightProductEntry.name;
-							session.selectedVariantName = largest.variant.name;
+							session.selectedVariantName = resolved.variant.name;
 							console.log(
-								`[WhatsApp Agent] Weight request: ${requestedGrams}g → ${unitsNeeded}x "${largest.variant.name}" (product: ${weightProductEntry.name})`,
+								`[WhatsApp Agent] Weight request: ${requestedGrams}g → ${resolved.units}x "${resolved.variant.name}" (product: ${weightProductEntry.name})`,
 							);
 						}
 					}
@@ -593,6 +658,38 @@ export class WhatsAppAgentService {
 			} // end if (!intent!)
 		}
 
+		// Reclasificar: edit_cart + addProductHint sin coincidencia en carrito → search_product
+		// Ocurre cuando el cliente pide un producto con cantidad pero el carrito está vacío
+		// o no tiene ese producto (ej: "Necesito 4 kilos de cera de palma").
+		if (
+			intent === 'edit_cart' &&
+			aiAddProductHint &&
+			!session.cart?.some(item => {
+				const fullName = normalizeText(
+					item.variantName
+						? `${item.productName} ${item.variantName}`
+						: item.productName,
+				);
+				const tokens = normalizeText(aiAddProductHint)
+					.split(/\s+/)
+					.filter(t => t.length > 2);
+				return tokens.some(t => fullName.includes(t));
+			})
+		) {
+			console.log(
+				`[WhatsApp Agent] Reclassifying edit_cart → search_product: hint "${aiAddProductHint}" not found in cart`,
+			);
+			intent = 'search_product';
+			// Filtrar preposiciones y palabras cortas del hint antes de usarlo como
+			// search query, para evitar que "de" contamine el fallback OR en buildProductReply
+			const cleanedHint = normalizeText(aiAddProductHint)
+				.split(/\s+/)
+				.filter(w => w.length > 2)
+				.join(' ');
+			aiSearchQuery = cleanedHint || undefined;
+			session.selectedProduct = undefined;
+		}
+
 		console.log(
 			`[WhatsApp Agent] Intent detected: ${intent} (resumption: ${isResumption})`,
 		);
@@ -651,6 +748,7 @@ export class WhatsAppAgentService {
 				const resolvedVariant = this.resolveVariant(
 					selectedItems[0],
 					firstVariantHint,
+					normalizedText,
 				);
 				session.selectedProduct = selectedItems[0].name;
 				session.selectedVariantName = resolvedVariant?.name;
@@ -671,7 +769,7 @@ export class WhatsAppAgentService {
 					const itemVariant =
 						i === 0
 							? resolvedVariant
-							: this.resolveVariant(item, itemVariantHint);
+							: this.resolveVariant(item, itemVariantHint, normalizedText);
 					// Cantidad: si hay quantities[] usamos la de este índice;
 					// si hay una sola aiQuantity la usamos para todos;
 					// si el producto tiene solo 1 unidad disponible, forzamos 1.
@@ -732,7 +830,9 @@ export class WhatsAppAgentService {
 						? selectedItems.map((item, i) => {
 								const hint = i === 0 ? aiVariantHint : undefined;
 								const v =
-									i === 0 ? resolvedVariant : this.resolveVariant(item, hint);
+									i === 0
+										? resolvedVariant
+										: this.resolveVariant(item, hint, normalizedText);
 								return v ? { ...item, variants: [v] } : item;
 							})
 						: undefined;
@@ -762,28 +862,187 @@ export class WhatsAppAgentService {
 				countryInfo,
 				aiSearchQuery,
 			);
+			console.log('result *******************************', result);
 			session.lastProductList = result.products;
 			session.remainingProductList = result.remainingProducts;
 			session.awaitingMoreProducts = result.remainingProducts.length > 0;
 			session.lastSearchQuery = aiSearchQuery ?? normalizedText;
 			session.lastCountryInfo = countryInfo;
+
+			const currency = countryInfo?.currency ?? 'USD';
+
+			// Auto-agregar al carrito si se mencionó cantidad y el producto es inequívoco.
+			// Aplica cuando el cliente pide directamente un producto con cantidad pero no estaba
+			// en el carrito (ej: "Necesito 4 kilos de cera de palma" reclasificado de edit_cart).
+			let autoAddedProduct: ProductListEntry | undefined;
+			let autoAddedQty: number | undefined;
+			let autoAddedVariant: ProductListEntry['variants'][0] | undefined;
+			let autoAddedRequestedQty: number | undefined;
+			let autoAddedStockExceededNote: string | undefined;
+
+			if (
+				aiQuantity !== undefined &&
+				result.products.length === 1 &&
+				result.productFound
+			) {
+				const product = result.products[0];
+				const requestedGrams = this.detectRequestedWeightGrams(normalizedText);
+
+				if (requestedGrams !== null) {
+					// Cantidad expresada en peso (ej: "4 kilos") → elegir variante óptima
+					const resolved = this.resolveVariantByWeight(
+						product.variants,
+						requestedGrams,
+					);
+					if (resolved) {
+						const cappedUnits = Math.min(
+							resolved.units,
+							resolved.variant.totalQty,
+						);
+						const stockExceeded = cappedUnits < resolved.units;
+						if (!stockExceeded) {
+							this.addToCart(
+								session,
+								product,
+								cappedUnits,
+								currency,
+								resolved.variant,
+							);
+						}
+						session.selectedProduct = product.name;
+						session.selectedVariantName = resolved.variant.name;
+						autoAddedProduct = product;
+						autoAddedQty = cappedUnits;
+						autoAddedVariant = resolved.variant;
+						if (stockExceeded) {
+							const variantGrams = this.parseVariantWeightGrams(
+								resolved.variant.name,
+							);
+							const requestedKg = requestedGrams / 1000;
+							const availableGrams =
+								variantGrams !== null ? cappedUnits * variantGrams : null;
+							const availableKg =
+								availableGrams !== null ? availableGrams / 1000 : null;
+							const availableLabel =
+								availableKg !== null
+									? `${availableKg % 1 === 0 ? availableKg : availableKg.toFixed(1)} kg (${cappedUnits} unidades de ${resolved.variant.name})`
+									: `${cappedUnits} unidades de ${resolved.variant.name}`;
+							const requestedLabel = `${requestedKg % 1 === 0 ? requestedKg : requestedKg.toFixed(1)} kg`;
+							autoAddedStockExceededNote = `El cliente pidió ${requestedLabel} pero solo hay ${availableLabel} disponible(s). NO confirmes el pedido ni calcules total. Informa brevemente la cantidad disponible en kg y pregunta si quiere esa cantidad. Varía la frase: "Solo tenemos X kg, ¿quieres esas?" u otra variación natural. NUNCA uses frases como "te lo llevo", "te la llevo" ni similares.`;
+							session.pendingStockConfirmQty = cappedUnits;
+						}
+						console.log(
+							`[WhatsApp Agent] Auto-added to cart from search (weight): ${product.name} – ${resolved.variant.name} x${cappedUnits} (${requestedGrams}g → ${resolved.units} units, capped: ${cappedUnits})`,
+						);
+					}
+				} else if (product.variants.length === 1) {
+					// Producto con una sola variante → agregar directamente
+					const variant = product.variants[0];
+					const cappedUnits = Math.min(aiQuantity, variant.totalQty);
+					const stockExceeded = cappedUnits < aiQuantity;
+					if (!stockExceeded) {
+						this.addToCart(session, product, cappedUnits, currency, variant);
+					}
+					session.selectedProduct = product.name;
+					session.selectedVariantName = variant.name;
+					autoAddedProduct = product;
+					autoAddedQty = cappedUnits;
+					autoAddedVariant = variant;
+					if (stockExceeded) {
+						autoAddedRequestedQty = aiQuantity;
+						session.pendingStockConfirmQty = cappedUnits;
+					}
+					console.log(
+						`[WhatsApp Agent] Auto-added to cart from search (single variant): ${product.name} – ${variant.name} x${cappedUnits}`,
+					);
+				} else if (aiVariantHint) {
+					// Múltiples variantes + hint de presentación → resolver y agregar directamente
+					const resolved = this.resolveVariant(
+						product,
+						aiVariantHint,
+						normalizedText,
+					);
+					if (resolved) {
+						const cappedUnits = Math.min(aiQuantity, resolved.totalQty);
+						const stockExceeded = cappedUnits < aiQuantity;
+						if (!stockExceeded) {
+							this.addToCart(session, product, cappedUnits, currency, resolved);
+						}
+						session.selectedProduct = product.name;
+						session.selectedVariantName = resolved.name;
+						autoAddedProduct = product;
+						autoAddedQty = cappedUnits;
+						autoAddedVariant = resolved;
+						if (stockExceeded) {
+							autoAddedRequestedQty = aiQuantity;
+							session.pendingStockConfirmQty = cappedUnits;
+						}
+						console.log(
+							`[WhatsApp Agent] Auto-added to cart from search (variant hint "${aiVariantHint}"): ${product.name} – ${resolved.name} x${cappedUnits}`,
+						);
+					}
+				}
+				// Si hay múltiples variantes sin coincidencia de peso ni hint → no auto-agregar,
+				// mostrar opciones al cliente para que elija.
+			}
+
 			await redis.set(
 				`session:${phoneNumber}`,
 				JSON.stringify(session),
 				'EX',
 				SESSION_TTL_SECONDS,
 			);
-			const currency = countryInfo?.currency ?? 'USD';
-			replyText = await this.openai
-				.generateReply({
-					userMessage: text,
-					products: result.products.length > 0 ? result.products : undefined,
-					hasMoreProducts: result.remainingProducts.length > 0,
-					isFirstInteraction,
-					currency,
-					outOfStockProductName: result.outOfStockProductName,
-				})
-				.catch(() => result.replyText);
+
+			if (autoAddedProduct && autoAddedQty !== undefined) {
+				const productForReply = autoAddedVariant
+					? { ...autoAddedProduct, variants: [autoAddedVariant] }
+					: autoAddedProduct;
+				replyText = await this.openai
+					.generateReply({
+						userMessage: text,
+						selectedProduct: productForReply,
+						quantity: autoAddedQty,
+						requestedQuantity: autoAddedRequestedQty,
+						stockExceededNote: autoAddedStockExceededNote,
+						currency,
+					})
+					.catch(() => result.replyText);
+			} else {
+				replyText = await this.openai
+					.generateReply({
+						userMessage: text,
+						products: result.products.length > 0 ? result.products : undefined,
+						hasMoreProducts: result.remainingProducts.length > 0,
+						isFirstInteraction,
+						currency,
+						outOfStockProductName: result.outOfStockProductName,
+					})
+					.catch(() => result.replyText);
+			}
+
+			// Log detallado de productos devueltos
+			try {
+				console.log(
+					'[WhatsApp Agent] Productos devueltos al cliente:',
+					(result.products ?? []).map(p => ({
+						id: p.productId,
+						nombre: p.name,
+						descripcion: p.description,
+						variantes: p.variants.map(v => ({
+							id: v.variantId,
+							nombre: v.name,
+							stock: v.totalQty,
+							precio: v.price,
+						})),
+					})),
+				);
+			} catch (e) {
+				console.error(
+					'[WhatsApp Agent] Error loggeando productos devueltos:',
+					e,
+				);
+			}
+
 			this.logService
 				.logQuery({
 					phoneNumber,
@@ -924,8 +1183,15 @@ export class WhatsAppAgentService {
 				const inlineQty = inlineQtyMatch
 					? parseInt(inlineQtyMatch[1], 10)
 					: undefined;
+				const pendingQty = session.pendingStockConfirmQty;
+				if (pendingQty !== undefined)
+					session.pendingStockConfirmQty = undefined;
 				const effectiveQtyAff =
-					aiQuantity ?? bareNumberQtyAff ?? inlineQty ?? impliedQty;
+					aiQuantity ??
+					bareNumberQtyAff ??
+					inlineQty ??
+					impliedQty ??
+					pendingQty;
 				if (effectiveQtyAff) {
 					this.addToCart(
 						session,
@@ -1320,6 +1586,74 @@ export class WhatsAppAgentService {
 					currency,
 				})
 				.catch(() => 'No tienes productos en tu pedido todavía.');
+		} else if (intent === 'request_quote') {
+			if (!session.cart || session.cart.length === 0) {
+				replyText =
+					'Todavía no tienes productos en tu pedido. Primero agrega lo que necesites y luego te armo la cotización.';
+			} else {
+				// Buscar si ya existe un cliente con este teléfono
+				const isoCode =
+					session.lastCountryInfo?.isoCode ?? countryInfo?.isoCode ?? 'CO';
+				// Strip country calling code — phoneNumber in DB is stored without it
+				const localPhone = this.stripCallingCode(phoneNumber);
+				const existingCustomer = await this.customerService.findByPhone(
+					localPhone,
+					isoCode,
+				);
+				if (existingCustomer) {
+					// Cliente ya existe: ir directo a confirmación
+					session.pendingQuoteFlow = {
+						step: 'awaiting_confirmation',
+						collectedData: {
+							fullName: existingCustomer.fullName,
+							dni: existingCustomer.dni,
+							phoneNumber: localPhone,
+							location: existingCustomer.location,
+							cityId: existingCustomer.cityId,
+							cityName: existingCustomer.cityName
+								? `${existingCustomer.cityName}${existingCustomer.regionName ? `, ${existingCustomer.regionName}` : ''}`
+								: undefined,
+							customerId: existingCustomer.id,
+							personId: existingCustomer.personId,
+						},
+					};
+					const currency =
+						session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+					replyText = await this.openai
+						.generateReply({
+							userMessage: text,
+							intent: 'awaiting_confirmation',
+							cart: session.cart,
+							currency,
+							quoteFlowData: session.pendingQuoteFlow.collectedData,
+						})
+						.catch(
+							() =>
+								'Ya tengo tus datos. ¿Confirmo la cotización con estos datos?',
+						);
+				} else {
+					// Cliente nuevo: iniciar flujo de recopilación
+					session.pendingQuoteFlow = {
+						step: 'awaiting_customer_data',
+						collectedData: { phoneNumber: localPhone },
+					};
+					replyText = await this.openai
+						.generateReply({
+							userMessage: text,
+							intent: 'request_quote',
+						})
+						.catch(
+							() =>
+								'¡Claro! Para armarte la cotización necesito tu nombre completo y tu número de cédula.',
+						);
+				}
+				await redis.set(
+					`session:${phoneNumber}`,
+					JSON.stringify(session),
+					'EX',
+					SESSION_TTL_SECONDS,
+				);
+			}
 		} else {
 			replyText = await this.openai
 				.generateReply({ userMessage: text, isFirstInteraction })
@@ -1360,9 +1694,21 @@ export class WhatsAppAgentService {
 			});
 	};
 
+	/** Strip country calling code prefix from WhatsApp E.164 phone number */
+	private stripCallingCode = (phoneNumber: string): string => {
+		const prefixes = ['593', '57']; // longest first
+		const matched = prefixes.find(p => phoneNumber.startsWith(p));
+		return matched ? phoneNumber.slice(matched.length) : phoneNumber;
+	};
+
 	private detectCountryFromPhone = async (
 		phoneNumber: string,
-	): Promise<{ currency: string; stockIds: string[] } | null> => {
+	): Promise<{
+		currency: string;
+		stockIds: string[];
+		shopId: string;
+		isoCode: string;
+	} | null> => {
 		try {
 			// Detectar callingCode desde el número (formato E.164 sin +)
 			const prefixes = ['593', '57']; // Ecuador primero (más largo)
@@ -1374,45 +1720,40 @@ export class WhatsAppAgentService {
 				return null;
 			}
 
-			const country = await CountryModel.findOne({
-				where: {
-					callingCode: { [Op.in]: [`+${matchedPrefix}`, matchedPrefix] },
-				},
+			// Resolver shop por país usando slug (misma convención que customer-balance)
+			const shopSlug =
+				matchedPrefix === '57' ? 'manuarte-barranquilla' : 'manuarte-quito';
+
+			const shop = await ShopModel.findOne({
+				where: { slug: shopSlug },
 				attributes: ['id', 'currency'],
 				include: [
 					{
-						model: ShopModel,
-						as: 'shops',
+						model: StockModel,
+						as: 'stock',
 						attributes: ['id'],
-						include: [
-							{
-								model: StockModel,
-								as: 'stock',
-								attributes: ['id'],
-								where: { isMain: false },
-								required: false,
-							},
-						],
+					},
+					{
+						model: CountryModel,
+						as: 'country',
+						attributes: ['isoCode'],
 					},
 				],
 			});
 
-			if (!country) return null;
+			if (!shop) return null;
 
-			const shops = country.get('shops') as Array<{
-				id: string;
-				stock?: { id: string };
-			}>;
-			const stockIds = shops
-				.map(s => s.stock?.id)
-				.filter((id): id is string => !!id);
-
-			const currency = (country.get('currency') as string | undefined) ?? 'USD';
+			const stock = shop.get('stock') as { id: string } | null;
+			const country = shop.get('country') as { isoCode: string } | null;
+			const stockIds = stock ? [stock.id] : [];
+			const currency = (shop.get('currency') as string | undefined) ?? 'USD';
+			const isoCode =
+				country?.isoCode ?? (matchedPrefix === '57' ? 'CO' : 'EC');
 
 			console.log(
-				`[WhatsApp Agent] Country detected: +${matchedPrefix}, currency: ${currency}, stocks: ${stockIds.join(', ')}`,
+				`[WhatsApp Agent] Country detected: +${matchedPrefix}, currency: ${currency}, shop: ${shopSlug}, stocks: ${stockIds.join(', ')}`,
 			);
-			return { currency, stockIds };
+			return { currency, stockIds, shopId: shop.id, isoCode };
 		} catch (error) {
 			console.error('[WhatsApp Agent] Error detecting country:', error);
 			this.logService
@@ -1526,6 +1867,26 @@ export class WhatsAppAgentService {
 		];
 		if (showCartPhrases.some(p => normalizedText.includes(p)))
 			return 'show_cart';
+
+		const requestQuotePhrases = [
+			'cotizacion',
+			'cotización',
+			'cotizar',
+			'cotizame',
+			'cotizalo',
+			'cotizalos',
+			'presupuesto',
+			'proforma',
+			'hazme una cotizacion',
+			'genera la cotizacion',
+			'arma la cotizacion',
+			'quiero cotizar',
+			'quiero la cotizacion',
+			'me generas la cotizacion',
+			'enviame la cotizacion',
+		];
+		if (requestQuotePhrases.some(p => normalizedText.includes(p)))
+			return 'request_quote';
 
 		return null;
 	};
@@ -1811,15 +2172,45 @@ export class WhatsAppAgentService {
 	private resolveVariant = (
 		product: ProductListEntry,
 		hint?: string,
+		userText?: string,
 	): ProductListEntry['variants'][0] | undefined => {
 		if (product.variants.length === 1) return product.variants[0];
-		if (!hint) return undefined;
-		const normalizedHint = normalizeText(hint);
-		return (
-			product.variants.find(v =>
-				normalizeText(v.name).includes(normalizedHint),
-			) ??
-			product.variants.find(v => normalizedHint.includes(normalizeText(v.name)))
+
+		// 1) Hint-based match (existing logic)
+		if (hint) {
+			const normalizedHint = normalizeText(hint);
+			const match =
+				product.variants.find(v =>
+					normalizeText(v.name).includes(normalizedHint),
+				) ??
+				product.variants.find(v =>
+					normalizedHint.includes(normalizeText(v.name)),
+				);
+			if (match) return match;
+		}
+
+		// 2) User text keyword match: score each variant by how many of its
+		//    distinctive words appear in the message
+		if (userText) {
+			const normalized = normalizeText(userText);
+			let bestVariant: ProductListEntry['variants'][0] | undefined;
+			let bestScore = 0;
+			for (const v of product.variants) {
+				const vWords = normalizeText(v.name)
+					.split(/\s+/)
+					.filter(w => w.length > 1);
+				const score = vWords.filter(w => normalized.includes(w)).length;
+				if (score > bestScore) {
+					bestScore = score;
+					bestVariant = v;
+				}
+			}
+			if (bestVariant && bestScore > 0) return bestVariant;
+		}
+
+		// 3) Fallback: pick variant with highest stock (most popular)
+		return product.variants.reduce((best, v) =>
+			v.totalQty > best.totalQty ? v : best,
 		);
 	};
 
@@ -1856,6 +2247,47 @@ export class WhatsAppAgentService {
 		const val = parseFloat(weightMatch[1].replace(',', '.'));
 		const unit = weightMatch[2].toLowerCase();
 		return unit.startsWith('k') ? val * 1000 : val;
+	};
+
+	/**
+	 * Dado un peso en gramos y las variantes de un producto, devuelve la variante
+	 * más adecuada y la cantidad de unidades necesarias.
+	 *
+	 * Lógica:
+	 * 1. Preferir variantes donde `requestedGrams` sea múltiplo exacto de la variante.
+	 *    (ej: 4000g → KILO 1000g = exacto ✓, CAJA 10 KILOS 10000g = no exacto ✗)
+	 * 2. Entre candidatos exactos (o todos si no hay exactos), preferir la que da
+	 *    MENOS unidades (más eficiente para el cliente).
+	 *    (ej: 10 kilos → KILO 10u vs CAJA 10 KILOS 1u → CAJA gana)
+	 */
+	private resolveVariantByWeight = (
+		variants: ProductListEntry['variants'],
+		requestedGrams: number,
+	): { variant: ProductListEntry['variants'][0]; units: number } | null => {
+		const weighted = variants
+			.map(v => ({ variant: v, grams: this.parseVariantWeightGrams(v.name) }))
+			.filter(
+				(
+					vw,
+				): vw is { variant: ProductListEntry['variants'][0]; grams: number } =>
+					vw.grams !== null && vw.grams > 0,
+			);
+		if (weighted.length === 0) return null;
+
+		const exactMatches = weighted.filter(vw => requestedGrams % vw.grams === 0);
+		const candidates = exactMatches.length > 0 ? exactMatches : weighted;
+
+		// Menor cantidad de unidades = presentación más práctica para la cantidad pedida
+		const best = candidates.reduce((a, b) => {
+			const unitsA = Math.ceil(requestedGrams / a.grams);
+			const unitsB = Math.ceil(requestedGrams / b.grams);
+			return unitsB < unitsA ? b : a;
+		});
+
+		return {
+			variant: best.variant,
+			units: Math.ceil(requestedGrams / best.grams),
+		};
 	};
 
 	private addToCart = (
@@ -1904,6 +2336,436 @@ export class WhatsAppAgentService {
 		console.log(
 			`[WhatsApp Agent] Cart updated: ${product.name}${variant ? ` – ${variant.name}` : ''} x${quantity}. Cart size: ${session.cart.length}`,
 		);
+	};
+
+	/**
+	 * Maneja cada paso del flujo de cotización. Retorna el texto de respuesta
+	 * si el paso fue procesado, o null si se debe continuar con el flujo normal.
+	 */
+	private handleQuoteFlowStep = async (
+		phoneNumber: string,
+		_botPhoneNumberId: string,
+		text: string,
+		normalizedText: string,
+		session: UserSession,
+		countryInfo: {
+			currency: string;
+			stockIds: string[];
+			shopId: string;
+			isoCode: string;
+		} | null,
+	): Promise<string | null> => {
+		const flow = session.pendingQuoteFlow!;
+		const currency =
+			session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+
+		// Permitir cancelar el flujo
+		if (
+			/\b(cancelar|cancelalo|no\s*quiero|dejalo|olvidalo)\b/i.test(
+				normalizedText,
+			)
+		) {
+			session.pendingQuoteFlow = null;
+			return 'Listo, cancelé el proceso de cotización. ¿Necesitas algo más?';
+		}
+
+		if (flow.step === 'awaiting_customer_data') {
+			const extracted = await this.openai.extractCustomerData(
+				text,
+				'customer_data',
+			);
+			const fullName = extracted.fullName ?? flow.collectedData?.fullName;
+			const dni = extracted.dni ?? flow.collectedData?.dni;
+
+			if (!fullName || !dni) {
+				flow.collectedData = { ...flow.collectedData, fullName, dni };
+				const missing =
+					!fullName && !dni
+						? 'tu nombre completo y tu número de cédula'
+						: !fullName
+							? 'tu nombre completo'
+							: 'tu número de cédula';
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'awaiting_customer_data',
+					})
+					.catch(() => `Me falta ${missing}. ¿Me lo compartes?`);
+			}
+
+			flow.collectedData = { ...flow.collectedData, fullName, dni };
+			flow.step = 'awaiting_address';
+
+			return await this.openai
+				.generateReply({
+					userMessage: text,
+					intent: 'awaiting_address',
+				})
+				.catch(
+					() =>
+						'Perfecto. Ahora necesito tu dirección de entrega y la ciudad, por favor.',
+				);
+		}
+
+		if (flow.step === 'awaiting_address') {
+			const extracted = await this.openai.extractCustomerData(text, 'address');
+			const location = extracted.location ?? flow.collectedData?.location;
+			const cityText = extracted.city;
+
+			if (!location) {
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'awaiting_address',
+					})
+					.catch(
+						() =>
+							'Necesito tu dirección de entrega para continuar. ¿Me la compartes?',
+					);
+			}
+
+			flow.collectedData = { ...flow.collectedData, location };
+
+			if (!cityText) {
+				return '¿Y en qué ciudad estás?';
+			}
+
+			// Buscar la ciudad
+			const cityResult = await this.cityService.search(cityText);
+			const cityResults = cityResult?.cities ?? [];
+			if (cityResults.length === 0) {
+				return `No encontré la ciudad "${cityText}". ¿Puedes escribirla de nuevo?`;
+			}
+
+			if (cityResults.length === 1) {
+				const city = cityResults[0].dataValues;
+				flow.collectedData.cityId = city.id;
+				flow.collectedData.cityName = `${city.name}, ${city.regionName}`;
+				flow.step = 'awaiting_confirmation';
+
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'awaiting_confirmation',
+						cart: session.cart,
+						currency,
+						quoteFlowData: flow.collectedData,
+					})
+					.catch(() => '¿Confirmo la cotización con estos datos?');
+			}
+
+			// Múltiples coincidencias
+			flow.cityCandidates = cityResults.slice(0, 5).map(c => {
+				const d = c.dataValues;
+				return {
+					id: d.id,
+					name: d.name,
+					regionName: d.regionName,
+				};
+			});
+			flow.step = 'awaiting_city_selection';
+
+			return await this.openai
+				.generateReply({
+					userMessage: text,
+					intent: 'awaiting_city_selection',
+					cityCandidates: flow.cityCandidates.map((c, i) => ({
+						index: i + 1,
+						name: c.name,
+						region: c.regionName,
+					})),
+				})
+				.catch(() => {
+					const list = flow
+						.cityCandidates!.map(
+							(c, i) => `${i + 1}. ${c.name}, ${c.regionName}`,
+						)
+						.join('\n');
+					return `Encontré varias opciones:\n${list}\n¿Cuál es la tuya?`;
+				});
+		}
+
+		if (flow.step === 'awaiting_city_selection') {
+			const candidates = flow.cityCandidates ?? [];
+			// Intentar por número
+			const selectionMatch = normalizedText.match(/^(\d+)$/);
+			const selectedIdx = selectionMatch
+				? parseInt(selectionMatch[1], 10) - 1
+				: -1;
+
+			if (selectedIdx >= 0 && selectedIdx < candidates.length) {
+				const selected = candidates[selectedIdx];
+				flow.collectedData = {
+					...flow.collectedData,
+					cityId: selected.id,
+					cityName: `${selected.name}, ${selected.regionName}`,
+				};
+				flow.cityCandidates = undefined;
+				flow.step = 'awaiting_confirmation';
+
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'awaiting_confirmation',
+						cart: session.cart,
+						currency,
+						quoteFlowData: flow.collectedData,
+					})
+					.catch(() => '¿Confirmo la cotización con estos datos?');
+			}
+
+			// Intentar por nombre
+			const nameMatch = candidates.find(
+				c =>
+					normalizeText(c.name).includes(normalizedText) ||
+					normalizedText.includes(normalizeText(c.name)),
+			);
+			if (nameMatch) {
+				flow.collectedData = {
+					...flow.collectedData,
+					cityId: nameMatch.id,
+					cityName: `${nameMatch.name}, ${nameMatch.regionName}`,
+				};
+				flow.cityCandidates = undefined;
+				flow.step = 'awaiting_confirmation';
+
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'awaiting_confirmation',
+						cart: session.cart,
+						currency,
+						quoteFlowData: flow.collectedData,
+					})
+					.catch(() => '¿Confirmo la cotización con estos datos?');
+			}
+
+			// No se pudo identificar
+			const list = candidates
+				.map((c, i) => `${i + 1}. ${c.name}, ${c.regionName}`)
+				.join('\n');
+			return `No entendí tu selección. Elige el número:\n${list}`;
+		}
+
+		if (flow.step === 'awaiting_confirmation') {
+			// Detectar confirmación: comienza con palabra afirmativa Y no contiene intención de corrección
+			const startsAffirmative =
+				/^(si|sí|vale|ok|dale|claro|listo|perfecto|bueno|confirmo|de acuerdo|va|venga|correcto|todo bien|esta bien|nada)\b/i.test(
+					normalizedText.trim(),
+				);
+			const hasCorrection =
+				/\b(cambiar|cambio|cambia|corregir|corrige|modificar|modifica|pero|mal|error|falta|no es|en vez de|en lugar de|la cedula|el nombre|la direccion|el telefono|el numero)\b/i.test(
+					normalizedText,
+				);
+			// Also detect when message contains a raw number that looks like a DNI correction
+			const looksLikeDniCorrection =
+				!startsAffirmative && /\b\d{6,12}\b/.test(normalizedText);
+			const isConfirm =
+				startsAffirmative && !hasCorrection && !looksLikeDniCorrection;
+
+			if (!isConfirm) {
+				// Use AI to detect what the customer wants to correct
+				const correctionResult = await this.openai.extractQuoteCorrection(
+					text,
+					flow.collectedData ?? {},
+				);
+
+				let dataChanged = false;
+
+				// Apply corrections detected by AI
+				if (correctionResult.fullName) {
+					flow.collectedData = {
+						...flow.collectedData,
+						fullName: correctionResult.fullName,
+					};
+					dataChanged = true;
+				}
+				if (correctionResult.dni) {
+					flow.collectedData = {
+						...flow.collectedData,
+						dni: correctionResult.dni,
+					};
+					dataChanged = true;
+				}
+				if (correctionResult.phoneNumber) {
+					flow.collectedData = {
+						...flow.collectedData,
+						phoneNumber: correctionResult.phoneNumber,
+					};
+					dataChanged = true;
+				}
+				if (correctionResult.location) {
+					flow.collectedData = {
+						...flow.collectedData,
+						location: correctionResult.location,
+					};
+					dataChanged = true;
+				}
+				if (correctionResult.city) {
+					const cityText = correctionResult.city;
+					const cityResult = await this.cityService.search(cityText);
+					const cityResults = cityResult?.cities ?? [];
+					if (cityResults.length === 1) {
+						const city = cityResults[0].dataValues;
+						flow.collectedData = {
+							...flow.collectedData,
+							cityId: city.id,
+							cityName: `${city.name}, ${city.regionName}`,
+						};
+						dataChanged = true;
+					} else if (cityResults.length > 1) {
+						flow.cityCandidates = cityResults.slice(0, 5).map(c => {
+							const d = c.dataValues;
+							return { id: d.id, name: d.name, regionName: d.regionName };
+						});
+						flow.step = 'awaiting_city_selection';
+						const list = flow.cityCandidates
+							.map((c, i) => `${i + 1}. ${c.name}, ${c.regionName}`)
+							.join('\n');
+						return `Encontré varias opciones para "${cityText}":\n${list}\n¿Cuál es?`;
+					}
+				}
+
+				if (dataChanged) {
+					return await this.openai
+						.generateReply({
+							userMessage: text,
+							intent: 'awaiting_confirmation',
+							cart: session.cart,
+							currency,
+							quoteFlowData: flow.collectedData,
+						})
+						.catch(
+							() => '¿Confirmo la cotización con estos datos actualizados?',
+						);
+				}
+
+				// AI could not detect what to correct — ask for clarification
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'awaiting_correction_unclear',
+						quoteFlowData: flow.collectedData,
+					})
+					.catch(
+						() =>
+							'¿Qué dato necesitas corregir? Puedes decirme el nombre, cédula, dirección o ciudad.',
+					);
+			}
+
+			// Generar la cotización
+			try {
+				const data = flow.collectedData!;
+				const shopId =
+					session.lastCountryInfo?.shopId ?? countryInfo?.shopId ?? '';
+				const items = this.mapCartToQuoteItems(session.cart ?? []);
+
+				if (items.length === 0) {
+					session.pendingQuoteFlow = null;
+					return 'No hay productos válidos en tu pedido para generar la cotización.';
+				}
+
+				// Si no tenemos customerId, buscar persona existente por DNI
+				// para evitar SequelizeUniqueConstraintError en person.dni
+				if (!data.customerId && data.dni) {
+					const existingPerson = await PersonModel.findOne({
+						where: { dni: data.dni },
+						attributes: ['id'],
+					});
+					if (existingPerson) {
+						data.personId = existingPerson.id;
+						const existingCustomer = await CustomerModel.findOne({
+							where: { personId: existingPerson.id },
+							attributes: ['id'],
+						});
+						if (existingCustomer) {
+							data.customerId = existingCustomer.id;
+						}
+					}
+				}
+
+				// Quitar código de país del teléfono (ej: 573127600792 → 3127600792)
+				const rawPhone = data.phoneNumber ?? phoneNumber;
+				const localPhone = rawPhone.replace(/^(57|593)/, '');
+
+				const result = await this.quoteService.create({
+					quoteData: {
+						shopId,
+						items,
+						status: QuoteStatus.PENDING,
+						discountType: 'FIXED',
+						discount: 0,
+						shipping: 0,
+						requestedBy: ENV.WHATSAPP_BOT_USER_ID,
+						currency: currency as 'COP' | 'USD',
+					},
+					customerData: {
+						fullName: data.fullName ?? '',
+						dni: data.dni ?? '',
+						email: '',
+						phoneNumber: localPhone,
+						location: data.location ?? '',
+						cityId: String(data.cityId ?? ''),
+						customerId: data.customerId,
+						personId: data.personId,
+					},
+				});
+
+				// Limpiar flujo y carrito
+				session.pendingQuoteFlow = null;
+				session.cart = [];
+				session.selectedProduct = undefined;
+
+				const serial = result.newQuote.serialNumber;
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'quote_created',
+						quoteSerialNumber: serial,
+						currency,
+					})
+					.catch(
+						() =>
+							`¡Listo! Tu cotización #${serial} fue generada. Pronto te la haremos llegar. ¡Gracias por tu preferencia!`,
+					);
+			} catch (error) {
+				console.error('[WhatsApp Agent] Error creating quote:', error);
+				session.pendingQuoteFlow = null;
+				return 'Hubo un problema generando la cotización. Por favor intenta de nuevo o contacta a nuestro equipo.';
+			}
+		}
+
+		return null;
+	};
+
+	private mapCartToQuoteItems = (
+		cart: CartItem[],
+	): Array<{
+		productVariantId: string;
+		stockItemId?: string;
+		quoteId: string;
+		name: string;
+		quantity: number;
+		price: number;
+		currency: 'COP' | 'USD';
+	}> => {
+		return cart
+			.filter(item => item.productVariantId)
+			.map(item => {
+				const price = item.unitPrice ? parseFloat(item.unitPrice) : 0;
+				const name = item.variantName
+					? `${item.productName} – ${item.variantName}`
+					: item.productName;
+				return {
+					productVariantId: item.productVariantId!,
+					stockItemId: item.stockItemId ?? undefined,
+					quoteId: '',
+					name,
+					quantity: item.quantity,
+					price,
+					currency: item.currency as 'COP' | 'USD',
+				};
+			});
 	};
 
 	private buildProductReply = async (
@@ -2072,8 +2934,10 @@ export class WhatsAppAgentService {
 				t => !searchTerms.includes(t),
 			);
 
-			// Si hay sinónimos, siempre lanzar consulta adicional OR con esos términos y fusionar
-			if (synonymOnlyTerms.length > 0) {
+			// Expandir sinónimos como OR alternativo SOLO cuando la búsqueda AND no encontró nada.
+			// Si el AND ya encontró el producto específico (ej: "cera de palma" → "Cera de Palma / de Vaso"),
+			// no agregar sinónimos genéricos (ej: "soya", "parafina") que contaminarían los resultados.
+			if (synonymOnlyTerms.length > 0 && products.length === 0) {
 				const synonymProducts = await ProductModel.findAll({
 					attributes: ['id', 'name', 'description'],
 					where: {
@@ -2165,13 +3029,36 @@ export class WhatsAppAgentService {
 				}
 
 				// Relevancia textual: cuántos términos coinciden y con qué precisión
-				const matchCount = searchTerms.filter(t =>
-					nameLower.includes(stemTerm(t)),
-				).length;
+				const nameWords = nameLower.split(/\s+/);
+
+				// Word-boundary match: term matches a complete word in the name
+				const wordMatchCount = searchTerms.filter(t => {
+					const stem = stemTerm(t);
+					return nameWords.some(w => w === stem || w.startsWith(stem));
+				}).length;
+
+				// Substring-only match: appears in name but NOT as a whole word
+				// (e.g. "cera" inside "encerada")
+				const substringMatchCount = searchTerms.filter(t => {
+					const stem = stemTerm(t);
+					const inName = nameLower.includes(stem);
+					const isWord = nameWords.some(w => w === stem || w.startsWith(stem));
+					return inName && !isWord;
+				}).length;
+
 				const descMatchCount = searchTerms.filter(t =>
 					normalizeText(description).includes(stemTerm(t)),
 				).length;
-				const exactMatch = nameLower === searchTerms.join(' ') ? 100 : 0;
+				const exactMatch = nameLower === searchTerms.join(' ') ? 1000 : 0;
+
+				// Product-type bonus: search term is the first word of the product name
+				const productTypeBonus = searchTerms.some(t => {
+					const stem = stemTerm(t);
+					return nameWords[0] === stem || nameWords[0]?.startsWith(stem);
+				})
+					? 50
+					: 0;
+
 				const startsWithMatch = searchTerms.some(t =>
 					nameLower.startsWith(stemTerm(t)),
 				)
@@ -2181,13 +3068,19 @@ export class WhatsAppAgentService {
 					(sum, v) => sum + v.totalQty,
 					0,
 				);
-				const score =
+
+				// Relevance score (primary): determines product ordering tier
+				const relevanceScore =
 					exactMatch +
-					matchCount * 20 +
-					descMatchCount * 5 +
+					productTypeBonus +
+					wordMatchCount * 30 +
+					substringMatchCount * 3 +
+					descMatchCount * 3 +
 					startsWithMatch +
-					availableVariants.length +
-					totalStock;
+					availableVariants.length;
+
+				// Final score: relevance dominates, stock breaks ties within same tier
+				const score = relevanceScore * 1000 + totalStock;
 
 				scored.push({
 					score,
@@ -2218,25 +3111,107 @@ export class WhatsAppAgentService {
 				};
 			}
 
-			// Flatten multi-variant products: each variant becomes its own entry
-			const flatScored: ScoredProduct[] = [];
+			// Group products with same base name that differ only by color suffix.
+			// e.g. "Pigmento para cera arena MORADO", "...AMARILLO" → one grouped entry.
+			const KNOWN_COLORS = new Set([
+				'morado',
+				'amarillo',
+				'rosado',
+				'naranja',
+				'verde',
+				'magenta',
+				'rojo',
+				'azul',
+				'negro',
+				'blanco',
+				'violeta',
+				'lila',
+				'turquesa',
+				'dorado',
+				'plateado',
+				'celeste',
+				'beige',
+				'coral',
+				'marfil',
+				'chocolate',
+				'cafe',
+				'fucsia',
+				'gris',
+				'rosa',
+				'aguamarina',
+			]);
+			const getBaseName = (name: string): string | null => {
+				const words = normalizeText(name).split(/\s+/);
+				if (words.length < 2) return null;
+				const lastWord = words[words.length - 1];
+				if (KNOWN_COLORS.has(lastWord)) return words.slice(0, -1).join(' ');
+				return null;
+			};
+
+			// Build groups by base name
+			const groupMap = new Map<string, ScoredProduct[]>();
+			const ungrouped: ScoredProduct[] = [];
 			for (const s of scored) {
-				if (s.variants.length === 1) {
-					flatScored.push(s);
+				const baseName = getBaseName(s.name);
+				if (baseName) {
+					const group = groupMap.get(baseName) ?? [];
+					group.push(s);
+					groupMap.set(baseName, group);
 				} else {
-					for (const v of s.variants) {
-						flatScored.push({ ...s, variants: [v] });
-					}
+					ungrouped.push(s);
 				}
 			}
 
-			const displayedScored = flatScored.slice(0, MAX_PRODUCT_RESULTS);
-			const remainingScored = flatScored.slice(MAX_PRODUCT_RESULTS);
+			// Collapse groups of 3+ into a single representative entry
+			const collapsed: ScoredProduct[] = [...ungrouped];
+			const groupedRemaining: ScoredProduct[] = [];
+			for (const [, group] of groupMap.entries()) {
+				if (group.length >= 3) {
+					// Take highest scored as representative
+					const [representative, ...rest] = group;
+					const colorNames = group.map(g => {
+						const words = g.name.split(/\s+/);
+						return words[words.length - 1];
+					});
+					const totalGroupStock = group.reduce(
+						(sum, g) => sum + g.variants.reduce((s, v) => s + v.totalQty, 0),
+						0,
+					);
+					collapsed.push({
+						...representative,
+						name: representative.name.split(/\s+/).slice(0, -1).join(' '),
+						description: `Disponible en ${group.length} colores: ${colorNames.join(', ')} (${totalGroupStock} unidades en total)`,
+						// Keep representative's variants for price reference
+					});
+					groupedRemaining.push(...rest);
+				} else {
+					collapsed.push(...group);
+				}
+			}
+
+			// Re-sort collapsed list by score
+			collapsed.sort((a, b) => b.score - a.score);
+
+			const displayedScored = collapsed.slice(0, MAX_PRODUCT_RESULTS);
+			const remainingScored = [
+				...collapsed.slice(MAX_PRODUCT_RESULTS),
+				...groupedRemaining,
+			];
 			const lines = displayedScored.map((s, i) => {
-				const v = s.variants[0];
-				const priceText = formatPrice(v.price, currency);
-				const label = v.name ? `${s.name} ${v.name}` : s.name;
-				return `${i + 1}. ${label} – ${priceText}`;
+				if (s.variants.length === 1) {
+					const v = s.variants[0];
+					const priceText = formatPrice(v.price, currency);
+					const label = v.name ? `${s.name} ${v.name}` : s.name;
+					return `${i + 1}. ${label} – ${priceText}`;
+				}
+				// Multi-variant: show product name with variant sub-list
+				const variantLines = s.variants
+					.map(
+						v =>
+							`   - ${v.name}: ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`,
+					)
+					.join('\n');
+				return `${i + 1}. ${s.name}\n${variantLines}`;
 			});
 			const productList: ProductListEntry[] = displayedScored.map(s => ({
 				productId: s.productId,

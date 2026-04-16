@@ -829,6 +829,72 @@ export class CustomerService {
 		}
 	};
 
+	findByPhone = async (phoneNumber: string, isoCode: string) => {
+		try {
+			const customer = await this.customerModel.findOne({
+				where: { phoneNumber },
+				attributes: [
+					'id',
+					[sequelize.col('person.id'), 'personId'],
+					[sequelize.col('person.fullName'), 'fullName'],
+					[sequelize.col('person.dni'), 'dni'],
+					'email',
+					'phoneNumber',
+					[sequelize.col('address.location'), 'location'],
+					[sequelize.col('address.cityId'), 'cityId'],
+					[sequelize.col('address.city.name'), 'cityName'],
+					[sequelize.col('address.city.region.name'), 'regionName'],
+				],
+				include: [
+					{
+						model: this.personModel,
+						as: 'person',
+						attributes: [],
+						required: true,
+					},
+					{
+						model: this.addressModel,
+						as: 'address',
+						attributes: [],
+						required: false,
+						include: [
+							{
+								model: CityModel,
+								as: 'city',
+								attributes: [],
+								required: false,
+								include: [
+									{
+										model: RegionModel,
+										as: 'region',
+										attributes: [],
+										required: false,
+										include: [
+											{
+												model: CountryModel,
+												as: 'country',
+												attributes: [],
+												required: true,
+												where: { isoCode },
+											},
+										],
+									},
+								],
+							},
+						],
+					},
+				],
+			});
+
+			if (!customer) return null;
+
+			return customer.dataValues;
+		} catch (error) {
+			console.error('Error finding customer by phone: ', error);
+			throw error;
+		}
+	};
+
 	countByCountry = async () => {
 		try {
 			const result = (await this.customerModel.findAll({

@@ -18,6 +18,7 @@ export const ENV = {
 	WHATSAPP_ACCESS_TOKEN: process.env.WHATSAPP_ACCESS_TOKEN ?? '',
 	WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
 	OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
+	WHATSAPP_BOT_USER_ID: process.env.WHATSAPP_BOT_USER_ID ?? '',
 	REDIS_HOST: process.env.REDIS_HOST ?? '127.0.0.1',
 	REDIS_PORT: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT) : 6379,
 	REDIS_PASSWORD: process.env.REDIS_PASSWORD,

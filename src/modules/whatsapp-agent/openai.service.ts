@@ -52,12 +52,17 @@ COMPORTAMIENTO:
 - Adapta tus respuestas según lo que diga el cliente.
 
 CUANDO HAY PRODUCTOS:
--Preséntalos en lista numerada clara:
-	1. Nombre – precio (X disponibles)
 -No uses asteriscos ni markdown para resaltar.
 -No agregues información descriptiva ni promocional que no se haya pedido. Nombre, precio y cantidad: nada más.
 -Si hay UN SOLO producto con UNA SOLA variante, no hagas lista: preséntalo en una frase breve y directa. Ejemplo: "Tenemos [nombre] a [precio] ([X] disponibles)." No añadas descripciones, ventajas ni texto de relleno. Usa preguntas en singular: "¿Te interesa?" o "¿Quieres llevarlo?".
--Si hay UN SOLO producto pero con VARIAS variantes, SIEMPRE muéstralas TODAS en lista. No omitas ninguna variante. Ejemplo: "Tenemos:\n1. Nombre – precio (X disponibles)" con todas sus variantes listadas. Pregunta al final: "¿Cuál prefieres?" o "¿Con cuál te quedas?".
+-Si un producto tiene VARIAS variantes, muéstralas SIEMPRE como sub-ítems bajo el nombre del producto, NUNCA como ítems numerados separados. Formato obligatorio:
+	Nombre del producto:
+	- Variante 1 – precio (X disponibles)
+	- Variante 2 – precio (X disponibles)
+	CRÍTICO: NUNCA pongas cada variante como "1. Nombre – precio" y "2. Nombre – precio". Las variantes del MISMO producto van con guion (-), no numeradas.
+-Si hay VARIOS productos distintos, preséntalos en lista numerada:
+	1. Nombre – precio (X disponibles)
+	2. Nombre – precio (X disponibles)
 -Si hay VARIOS productos, haz una sola pregunta directa para que el cliente elija, por ejemplo: "¿Cuál te interesa?" o "¿Cuál deseas llevar?".
 -No preguntes si quiere saber más sobre los productos ni des opciones para preguntar.
 -Guía siempre hacia la elección y cotización.
@@ -169,6 +174,20 @@ export interface OpenAIContext {
 	addedQuantity?: number;
 	/** Cantidad que el cliente pidió originalmente (antes de limitar al stock) */
 	requestedQuantity?: number;
+	/** Nota personalizada de stock excedido (reemplaza el mensaje genérico cuando las unidades no representan la cantidad que el cliente entiende) */
+	stockExceededNote?: string;
+	/** Datos recopilados del cliente en flujo de cotización */
+	quoteFlowData?: {
+		fullName?: string;
+		dni?: string;
+		phoneNumber?: string;
+		location?: string;
+		cityName?: string;
+	};
+	/** Candidatos de ciudad para selección */
+	cityCandidates?: Array<{ index: number; name: string; region: string }>;
+	/** Número de serie de cotización creada */
+	quoteSerialNumber?: string;
 }
 
 export type AIDetectedIntent =
@@ -177,6 +196,7 @@ export type AIDetectedIntent =
 	| 'show_more'
 	| 'show_cart'
 	| 'edit_cart'
+	| 'request_quote'
 	| 'greeting'
 	| 'objection'
 	| 'general_question'
@@ -273,6 +293,7 @@ Analiza el mensaje del cliente y devuelve un JSON con:
 ${selectionInstructions}${showMoreInstruction}  - "show_cart": el cliente pregunta por el resumen de su pedido, lo que lleva, el total, cuánto es todo, cuánto sería por todo, cuánto suma lo que lleva, o cualquier variante de solicitar el detalle o precio total de su pedido actual
   - "search_product": el cliente busca un producto que NO está en la lista actual, o pregunta por precio/disponibilidad de algo nuevo
   - "edit_cart": el cliente quiere MODIFICAR su pedido actual: eliminar un producto, cambiar cantidad de uno ya agregado, o reemplazar uno por otro
+  - "request_quote": el cliente pide una cotización, presupuesto, proforma, o quiere que le armen/generen/envíen una cotización con lo que lleva o ha pedido
   - "objection": el cliente dice que está caro, que lo va a pensar, que después, que no tiene dinero, que no le interesa
   - "greeting": saludo puro sin consulta de producto ni pregunta específica
   - "general_question": pregunta sobre envíos, métodos de pago, tiempo de entrega, políticas, u otras preguntas que no son sobre un producto específico en catálogo
@@ -281,7 +302,8 @@ ${activeProducts && activeProducts.length > 0 ? '- "selectionIndexes": array de 
 - "removeProductHint": SOLO si intent es "edit_cart" Y el cliente pide EXPLÍCITAMENTE quitar/eliminar un producto (frases como "ya no quiero", "quita", "saca", "elimina", "sin"). NO usar si el cliente solo cambia la cantidad. Ej: "ya no quiero la mecha 8D" → removeProductHint: "mecha 8D". "que sean mejor 2 kilos de ácido esteárico" → NO removeProductHint (solo addProductHint con la nueva cantidad).
 - "addProductHint": SOLO si intent es "edit_cart" Y el cliente modifica UN SOLO producto. Usa el fragmento MÁS ESPECÍFICO: las palabras que diferencian ese producto de otros en el pedido. Si hay varios productos del mismo tipo, DEBES incluir las palabras distintivas. Ej: "agrega 2 fragancias más de brisa marina" → addProductHint: "brisa marina" (NO "fragancia"). "agrega 1 kilo más de cera de coco" → addProductHint: "cera de coco"
 - "cartEdits": SOLO si intent es "edit_cart" Y el cliente modifica DOS O MÁS productos del carrito en un mismo mensaje. Array de objetos {productHint, quantity}. No usar junto con addProductHint. Ej: "deben ser 4 de jazmin y 4 de brisa marina" → cartEdits: [{"productHint":"jazmin","quantity":4},{"productHint":"brisa marina","quantity":4}]
-- "searchQuery": SOLO si intent es "search_product" Y el producto mencionado NO aparece en la lista activa, extrae ÚNICAMENTE el tipo o categoría del producto. Elimina completamente frases de uso como "para jabones", "para velas", "para hacer X", "para mis X", "para uso en X". Ejemplos: "fragancias para jabones" → "fragancias", "colorante para velas" → "colorante", "cera para velas artesanales" → "cera".
+- "variantHint": TAMBIÉN para intent "search_product", si el cliente menciona una presentación, tamaño o formato específico del producto buscado (ej: "20 ml", "100 gramos", "1 litro", "medio kilo"). Extrae SOLO el fragmento de tamaño/presentación. Ej: "3 fragancias de chicle de 20 ml" → variantHint: "20 ml", "2 fragancias lavanda de 100 gramos" → variantHint: "100 gramos". No incluir si no hay presentación específica.
+- "searchQuery": SOLO si intent es "search_product" Y el producto mencionado NO aparece en la lista activa. Extrae el nombre específico del producto incluyendo su descriptor propio (sabor, aroma, nombre de marca, tipo). Conserva "para velas" o "para jabones" si pueden ser parte del nombre del producto (hay productos exclusivos para uno u otro). Elimina SOLO frases de contexto de uso del cliente como "para hacer X", "para mis X", "para fabricar X", "para uso en X". Ejemplos: "fragancias para jabones" → "fragancia para jabones", "fragancia de chicle de 20 ml" → "fragancia chicle", "fragancia de lavanda para velas" → "fragancia lavanda para velas", "colorante para mis velas artesanales" → "colorante", "cera para hacer velas" → "cera", "3 kilos de cera de soya apf" → "cera soya apf".
 
 Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && activeProducts.length > 0 ? '\nEjemplos:\n{"intent":"select_product","selectionIndexes":[2]}\n{"intent":"select_product","selectionIndexes":[1,3]}\n{"intent":"select_product","selectionIndexes":[1],"quantity":5}\n{"intent":"select_product","selectionIndexes":[2],"variantHint":"apf","quantity":2}\n{"intent":"select_product","selectionIndexes":[1]}  // cliente dice "la tr plus" y el producto 1 contiene "TR PLUS" en su nombre\n{"intent":"select_product","selectionIndexes":[2,3],"quantities":[3,2]}  // cliente dice "3 de chicle y 2 de floral"\n{"intent":"edit_cart","removeProductHint":"mecha 8D"}\n{"intent":"edit_cart","addProductHint":"cera de coco","quantity":1}\n{"intent":"edit_cart","cartEdits":[{"productHint":"jazmin","quantity":4},{"productHint":"brisa marina","quantity":4}]}\n{"intent":"unknown","quantity":3}' : '\nEjemplo: {"intent":"search_product","searchQuery":"cera de soja"}'}${awaitingMoreProducts ? '\n{"intent":"show_more"}' : ''}`;
 		const response = await this.client.chat.completions.create({
@@ -314,6 +336,7 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 			'show_more',
 			'show_cart',
 			'edit_cart',
+			'request_quote',
 			'greeting',
 			'objection',
 			'general_question',
@@ -352,7 +375,8 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 					: undefined,
 			selectionIndexes,
 			variantHint:
-				intent === 'select_product' && parsed.variantHint
+				(intent === 'select_product' || intent === 'search_product') &&
+				parsed.variantHint
 					? String(parsed.variantHint)
 					: undefined,
 			quantity,
@@ -424,14 +448,18 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 					.map((p, i) => {
 						if (p.variants.length === 1) {
 							const v = p.variants[0];
-							const label = v.name ? `${p.name} ${v.name}` : p.name;
+							const label = v.name
+								? `${p.name} ${v.name}`
+								: p.description
+									? `${p.name} (${p.description})`
+									: p.name;
 							return `${i + 1}. ${label} – ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`;
 						}
 						const variantLines = p.variants
-							.map(
-								v =>
-									`  - ${v.name}: ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`,
-							)
+							.map((v, idx) => {
+								const varLabel = v.name || `Opción ${idx + 1}`;
+								return `  - ${varLabel}: ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`;
+							})
 							.join('\n');
 						return `${i + 1}. ${p.name}\n${variantLines}`;
 					})
@@ -461,14 +489,18 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 					.map((p, i) => {
 						if (p.variants.length === 1) {
 							const v = p.variants[0];
-							const label = v.name ? `${p.name} ${v.name}` : p.name;
+							const label = v.name
+								? `${p.name} ${v.name}`
+								: p.description
+									? `${p.name} (${p.description})`
+									: p.name;
 							return `${i + 1}. ${label} – ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`;
 						}
 						const variantLines = p.variants
-							.map(
-								v =>
-									`  - ${v.name}: ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`,
-							)
+							.map((v, idx) => {
+								const varLabel = v.name || `Opción ${idx + 1}`;
+								return `  - ${varLabel}: ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`;
+							})
 							.join('\n');
 						return `${i + 1}. ${p.name}\n${variantLines}`;
 					})
@@ -532,13 +564,17 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 					? `${p.name} ${singleVariant.name}`
 					: p.name;
 				const isStockExceeded =
-					ctx.requestedQuantity !== undefined &&
-					ctx.requestedQuantity > (ctx.quantity ?? 0);
+					(ctx.requestedQuantity !== undefined &&
+						ctx.requestedQuantity > (ctx.quantity ?? 0)) ||
+					!!ctx.stockExceededNote;
 				if (isStockExceeded) {
 					// Stock insuficiente: incluir datos del producto + nota de stock
+					const stockNote =
+						ctx.stockExceededNote ??
+						`El cliente pidió ${ctx.requestedQuantity} unidades pero solo hay ${ctx.quantity} disponible(s). NO confirmes el pedido ni calcules total. Informa brevemente que solo hay ${ctx.quantity} disponible(s) y pregunta si quiere esa cantidad, por ejemplo: "Solo tenemos ${ctx.quantity}, ¿te agrego esa?" o "Solo hay ${ctx.quantity} disponible, ¿quieres esa?" u otra variación natural. NUNCA uses frases como "te lo llevo", "te la llevo" ni similares.`;
 					parts.push(
 						`\nProducto: ${productLabel} a ${formattedUnit ?? 'precio no disponible'}.` +
-							`\nIMPORTANTE: El cliente pidió ${ctx.requestedQuantity} unidades pero solo hay ${ctx.quantity} disponible(s). NO confirmes el pedido ni calcules total. Informa brevemente que solo hay ${ctx.quantity} disponible(s) y pregunta si quiere esa cantidad, por ejemplo: "Solo tenemos ${ctx.quantity}, ¿te agrego esa?" o "Solo hay ${ctx.quantity} disponible, ¿quieres esa?" u otra variación natural. NUNCA uses frases como "te lo llevo", "te la llevo" ni similares.`,
+							`\nIMPORTANTE: ${stockNote}`,
 					);
 				} else if (formattedUnit && formattedTotal) {
 					// Confirmación limpia: NO incluir DATO EXACTO para evitar que el AI
@@ -591,14 +627,18 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 				.map((p, i) => {
 					if (p.variants.length === 1) {
 						const v = p.variants[0];
-						const label = v.name ? `${p.name} ${v.name}` : p.name;
+						const label = v.name
+							? `${p.name} ${v.name}`
+							: p.description
+								? `${p.name} (${p.description})`
+								: p.name;
 						return `${i + 1}. ${label} – ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`;
 					}
 					const variantLines = p.variants
-						.map(
-							v =>
-								`  - ${v.name}: ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`,
-						)
+						.map((v, idx) => {
+							const varLabel = v.name || `Opción ${idx + 1}`;
+							return `  - ${varLabel}: ${formatPrice(v.price, currency)} (${v.totalQty} disponibles)`;
+						})
 						.join('\n');
 					return `${i + 1}. ${p.name}\n${variantLines}`;
 				})
@@ -736,6 +776,87 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 					'\nResponde de forma natural y breve. Si no tienes la información exacta, invita al cliente a contactar al equipo directamente.' +
 					'\nNunca inventes datos concretos como precios de envío, tiempos exactos o métodos de pago que no se te hayan proporcionado.',
 			);
+		} else if (ctx.intent === 'request_quote') {
+			parts.push(
+				'\nEl cliente quiere generar una cotización con lo que lleva en su pedido.' +
+					'\nNecesitamos sus datos para armarla. Pídele su nombre completo y número de cédula (o documento de identidad) de forma natural.' +
+					'\nEjemplo: "¡Claro! Para armarte la cotización necesito tu nombre completo y tu número de cédula."' +
+					'\nSé breve y directa, no repitas el contenido del pedido.',
+			);
+		} else if (ctx.intent === 'awaiting_customer_data') {
+			parts.push(
+				'\nEstamos recopilando los datos del cliente para la cotización.' +
+					'\nEl cliente debería haber enviado su nombre y cédula. Si falta alguno, pídelo de forma natural.' +
+					'\nSi ya tenemos ambos datos, pídele su dirección y ciudad para completar la cotización.' +
+					'\nSé breve y conversacional.',
+			);
+		} else if (ctx.intent === 'awaiting_address') {
+			parts.push(
+				'\nNecesitamos la dirección y ciudad del cliente para la cotización.' +
+					'\nPídele su dirección de entrega y la ciudad de forma natural.' +
+					'\nEjemplo: "Ahora necesito tu dirección de entrega y la ciudad, por favor."' +
+					'\nSé breve.',
+			);
+		} else if (ctx.intent === 'awaiting_city_selection') {
+			if (ctx.cityCandidates && ctx.cityCandidates.length > 0) {
+				const cityList = ctx.cityCandidates
+					.map(c => `${c.index}. ${c.name}, ${c.region}`)
+					.join('\n');
+				parts.push(
+					`\nEl cliente escribió una ciudad y encontramos varias coincidencias:\n${cityList}` +
+						'\nPídele que elija el número de la opción correcta. Sé breve.',
+				);
+			}
+		} else if (ctx.intent === 'awaiting_confirmation') {
+			const d = ctx.quoteFlowData;
+			const cartSummary =
+				ctx.cart && ctx.cart.length > 0
+					? ctx.cart
+							.map(item => {
+								const name = item.variantName
+									? `${item.productName} ${item.variantName}`
+									: item.productName;
+								const total = item.unitPrice
+									? formatPrice(
+											String(Number(item.unitPrice) * item.quantity),
+											item.currency,
+										)
+									: '';
+								return `- ${item.quantity}x ${name}${total ? ` = ${total}` : ''}`;
+							})
+							.join('\n')
+					: '';
+			parts.push(
+				`\nMuéstrale al cliente este resumen para que confirme:` +
+					`\n\nDatos:` +
+					`\nNombre: ${d?.fullName ?? ''}` +
+					`\nCédula: ${d?.dni ?? ''}` +
+					`\nTeléfono: ${d?.phoneNumber ?? ''}` +
+					`\nDirección: ${d?.location ?? ''}` +
+					`\nCiudad: ${d?.cityName ?? ''}` +
+					(cartSummary ? `\n\nProductos:\n${cartSummary}` : '') +
+					'\n\nPregunta si todo está correcto para generar la cotización. Si quiere cambiar algo, que te indique qué corregir.',
+			);
+		} else if (ctx.intent === 'awaiting_correction_unclear') {
+			const d = ctx.quoteFlowData;
+			parts.push(
+				`\nEl cliente quiere corregir algo del resumen pero no queda claro qué. Los datos actuales son:` +
+					`\nNombre: ${d?.fullName ?? ''}` +
+					`\nCédula: ${d?.dni ?? ''}` +
+					`\nTeléfono: ${d?.phoneNumber ?? ''}` +
+					`\nDirección: ${d?.location ?? ''}` +
+					`\nCiudad: ${d?.cityName ?? ''}` +
+					'\n\nPide amablemente que te indique cuál dato quiere cambiar y cuál es el valor correcto. Sé breve y directo.',
+			);
+		} else if (ctx.intent === 'quote_created') {
+			parts.push(
+				`\nLa cotización fue generada exitosamente.` +
+					(ctx.quoteSerialNumber
+						? `\nNúmero de referencia: ${ctx.quoteSerialNumber}`
+						: '') +
+					'\nConfirma al cliente que su cotización fue creada.' +
+					'\nDespídete de forma cálida y deja la puerta abierta para futuras consultas.',
+			);
 		} else {
 			parts.push(
 				'\nNo se encontraron productos para esta consulta. Responde de forma conversacional pidiendo más información sobre lo que busca.',
@@ -747,5 +868,84 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 		);
 
 		return parts.join('\n');
+	};
+
+	/**
+	 * Extrae datos estructurados del mensaje del cliente según el paso del flujo de cotización.
+	 * - 'customer_data': extrae fullName y dni del texto libre.
+	 * - 'address': extrae la dirección (location) y opcionalmente la ciudad.
+	 */
+	extractCustomerData = async (
+		text: string,
+		step: 'customer_data' | 'address',
+	): Promise<Record<string, string | undefined>> => {
+		const prompts: Record<string, string> = {
+			customer_data: `Extrae del siguiente mensaje el nombre completo y el número de documento (cédula/DNI/RUC) del cliente.
+Devuelve un JSON con:
+- "fullName": nombre completo (capitalizado correctamente). Si no lo mencionó, null.
+- "dni": número de documento tal como lo escribió. Si no lo mencionó, null.
+Responde ÚNICAMENTE con el JSON.`,
+			address: `Extrae del siguiente mensaje la dirección y opcionalmente la ciudad del cliente.
+Devuelve un JSON con:
+- "location": dirección física tal como la escribió. Si no la mencionó, null.
+- "city": nombre de la ciudad si la mencionó. Si no la mencionó, null.
+Responde ÚNICAMENTE con el JSON.`,
+		};
+
+		const response = await this.client.chat.completions.create({
+			model: 'gpt-4o-mini',
+			messages: [
+				{ role: 'system', content: prompts[step] },
+				{ role: 'user', content: text },
+			],
+			max_tokens: 150,
+			temperature: 0,
+			response_format: { type: 'json_object' },
+		});
+
+		const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
+		return JSON.parse(raw) as Record<string, string | undefined>;
+	};
+
+	/**
+	 * Detects which quote data field(s) the customer wants to correct and extracts the new value(s).
+	 */
+	extractQuoteCorrection = async (
+		text: string,
+		currentData: Record<string, unknown>,
+	): Promise<Record<string, string | undefined>> => {
+		const prompt = `El cliente está revisando un resumen de cotización con estos datos:
+- Nombre: ${currentData.fullName ?? 'no proporcionado'}
+- Cédula: ${currentData.dni ?? 'no proporcionado'}
+- Teléfono: ${currentData.phoneNumber ?? 'no proporcionado'}
+- Dirección: ${currentData.location ?? 'no proporcionado'}
+- Ciudad: ${currentData.cityName ?? 'no proporcionado'}
+
+El cliente quiere CORREGIR uno o más datos. Analiza su mensaje e identifica qué campos quiere cambiar y cuáles son los nuevos valores.
+
+Devuelve un JSON con SOLO los campos que el cliente quiere corregir:
+- "fullName": nuevo nombre completo (capitalizado correctamente). Solo si quiere cambiar el nombre.
+- "dni": nuevo número de documento. Solo si quiere cambiar la cédula/DNI.
+- "phoneNumber": nuevo número de teléfono (solo dígitos, sin código de país). Solo si quiere cambiar el teléfono.
+- "location": nueva dirección. Solo si quiere cambiar la dirección.
+- "city": nueva ciudad. Solo si quiere cambiar la ciudad.
+
+Si el mensaje contiene un número largo (6-12 dígitos) sin contexto claro, probablemente es una corrección de cédula.
+Si no puedes determinar qué quiere corregir, devuelve un JSON vacío {}.
+Responde ÚNICAMENTE con el JSON.`;
+
+		const response = await this.client.chat.completions.create({
+			model: 'gpt-4o-mini',
+			messages: [
+				{ role: 'system', content: prompt },
+				{ role: 'user', content: text },
+			],
+			max_tokens: 200,
+			temperature: 0,
+			response_format: { type: 'json_object' },
+		});
+
+		const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
+		return JSON.parse(raw) as Record<string, string | undefined>;
 	};
 }
