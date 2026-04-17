@@ -10,6 +10,31 @@ export const redis = new Redis({
 	lazyConnect: true,
 });
 
+// Evita logs repetitivos de error de conexión
+let hasLoggedConnRefused = false;
+interface ErrorWithCode extends Error {
+	code?: string;
+}
+redis.on('error', (err: unknown) => {
+	let code: string | undefined = undefined;
+	if (typeof err === 'object' && err !== null && 'code' in err) {
+		code = (err as ErrorWithCode).code;
+	}
+	if (code === 'ECONNREFUSED') {
+		if (!hasLoggedConnRefused) {
+			console.warn(
+				'[Redis error] Connection refused (ECONNREFUSED). Redis is optional, system will continue.',
+			);
+			hasLoggedConnRefused = true;
+		}
+		return;
+	}
+	console.warn(
+		'[Redis error]',
+		err instanceof Error ? err.message : String(err),
+	);
+});
+
 export async function connectToRedis(retries = 5, delay = 5000) {
 	while (retries > 0) {
 		try {
