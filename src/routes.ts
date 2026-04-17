@@ -15,7 +15,6 @@ import transactionRouter from './modules/transaction/routes';
 import cityRouter from './modules/city/routes';
 import cashSessionRouter from './modules/cash-session/routes';
 import customerBalanceRouter from './modules/customer-balance/routes';
-import whatsAppRouter from './modules/whatsapp/routes';
 import whatsAppAgentRouter from './modules/whatsapp-agent/routes';
 import docsRouter from './modules/docs/routes';
 import { verifyJWT } from './middlewares/verifyJWT';
@@ -59,7 +58,6 @@ router.use('/api/v1/transactions', transactionRouter);
 router.use('/api/v1/cities', cityRouter);
 router.use('/api/v1/cash-sessions', cashSessionRouter);
 router.use('/api/v1/customer-balance', customerBalanceRouter);
-router.use('/api/v1/whatsapp', whatsAppRouter);
 router.use('/api/v1/docs', docsRouter);
 
 export default router;

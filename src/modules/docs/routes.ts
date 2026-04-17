@@ -3,7 +3,7 @@ import { QuoteModel } from '../quote/model';
 import { BillingModel } from '../billing/model';
 import { DocsController } from './controller';
 import { DocsService } from './service';
-import { WhatsAppDocumentService } from '../whatsapp/document.service';
+import { WhatsAppService } from '../whatsapp/service';
 import { authorize } from '../../middlewares/authorize';
 import { QuotePermissions, BillingPermissions } from '../permission/enums';
 import { QuoteService } from '../quote/service';
@@ -13,14 +13,14 @@ const router = Router();
 
 const quoteService = new QuoteService(QuoteModel);
 const billingService = new BillingService(BillingModel);
-const waDocService = new WhatsAppDocumentService();
+const whatsAppService = new WhatsAppService();
 const docsService = new DocsService(quoteService, billingService);
 
 const docsController = new DocsController(
 	docsService,
 	quoteService,
 	billingService,
-	waDocService,
+	whatsAppService,
 );
 
 router.get(

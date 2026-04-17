@@ -2,7 +2,7 @@ import { Handler } from 'express';
 import { DocsService } from './service';
 import { QuoteService } from '../quote/service';
 import { BillingService } from '../billing/service';
-import { WhatsAppDocumentService } from '../whatsapp/document.service';
+import { WhatsAppService } from '../whatsapp/service';
 import { calculateTotals } from './utils';
 import { ENV } from '../../config/env';
 
@@ -10,18 +10,18 @@ export class DocsController {
 	private docsService;
 	private quoteService;
 	private billingService;
-	private waDocService;
+	private whatsAppService;
 
 	constructor(
 		docsService: DocsService,
 		quoteService: QuoteService,
 		billingService: BillingService,
-		waDocService: WhatsAppDocumentService,
+		whatsAppService: WhatsAppService,
 	) {
 		this.docsService = docsService;
 		this.quoteService = quoteService;
 		this.billingService = billingService;
-		this.waDocService = waDocService;
+		this.whatsAppService = whatsAppService;
 	}
 
 	getQuotePdf: Handler = async (req, res, next) => {
@@ -63,7 +63,7 @@ export class DocsController {
 
 			const buffer = await this.docsService.generateQuote(serialNumber);
 			const filename = `CTZ-${serialNumber}.pdf`;
-			const mediaId = await this.waDocService.uploadMedia(buffer, filename);
+			const mediaId = await this.whatsAppService.uploadMedia(buffer, filename);
 
 			const customerName =
 				(quote.fullName as string)?.toUpperCase() ?? 'CONSUMIDOR FINAL';
@@ -77,7 +77,7 @@ export class DocsController {
 			};
 
 			const recipientPhone = `${quote.callingCode}${quote.phoneNumber}`;
-			await this.waDocService
+			await this.whatsAppService
 				.sendTemplate(recipientPhone, mediaId, templateParams)
 				.catch(err =>
 					console.error('Error sending WhatsApp to customer:', err.message),
@@ -89,7 +89,7 @@ export class DocsController {
 					: ENV.SHOP_EC_PHONE_NUMBER;
 
 			if (shopPhone) {
-				this.waDocService
+				this.whatsAppService
 					.sendTemplate(shopPhone, mediaId, templateParams)
 					.catch(err =>
 						console.error('Error sending WhatsApp to shop:', err.message),
@@ -141,7 +141,7 @@ export class DocsController {
 
 			const buffer = await this.docsService.generateBilling(serialNumber);
 			const filename = `FCT-${serialNumber}.pdf`;
-			const mediaId = await this.waDocService.uploadMedia(buffer, filename);
+			const mediaId = await this.whatsAppService.uploadMedia(buffer, filename);
 
 			const customerName =
 				(billing.fullName as string)?.toUpperCase() ?? 'CONSUMIDOR FINAL';
@@ -155,7 +155,7 @@ export class DocsController {
 			};
 
 			const recipientPhone = `${billing.callingCode}${billing.phoneNumber}`;
-			await this.waDocService.sendTemplate(
+			await this.whatsAppService.sendTemplate(
 				recipientPhone,
 				mediaId,
 				templateParams,
@@ -167,7 +167,7 @@ export class DocsController {
 					: ENV.SHOP_EC_PHONE_NUMBER;
 
 			if (shopPhone) {
-				this.waDocService
+				this.whatsAppService
 					.sendTemplate(shopPhone, mediaId, templateParams)
 					.catch(err =>
 						console.error('Error sending WhatsApp to shop:', err.message),

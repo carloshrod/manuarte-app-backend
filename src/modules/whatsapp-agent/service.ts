@@ -21,7 +21,7 @@ import {
 import { QuoteService } from '../quote/service';
 import { QuoteModel } from '../quote/model';
 import { QuoteStatus } from '../quote/types';
-import { WhatsAppDocumentService } from '../whatsapp/document.service';
+import { WhatsAppService } from '../whatsapp/service';
 import { calculateTotals, formatCurrency } from '../docs/utils';
 import { CustomerService } from '../customer/service';
 import { CustomerModel } from '../customer/model';
@@ -119,7 +119,7 @@ export class WhatsAppAgentService {
 		this.quoteService,
 		new BillingService(BillingModel),
 	);
-	private waDocService = new WhatsAppDocumentService();
+	private whatsAppService = new WhatsAppService();
 	private customerService = new CustomerService(CustomerModel);
 	private cityService = new CityService(CityModel);
 
@@ -2737,36 +2737,25 @@ export class WhatsAppAgentService {
 						if (quoteResult.status !== 200) return;
 
 						const quote = quoteResult.quote;
-						const mediaId = await this.waDocService.uploadMedia(
+						const mediaId = await this.whatsAppService.uploadMedia(
 							buffer,
 							filename,
 							botPhoneNumberId,
 						);
 						const { total } = calculateTotals(quote);
 						const recipientPhone = `${quote.callingCode}${quote.phoneNumber}`;
-						// const shopPhone =
-						// 	quote.countryIsoCode === 'CO'
-						// 		? ENV.SHOP_CO_PHONE_NUMBER
-						// 		: ENV.SHOP_EC_PHONE_NUMBER;
 
 						const formattedTotal = formatCurrency(total);
 						const caption = `📄 Cotización #${serial} por un total de ${formattedTotal}.\n\n`;
 
 						await Promise.all([
-							this.waDocService.sendDocument(
+							this.whatsAppService.sendDocument(
 								recipientPhone,
 								mediaId,
 								botPhoneNumberId,
 								filename,
 								caption,
 							),
-							// this.waDocService.sendDocument(
-							// 	shopPhone,
-							// 	mediaId,
-							// 	botPhoneNumberId,
-							// 	filename,
-							// 	caption,
-							// ),
 						]);
 					})
 					.catch(err =>

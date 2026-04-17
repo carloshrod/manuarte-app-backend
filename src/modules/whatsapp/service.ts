@@ -13,7 +13,7 @@ type SendTemplateParams = {
 	templateName: string;
 };
 
-export class WhatsAppDocumentService {
+export class WhatsAppService {
 	uploadMedia = async (
 		buffer: Buffer,
 		filename: string,
