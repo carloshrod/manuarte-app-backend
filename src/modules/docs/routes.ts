@@ -26,12 +26,12 @@ const docsController = new DocsController(
 router.get(
 	'/:serialNumber/quote-pdf',
 	authorize(QuotePermissions.QUOTE_READ),
-	docsController.getPdf,
+	docsController.getQuotePdf,
 );
 router.post(
 	'/:serialNumber/send-quote-pdf',
 	authorize(QuotePermissions.QUOTE_READ),
-	docsController.sendPdfWhatsApp,
+	docsController.sendQuotePdfWhatsApp,
 );
 router.get(
 	'/:serialNumber/billing-pdf',

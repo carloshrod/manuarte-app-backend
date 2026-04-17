@@ -19,7 +19,6 @@ export class WhatsAppDocumentService {
 		filename: string,
 		phoneNumberId: string = ENV.WHATSAPP_PHONE_NUMBER_ID,
 	): Promise<string> => {
-		console.log('****************** uploading media *************************');
 		const form = new FormData();
 		form.append('file', buffer, {
 			filename,

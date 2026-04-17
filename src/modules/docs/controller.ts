@@ -4,6 +4,7 @@ import { QuoteService } from '../quote/service';
 import { BillingService } from '../billing/service';
 import { WhatsAppDocumentService } from '../whatsapp/document.service';
 import { calculateTotals } from './utils';
+import { ENV } from '../../config/env';
 
 export class DocsController {
 	private docsService;
@@ -23,7 +24,7 @@ export class DocsController {
 		this.waDocService = waDocService;
 	}
 
-	getPdf: Handler = async (req, res, next) => {
+	getQuotePdf: Handler = async (req, res, next) => {
 		try {
 			const { serialNumber } = req.params;
 
@@ -41,7 +42,7 @@ export class DocsController {
 		}
 	};
 
-	sendPdfWhatsApp: Handler = async (req, res, next) => {
+	sendQuotePdfWhatsApp: Handler = async (req, res, next) => {
 		try {
 			const { serialNumber } = req.params;
 
@@ -76,22 +77,24 @@ export class DocsController {
 			};
 
 			const recipientPhone = `${quote.callingCode}${quote.phoneNumber}`;
-			await this.waDocService.sendTemplate(
-				recipientPhone,
-				mediaId,
-				templateParams,
-			);
+			await this.waDocService
+				.sendTemplate(recipientPhone, mediaId, templateParams)
+				.catch(err =>
+					console.error('Error sending WhatsApp to customer:', err.message),
+				);
 
-			// const shopPhone =
-			// 	quote.countryIsoCode === 'CO'
-			// 		? ENV.SHOP_CO_PHONE_NUMBER
-			// 		: ENV.SHOP_EC_PHONE_NUMBER;
+			const shopPhone =
+				quote.countryIsoCode === 'CO'
+					? ENV.SHOP_CO_PHONE_NUMBER
+					: ENV.SHOP_EC_PHONE_NUMBER;
 
-			// if (shopPhone) {
-			// 	this.waDocService
-			// 		.sendTemplate(shopPhone, mediaId, templateParams)
-			// 		.catch((err) => console.error('Error sending WhatsApp to shop:', err.message));
-			// }
+			if (shopPhone) {
+				this.waDocService
+					.sendTemplate(shopPhone, mediaId, templateParams)
+					.catch(err =>
+						console.error('Error sending WhatsApp to shop:', err.message),
+					);
+			}
 
 			res.status(200).json({ message: 'PDF enviado correctamente' });
 		} catch (error) {
@@ -157,6 +160,19 @@ export class DocsController {
 				mediaId,
 				templateParams,
 			);
+
+			const shopPhone =
+				billing.countryIsoCode === 'CO'
+					? ENV.SHOP_CO_PHONE_NUMBER
+					: ENV.SHOP_EC_PHONE_NUMBER;
+
+			if (shopPhone) {
+				this.waDocService
+					.sendTemplate(shopPhone, mediaId, templateParams)
+					.catch(err =>
+						console.error('Error sending WhatsApp to shop:', err.message),
+					);
+			}
 
 			res.status(200).json({ message: 'PDF enviado correctamente' });
 		} catch (error) {
