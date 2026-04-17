@@ -21,6 +21,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@react-pdf/renderer": "^4.5.1",
     "axios": "^1.13.5",
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.7",
@@ -36,6 +37,7 @@
     "openai": "^6.32.0",
     "pg": "^8.13.1",
     "pg-hstore": "^2.3.4",
+    "react": "^19.2.5",
     "sequelize": "^6.37.4",
     "sequelize-auto": "^0.8.8",
     "uuid": "^11.0.3"
@@ -50,6 +52,7 @@
     "@types/morgan": "^1.9.9",
     "@types/multer": "^2.0.0",
     "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.2.14",
     "@types/sequelize": "^4.28.20",
     "eslint": "^9.13.0",
     "globals": "^15.11.0",

@@ -21,11 +21,16 @@ import {
 import { QuoteService } from '../quote/service';
 import { QuoteModel } from '../quote/model';
 import { QuoteStatus } from '../quote/types';
+import { WhatsAppDocumentService } from '../whatsapp/document.service';
+import { calculateTotals, formatCurrency } from '../docs/utils';
 import { CustomerService } from '../customer/service';
 import { CustomerModel } from '../customer/model';
 import { CityService } from '../city/service';
 import { CityModel } from '../city/model';
 import { PersonModel } from '../person/model';
+import { DocsService } from '../docs/service';
+import { BillingService } from '../billing/service';
+import { BillingModel } from '../billing/model';
 
 const WHATSAPP_API_TIMEOUT_MS = 10_000;
 const BUFFER_WAIT_MS = 5_000; // espera antes de procesar mensajes acumulados
@@ -110,6 +115,11 @@ export class WhatsAppAgentService {
 	private logService = new WhatsAppLogService();
 	private openai = new OpenAIService();
 	private quoteService = new QuoteService(QuoteModel);
+	private docsService = new DocsService(
+		this.quoteService,
+		new BillingService(BillingModel),
+	);
+	private waDocService = new WhatsAppDocumentService();
 	private customerService = new CustomerService(CustomerModel);
 	private cityService = new CityService(CityModel);
 
@@ -186,8 +196,8 @@ export class WhatsAppAgentService {
 			}
 
 			if (
-				ENV.WHATSAPP_PHONE_NUMBER_ID &&
-				botPhoneNumberId !== ENV.WHATSAPP_PHONE_NUMBER_ID
+				ENV.WHATSAPP_AGENT_PHONE_NUMBER_ID &&
+				botPhoneNumberId !== ENV.WHATSAPP_AGENT_PHONE_NUMBER_ID
 			) {
 				console.log(
 					'[WhatsApp Agent] phoneNumberId no coincide con el configurado, ignorando mensaje de:',
@@ -1622,14 +1632,14 @@ export class WhatsAppAgentService {
 					replyText = await this.openai
 						.generateReply({
 							userMessage: text,
-							intent: 'awaiting_confirmation',
+							intent: 'existing_customer_confirmation',
 							cart: session.cart,
 							currency,
 							quoteFlowData: session.pendingQuoteFlow.collectedData,
 						})
 						.catch(
 							() =>
-								'Ya tengo tus datos. ¿Confirmo la cotización con estos datos?',
+								`¡Hola de nuevo, ${existingCustomer.fullName}! Ya tengo tus datos registrados. ¿Procedemos con la cotización?`,
 						);
 				} else {
 					// Cliente nuevo: iniciar flujo de recopilación
@@ -2344,7 +2354,7 @@ export class WhatsAppAgentService {
 	 */
 	private handleQuoteFlowStep = async (
 		phoneNumber: string,
-		_botPhoneNumberId: string,
+		botPhoneNumberId: string,
 		text: string,
 		normalizedText: string,
 		session: UserSession,
@@ -2717,17 +2727,56 @@ export class WhatsAppAgentService {
 				session.selectedProduct = undefined;
 
 				const serial = result.newQuote.serialNumber;
-				return await this.openai
-					.generateReply({
-						userMessage: text,
-						intent: 'quote_created',
-						quoteSerialNumber: serial,
-						currency,
+
+				// Enviar PDF por WhatsApp (fire-and-forget, no bloquea el reply)
+				this.docsService
+					.generateQuote(serial)
+					.then(async (buffer: Buffer) => {
+						const filename = `CTZ-${serial}.pdf`;
+						const quoteResult = await this.quoteService.getOne(serial);
+						if (quoteResult.status !== 200) return;
+
+						const quote = quoteResult.quote;
+						const mediaId = await this.waDocService.uploadMedia(
+							buffer,
+							filename,
+							botPhoneNumberId,
+						);
+						const { total } = calculateTotals(quote);
+						const recipientPhone = `${quote.callingCode}${quote.phoneNumber}`;
+						// const shopPhone =
+						// 	quote.countryIsoCode === 'CO'
+						// 		? ENV.SHOP_CO_PHONE_NUMBER
+						// 		: ENV.SHOP_EC_PHONE_NUMBER;
+
+						const formattedTotal = formatCurrency(total);
+						const caption = `📄 Cotización #${serial} por un total de ${formattedTotal}.\n\n`;
+
+						await Promise.all([
+							this.waDocService.sendDocument(
+								recipientPhone,
+								mediaId,
+								botPhoneNumberId,
+								filename,
+								caption,
+							),
+							// this.waDocService.sendDocument(
+							// 	shopPhone,
+							// 	mediaId,
+							// 	botPhoneNumberId,
+							// 	filename,
+							// 	caption,
+							// ),
+						]);
 					})
-					.catch(
-						() =>
-							`¡Listo! Tu cotización #${serial} fue generada. Pronto te la haremos llegar. ¡Gracias por tu preferencia!`,
+					.catch(err =>
+						console.error(
+							`[WhatsApp Agent] Error sending quote PDF for ${serial}:`,
+							err,
+						),
 					);
+
+				return 'Con gusto te ayudo a completar la compra 😊';
 			} catch (error) {
 				console.error('[WhatsApp Agent] Error creating quote:', error);
 				session.pendingQuoteFlow = null;

@@ -807,6 +807,35 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 						'\nPídele que elija el número de la opción correcta. Sé breve.',
 				);
 			}
+		} else if (ctx.intent === 'existing_customer_confirmation') {
+			const d = ctx.quoteFlowData;
+			const cartSummary =
+				ctx.cart && ctx.cart.length > 0
+					? ctx.cart
+							.map(item => {
+								const name = item.variantName
+									? `${item.productName} ${item.variantName}`
+									: item.productName;
+								const total = item.unitPrice
+									? formatPrice(
+											String(Number(item.unitPrice) * item.quantity),
+											item.currency,
+										)
+									: '';
+								return `- ${item.quantity}x ${name}${total ? ` = ${total}` : ''}`;
+							})
+							.join('\n')
+					: '';
+			parts.push(
+				`\nEl cliente ya está registrado en el sistema. Llámalo por su nombre (sin apellido) (${d?.fullName ?? ''}) de forma natural y dile que ya tienes sus datos. Ejemplo: "Sr. Carlos, me aparece registrado en el sistema con estos datos:". Ten en cuenta si es hombre o mujer.` +
+					`\nMuéstrale el siguiente resumen:` +
+					`\nNombre: ${d?.fullName ?? ''}` +
+					`\nCédula: ${d?.dni ?? ''}` +
+					`\nDirección: ${d?.location ?? ''}` +
+					`\nCiudad: ${d?.cityName ?? ''}` +
+					(cartSummary ? `\n\nPedido:\n${cartSummary}` : '') +
+					'\n\nPregúntale si con estos datos y este pedido procedemos a generar la cotización. Si quiere cambiar algo, que te indique qué corregir. Sé natural y cercano, no suenes a sistema.',
+			);
 		} else if (ctx.intent === 'awaiting_confirmation') {
 			const d = ctx.quoteFlowData;
 			const cartSummary =
