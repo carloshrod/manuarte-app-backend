@@ -72,6 +72,33 @@ export class WhatsAppService {
 		);
 	};
 
+	sendImage = async (
+		to: string,
+		mediaId: string,
+		phoneNumberId: string,
+		caption?: string,
+	): Promise<void> => {
+		await axios.post(
+			`${GRAPH_API_BASE}/${phoneNumberId}/messages`,
+			{
+				messaging_product: 'whatsapp',
+				recipient_type: 'individual',
+				to,
+				type: 'image',
+				image: {
+					id: mediaId,
+					...(caption ? { caption } : {}),
+				},
+			},
+			{
+				headers: {
+					Authorization: `Bearer ${ENV.WHATSAPP_ACCESS_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+			},
+		);
+	};
+
 	sendTemplate = async (
 		to: string,
 		mediaId: string,

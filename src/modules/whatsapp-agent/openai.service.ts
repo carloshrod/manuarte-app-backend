@@ -184,6 +184,14 @@ export interface OpenAIContext {
 		location?: string;
 		cityName?: string;
 	};
+	/** Datos recopilados del cliente en flujo de compra */
+	purchaseFlowData?: {
+		fullName?: string;
+		dni?: string;
+		phoneNumber?: string;
+		location?: string;
+		cityName?: string;
+	};
 	/** Candidatos de ciudad para selección */
 	cityCandidates?: Array<{ index: number; name: string; region: string }>;
 	/** Número de serie de cotización creada */
@@ -197,6 +205,7 @@ export type AIDetectedIntent =
 	| 'show_cart'
 	| 'edit_cart'
 	| 'request_quote'
+	| 'purchase_intent'
 	| 'greeting'
 	| 'objection'
 	| 'general_question'
@@ -294,6 +303,7 @@ ${selectionInstructions}${showMoreInstruction}  - "show_cart": el cliente pregun
   - "search_product": el cliente busca un producto que NO está en la lista actual, o pregunta por precio/disponibilidad de algo nuevo
   - "edit_cart": el cliente quiere MODIFICAR su pedido actual: eliminar un producto, cambiar cantidad de uno ya agregado, o reemplazar uno por otro
   - "request_quote": el cliente pide una cotización, presupuesto, proforma, o quiere que le armen/generen/envíen una cotización con lo que lleva o ha pedido
+  - "purchase_intent": el cliente dice que quiere comprar, pagar, finalizar su pedido o completar su compra (frases como "quiero comprar", "quiero pagar", "cómo pago", "cómo compro", "finalizar pedido", "completar la compra", "quiero proceder", "quiero el pedido", "quiero finalizarlo")
   - "objection": el cliente dice que está caro, que lo va a pensar, que después, que no tiene dinero, que no le interesa
   - "greeting": saludo puro sin consulta de producto ni pregunta específica
   - "general_question": pregunta sobre envíos, métodos de pago, tiempo de entrega, políticas, u otras preguntas que no son sobre un producto específico en catálogo
@@ -337,6 +347,7 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 			'show_cart',
 			'edit_cart',
 			'request_quote',
+			'purchase_intent',
 			'greeting',
 			'objection',
 			'general_question',
@@ -865,6 +876,78 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 					`\nCiudad: ${d?.cityName ?? ''}` +
 					(cartSummary ? `\n\nProductos:\n${cartSummary}` : '') +
 					'\n\nPregunta si todo está correcto para generar la cotización. Si quiere cambiar algo, que te indique qué corregir.',
+			);
+		} else if (ctx.intent === 'purchase_intent') {
+			parts.push(
+				'\nEl cliente quiere comprar o finalizar su pedido.' +
+					'\nNecesitamos sus datos para procesar la compra. Pídele su nombre completo y número de cédula de forma natural.' +
+					'\nEjemplo: "¡Perfecto! Para procesar tu compra necesito tu nombre completo y tu número de cédula."' +
+					'\nSé breve y directa, no repitas el contenido del pedido.',
+			);
+		} else if (ctx.intent === 'existing_customer_purchase_confirmation') {
+			const d = ctx.purchaseFlowData;
+			const cartSummaryPurchase =
+				ctx.cart && ctx.cart.length > 0
+					? ctx.cart
+							.map(item => {
+								const name = item.variantName
+									? `${item.productName} ${item.variantName}`
+									: item.productName;
+								const total = item.unitPrice
+									? formatPrice(
+											String(Number(item.unitPrice) * item.quantity),
+											item.currency,
+										)
+									: '';
+								return `- ${item.quantity}x ${name}${total ? ` = ${total}` : ''}`;
+							})
+							.join('\n')
+					: '';
+			parts.push(
+				`\nEl cliente ya está registrado en el sistema. Llámalo por su nombre (sin apellido) (${d?.fullName ?? ''}) de forma natural y dile que ya tienes sus datos. Ten en cuenta si es hombre o mujer.` +
+					`\nMuéstrale el siguiente resumen:` +
+					`\nNombre: ${d?.fullName ?? ''}` +
+					`\nCédula: ${d?.dni ?? ''}` +
+					`\nDirección: ${d?.location ?? ''}` +
+					`\nCiudad: ${d?.cityName ?? ''}` +
+					(cartSummaryPurchase ? `\n\nPedido:\n${cartSummaryPurchase}` : '') +
+					'\n\nPregúntale si con estos datos y este pedido procedemos con el pago. Sé natural y cercano.',
+			);
+		} else if (ctx.intent === 'awaiting_purchase_confirmation') {
+			const d = ctx.purchaseFlowData;
+			const cartSummaryPurchase =
+				ctx.cart && ctx.cart.length > 0
+					? ctx.cart
+							.map(item => {
+								const name = item.variantName
+									? `${item.productName} ${item.variantName}`
+									: item.productName;
+								const total = item.unitPrice
+									? formatPrice(
+											String(Number(item.unitPrice) * item.quantity),
+											item.currency,
+										)
+									: '';
+								return `- ${item.quantity}x ${name}${total ? ` = ${total}` : ''}`;
+							})
+							.join('\n')
+					: '';
+			parts.push(
+				`\nMuéstrale al cliente este resumen para que confirme antes de generar el pago:` +
+					`\n\nDatos:` +
+					`\nNombre: ${d?.fullName ?? ''}` +
+					`\nCédula: ${d?.dni ?? ''}` +
+					`\nTeléfono: ${d?.phoneNumber ?? ''}` +
+					`\nDirección: ${d?.location ?? ''}` +
+					`\nCiudad: ${d?.cityName ?? ''}` +
+					(cartSummaryPurchase ? `\n\nProductos:\n${cartSummaryPurchase}` : '') +
+					'\n\nPregunta si todo está correcto para proceder con el pago. Si quiere cambiar algo, que te indique qué corregir.',
+			);
+		} else if (ctx.intent === 'awaiting_payment_confirmation') {
+			parts.push(
+				'\nEl cliente ya recibió el link de pago y estamos esperando que confirme el pago.' +
+					'\nRecuérdale amablemente que cuando complete el pago, nos avise para confirmar su pedido.' +
+					'\nSé breve y amable.',
 			);
 		} else if (ctx.intent === 'awaiting_correction_unclear') {
 			const d = ctx.quoteFlowData;

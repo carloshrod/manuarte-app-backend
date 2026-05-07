@@ -1,4 +1,6 @@
 import axios, { AxiosError } from 'axios';
+import crypto from 'crypto';
+import { toZonedTime } from 'date-fns-tz';
 import { Op } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { ENV } from '../../config/env';
@@ -11,6 +13,7 @@ import { ShopModel } from '../shop/model';
 import { CountryModel } from '../country/model';
 import { WhatsAppLogService } from './logging/log.service';
 import { OpenAIService } from './openai.service';
+import { PaymentLinkService } from './payment-link.service';
 import {
 	formatPrice,
 	normalizeText,
@@ -86,6 +89,60 @@ interface PendingQuoteFlow {
 	cityCandidates?: Array<{ id: number; name: string; regionName: string }>;
 }
 
+interface PendingPurchaseFlow {
+	step:
+		| 'awaiting_quote_confirmation'
+		| 'awaiting_customer_data'
+		| 'awaiting_address'
+		| 'awaiting_city_selection'
+		| 'awaiting_confirmation'
+		| 'awaiting_payment_confirmation'
+		| 'awaiting_receipt';
+	/** true solo cuando el usuario confirmó explícitamente proceder desde la cotización */
+	purchaseFromQuote?: boolean;
+	/** ID de la cotización vinculada (para eliminarla al confirmar pago) */
+	quoteId?: string;
+	/** Serial de la cotización vinculada (para mostrar referencia) */
+	quoteSerial?: string;
+	collectedData?: {
+		fullName?: string;
+		dni?: string;
+		phoneNumber?: string;
+		location?: string;
+		cityId?: number;
+		cityName?: string;
+		customerId?: string;
+		personId?: string;
+	};
+	cityCandidates?: Array<{ id: number; name: string; regionName: string }>;
+	/** Ítems del pedido (del carrito o de la cotización) */
+	items?: CartItem[];
+	/** Total del pedido en la moneda correspondiente */
+	total?: number;
+	/** Moneda del pedido */
+	currency?: string;
+	/** Referencia única de pago (UUID) generada al mostrar el link */
+	paymentRef?: string;
+	/** Link de pago enviado al cliente */
+	paymentLink?: string;
+}
+
+/** Campos compartidos entre PendingQuoteFlow y PendingPurchaseFlow usados por handleCommonCollectionSteps */
+interface CollectionFlow {
+	step: string;
+	collectedData?: {
+		fullName?: string;
+		dni?: string;
+		phoneNumber?: string;
+		location?: string;
+		cityId?: number;
+		cityName?: string;
+		customerId?: string;
+		personId?: string;
+	};
+	cityCandidates?: Array<{ id: number; name: string; regionName: string }>;
+}
+
 interface UserSession {
 	lastProductList?: ProductListEntry[];
 	remainingProductList?: ProductListEntry[];
@@ -103,6 +160,11 @@ interface UserSession {
 	lastBotMessage?: string;
 	cart?: CartItem[];
 	pendingQuoteFlow?: PendingQuoteFlow | null;
+	pendingPurchaseFlow?: PendingPurchaseFlow | null;
+	/** ID de la última cotización creada para este cliente */
+	lastQuoteId?: string;
+	/** Serial de la última cotización creada para este cliente */
+	lastQuoteSerial?: string;
 	/** Cantidad capeada al stock cuando fue insuficiente; el siguiente "Sí" la confirma */
 	pendingStockConfirmQty?: number;
 }
@@ -114,6 +176,7 @@ export class WhatsAppAgentService {
 	private processingQueue = new Map<string, Promise<void>>();
 	private logService = new WhatsAppLogService();
 	private openai = new OpenAIService();
+	private paymentLinkService = new PaymentLinkService();
 	private quoteService = new QuoteService(QuoteModel);
 	private docsService = new DocsService(
 		this.quoteService,
@@ -170,6 +233,12 @@ export class WhatsAppAgentService {
 			}
 
 			const text = messages?.text?.body ?? null;
+			const imageId =
+				(messages as { image?: { id?: string } } | undefined)?.image?.id ??
+				null;
+			const documentId =
+				(messages as { document?: { id?: string } } | undefined)?.document
+					?.id ?? null;
 			const botPhoneNumberId = value?.metadata?.phone_number_id ?? null;
 			const phoneNumber = messages?.from ?? null;
 			const timestamp = messages?.timestamp ?? null;
@@ -219,14 +288,28 @@ export class WhatsAppAgentService {
 				return { status: 200, message: 'Evento sin mensajes.' };
 			}
 
-			if (!text) {
-				console.warn(
-					'[WhatsApp Agent] Event without text (status update?), ignoring.',
-				);
-				return { status: 200, message: 'Evento sin texto.' };
+			const mediaId = imageId ?? documentId ?? null;
+			const mediaType = imageId
+				? ('image' as const)
+				: documentId
+					? ('document' as const)
+					: null;
+
+			if (!text && !mediaId) {
+				console.warn('[WhatsApp Agent] Event without text or media, ignoring.');
+				return { status: 200, message: 'Evento sin texto ni media.' };
 			}
 
-			if (phoneNumber && botPhoneNumberId) {
+			if (mediaId && mediaType && phoneNumber && botPhoneNumberId) {
+				this.handleIncomingImage(
+					phoneNumber,
+					botPhoneNumberId,
+					mediaId,
+					mediaType,
+				).catch(err =>
+					console.error('[WhatsApp Agent] Error handling incoming media:', err),
+				);
+			} else if (text && phoneNumber && botPhoneNumberId) {
 				this.bufferMessage(phoneNumber, botPhoneNumberId, text);
 			}
 		} catch (error) {
@@ -335,6 +418,44 @@ export class WhatsAppAgentService {
 			'EX',
 			SESSION_TTL_SECONDS,
 		);
+
+		// ── Interceptor: flujo de compra activo ──
+		if (session.pendingPurchaseFlow) {
+			const purchaseReply = await this.handlePurchaseFlowStep(
+				phoneNumber,
+				botPhoneNumberId,
+				text,
+				normalizedText,
+				session,
+				countryInfo,
+			);
+			if (purchaseReply !== null) {
+				session.lastBotMessage = purchaseReply;
+				await redis.set(
+					`session:${phoneNumber}`,
+					JSON.stringify(session),
+					'EX',
+					SESSION_TTL_SECONDS,
+				);
+				await new Promise(resolve => setTimeout(resolve, REPLY_DELAY_MS));
+				await this.sendReply(phoneNumber, botPhoneNumberId, purchaseReply);
+				this.logService
+					.logMessage({
+						phoneNumber,
+						botPhoneNumberId,
+						direction: 'outbound',
+						text: purchaseReply,
+						intent: 'purchase_flow',
+						countryPrefix: countryInfo
+							? `+${phoneNumber.startsWith('593') ? '593' : '57'}`
+							: null,
+					})
+					.catch(err =>
+						console.error('[WhatsApp Agent] Error saving outbound log:', err),
+					);
+				return;
+			}
+		}
 
 		// ── Interceptor: flujo de cotización activo ──
 		if (session.pendingQuoteFlow) {
@@ -1664,6 +1785,93 @@ export class WhatsAppAgentService {
 					SESSION_TTL_SECONDS,
 				);
 			}
+		} else if (intent === 'purchase_intent') {
+			const isoCode =
+				session.lastCountryInfo?.isoCode ?? countryInfo?.isoCode ?? 'CO';
+			const localPhone = this.stripCallingCode(phoneNumber);
+			const cartItems = session.cart ?? [];
+			const hasQuote = !!session.lastQuoteId && !!session.lastQuoteSerial;
+			const hasCartItems = cartItems.length > 0;
+
+			if (!hasCartItems && !hasQuote) {
+				replyText =
+					'Todavía no tienes productos en tu pedido. Primero agrega lo que necesites y luego te ayudo a completar la compra.';
+			} else if (hasQuote) {
+				// Ofrecer proceder con la cotización existente
+				const currency =
+					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+				session.pendingPurchaseFlow = {
+					step: 'awaiting_quote_confirmation',
+					purchaseFromQuote: false,
+					quoteId: session.lastQuoteId,
+					quoteSerial: session.lastQuoteSerial,
+					currency,
+				};
+				replyText = `Tienes una cotización reciente (#${session.lastQuoteSerial}). ¿Quieres proceder con el pago de esa cotización, o prefieres hacer un nuevo pedido?`;
+			} else {
+				// Flujo con el carrito actual
+				const currency =
+					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+				const existingCustomer = await this.customerService.findByPhone(
+					localPhone,
+					isoCode,
+				);
+				if (existingCustomer) {
+					session.pendingPurchaseFlow = {
+						step: 'awaiting_confirmation',
+						purchaseFromQuote: false,
+						items: cartItems,
+						currency,
+						collectedData: {
+							fullName: existingCustomer.fullName,
+							dni: existingCustomer.dni,
+							phoneNumber: localPhone,
+							location: existingCustomer.location,
+							cityId: existingCustomer.cityId,
+							cityName: existingCustomer.cityName
+								? `${existingCustomer.cityName}${existingCustomer.regionName ? `, ${existingCustomer.regionName}` : ''}`
+								: undefined,
+							customerId: existingCustomer.id,
+							personId: existingCustomer.personId,
+						},
+					};
+					replyText = await this.openai
+						.generateReply({
+							userMessage: text,
+							intent: 'existing_customer_purchase_confirmation',
+							cart: session.cart,
+							currency,
+							purchaseFlowData: session.pendingPurchaseFlow.collectedData,
+						})
+						.catch(
+							() =>
+								`¡Hola de nuevo, ${existingCustomer.fullName}! Ya tengo tus datos. ¿Procedemos con la compra?`,
+						);
+				} else {
+					session.pendingPurchaseFlow = {
+						step: 'awaiting_customer_data',
+						purchaseFromQuote: false,
+						items: cartItems,
+						currency,
+						collectedData: { phoneNumber: localPhone },
+					};
+					replyText = await this.openai
+						.generateReply({
+							userMessage: text,
+							intent: 'purchase_intent',
+						})
+						.catch(
+							() =>
+								'¡Claro! Para procesar tu compra necesito tu nombre completo y tu número de cédula.',
+						);
+				}
+				await redis.set(
+					`session:${phoneNumber}`,
+					JSON.stringify(session),
+					'EX',
+					SESSION_TTL_SECONDS,
+				);
+			}
 		} else {
 			replyText = await this.openai
 				.generateReply({ userMessage: text, isFirstInteraction })
@@ -1723,7 +1931,17 @@ export class WhatsAppAgentService {
 			// Detectar callingCode desde el número (formato E.164 sin +)
 			const prefixes = ['593', '57']; // Ecuador primero (más largo)
 			const matchedPrefix = prefixes.find(p => phoneNumber.startsWith(p));
-			if (!matchedPrefix) {
+
+			// ── INICIO BLOQUE DE TESTING ──────────────────────────────────────
+			// TEST_FORCE_COUNTRY_ISO fuerza un país concreto ignorando el prefijo
+			// del número. Permite probar el bot de Ecuador desde Colombia.
+			// ⚠️ Remover o dejar en '' en producción.
+			const forcedIso = ENV.TEST_FORCE_COUNTRY_ISO?.toUpperCase();
+			const effectivePrefix =
+				forcedIso === 'EC' ? '593' : forcedIso === 'CO' ? '57' : matchedPrefix;
+			// ── FIN BLOQUE DE TESTING ─────────────────────────────────────────
+
+			if (!effectivePrefix) {
 				console.warn(
 					`[WhatsApp Agent] Unknown country prefix for ${phoneNumber}`,
 				);
@@ -1732,7 +1950,7 @@ export class WhatsAppAgentService {
 
 			// Resolver shop por país usando slug (misma convención que customer-balance)
 			const shopSlug =
-				matchedPrefix === '57' ? 'manuarte-barranquilla' : 'manuarte-quito';
+				effectivePrefix === '57' ? 'manuarte-barranquilla' : 'manuarte-quito';
 
 			const shop = await ShopModel.findOne({
 				where: { slug: shopSlug },
@@ -1758,10 +1976,10 @@ export class WhatsAppAgentService {
 			const stockIds = stock ? [stock.id] : [];
 			const currency = (shop.get('currency') as string | undefined) ?? 'USD';
 			const isoCode =
-				country?.isoCode ?? (matchedPrefix === '57' ? 'CO' : 'EC');
+				country?.isoCode ?? (effectivePrefix === '57' ? 'CO' : 'EC');
 
 			console.log(
-				`[WhatsApp Agent] Country detected: +${matchedPrefix}, currency: ${currency}, shop: ${shopSlug}, stocks: ${stockIds.join(', ')}`,
+				`[WhatsApp Agent] Country detected: +${effectivePrefix}, currency: ${currency}, shop: ${shopSlug}, stocks: ${stockIds.join(', ')}`,
 			);
 			return { currency, stockIds, shopId: shop.id, isoCode };
 		} catch (error) {
@@ -1897,6 +2115,26 @@ export class WhatsAppAgentService {
 		];
 		if (requestQuotePhrases.some(p => normalizedText.includes(p)))
 			return 'request_quote';
+
+		const purchaseIntentPhrases = [
+			'quiero comprar',
+			'quiero pagar',
+			'como pago',
+			'cómo pago',
+			'como compro',
+			'cómo compro',
+			'finalizar pedido',
+			'finalizar compra',
+			'completar compra',
+			'completar pedido',
+			'quiero proceder',
+			'proceder con el pago',
+			'hacer el pago',
+			'realizar el pago',
+			'pagar mi pedido',
+		];
+		if (purchaseIntentPhrases.some(p => normalizedText.includes(p)))
+			return 'purchase_intent';
 
 		return null;
 	};
@@ -2349,6 +2587,174 @@ export class WhatsAppAgentService {
 	};
 
 	/**
+	 * Maneja los pasos comunes de recopilación de datos del cliente
+	 * (awaiting_customer_data → awaiting_address → awaiting_city_selection → awaiting_confirmation).
+	 * Compartido entre handleQuoteFlowStep y handlePurchaseFlowStep.
+	 */
+	private handleCommonCollectionSteps = async (
+		flow: CollectionFlow,
+		text: string,
+		normalizedText: string,
+		cart: CartItem[],
+		currency: string,
+		confirmationIntent: string,
+		confirmationContextKey: 'quoteFlowData' | 'purchaseFlowData',
+	): Promise<string | null> => {
+		const getConfirmCtx = () =>
+			confirmationContextKey === 'quoteFlowData'
+				? { quoteFlowData: flow.collectedData }
+				: { purchaseFlowData: flow.collectedData };
+
+		if (flow.step === 'awaiting_customer_data') {
+			const extracted = await this.openai.extractCustomerData(
+				text,
+				'customer_data',
+			);
+			const fullName = extracted.fullName ?? flow.collectedData?.fullName;
+			const dni = extracted.dni ?? flow.collectedData?.dni;
+
+			if (!fullName || !dni) {
+				flow.collectedData = { ...flow.collectedData, fullName, dni };
+				const missing =
+					!fullName && !dni
+						? 'tu nombre completo y tu número de cédula'
+						: !fullName
+							? 'tu nombre completo'
+							: 'tu número de cédula';
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'awaiting_customer_data',
+					})
+					.catch(() => `Me falta ${missing}. ¿Me lo compartes?`);
+			}
+
+			flow.collectedData = { ...flow.collectedData, fullName, dni };
+			flow.step = 'awaiting_address';
+
+			return await this.openai
+				.generateReply({ userMessage: text, intent: 'awaiting_address' })
+				.catch(
+					() =>
+						'Perfecto. Ahora necesito tu dirección de entrega y la ciudad, por favor.',
+				);
+		}
+
+		if (flow.step === 'awaiting_address') {
+			const extracted = await this.openai.extractCustomerData(text, 'address');
+			const location = extracted.location ?? flow.collectedData?.location;
+			const cityText = extracted.city;
+
+			if (!location) {
+				return await this.openai
+					.generateReply({ userMessage: text, intent: 'awaiting_address' })
+					.catch(
+						() =>
+							'Necesito tu dirección de entrega para continuar. ¿Me la compartes?',
+					);
+			}
+
+			flow.collectedData = { ...flow.collectedData, location };
+
+			if (!cityText) return '¿Y en qué ciudad estás?';
+
+			const cityResult = await this.cityService.search(cityText);
+			const cityResults = cityResult?.cities ?? [];
+			if (cityResults.length === 0) {
+				return `No encontré la ciudad "${cityText}". ¿Puedes escribirla de nuevo?`;
+			}
+
+			if (cityResults.length === 1) {
+				const city = cityResults[0].dataValues;
+				flow.collectedData.cityId = city.id;
+				flow.collectedData.cityName = `${city.name}, ${city.regionName}`;
+				flow.step = 'awaiting_confirmation';
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: confirmationIntent,
+						cart,
+						currency,
+						...getConfirmCtx(),
+					})
+					.catch(() => '¿Confirmo con estos datos?');
+			}
+
+			flow.cityCandidates = cityResults.slice(0, 5).map(c => {
+				const d = c.dataValues;
+				return { id: d.id, name: d.name, regionName: d.regionName };
+			});
+			flow.step = 'awaiting_city_selection';
+
+			return await this.openai
+				.generateReply({
+					userMessage: text,
+					intent: 'awaiting_city_selection',
+					cityCandidates: flow.cityCandidates.map((c, i) => ({
+						index: i + 1,
+						name: c.name,
+						region: c.regionName,
+					})),
+				})
+				.catch(() => {
+					const list = flow
+						.cityCandidates!.map(
+							(c, i) => `${i + 1}. ${c.name}, ${c.regionName}`,
+						)
+						.join('\n');
+					return `Encontré varias opciones:\n${list}\n¿Cuál es la tuya?`;
+				});
+		}
+
+		if (flow.step === 'awaiting_city_selection') {
+			const candidates = flow.cityCandidates ?? [];
+			const selectionMatch = normalizedText.match(/^(\d+)$/);
+			const selectedIdx = selectionMatch
+				? parseInt(selectionMatch[1], 10) - 1
+				: -1;
+
+			let selected:
+				| { id: number; name: string; regionName: string }
+				| undefined;
+			if (selectedIdx >= 0 && selectedIdx < candidates.length) {
+				selected = candidates[selectedIdx];
+			} else {
+				selected = candidates.find(
+					c =>
+						normalizeText(c.name).includes(normalizedText) ||
+						normalizedText.includes(normalizeText(c.name)),
+				);
+			}
+
+			if (selected) {
+				flow.collectedData = {
+					...flow.collectedData,
+					cityId: selected.id,
+					cityName: `${selected.name}, ${selected.regionName}`,
+				};
+				flow.cityCandidates = undefined;
+				flow.step = 'awaiting_confirmation';
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: confirmationIntent,
+						cart,
+						currency,
+						...getConfirmCtx(),
+					})
+					.catch(() => '¿Confirmo con estos datos?');
+			}
+
+			const list = candidates
+				.map((c, i) => `${i + 1}. ${c.name}, ${c.regionName}`)
+				.join('\n');
+			return `No entendí tu selección. Elige el número:\n${list}`;
+		}
+
+		return null;
+	};
+
+	/**
 	 * Maneja cada paso del flujo de cotización. Retorna el texto de respuesta
 	 * si el paso fue procesado, o null si se debe continuar con el flujo normal.
 	 */
@@ -2379,183 +2785,16 @@ export class WhatsAppAgentService {
 			return 'Listo, cancelé el proceso de cotización. ¿Necesitas algo más?';
 		}
 
-		if (flow.step === 'awaiting_customer_data') {
-			const extracted = await this.openai.extractCustomerData(
-				text,
-				'customer_data',
-			);
-			const fullName = extracted.fullName ?? flow.collectedData?.fullName;
-			const dni = extracted.dni ?? flow.collectedData?.dni;
-
-			if (!fullName || !dni) {
-				flow.collectedData = { ...flow.collectedData, fullName, dni };
-				const missing =
-					!fullName && !dni
-						? 'tu nombre completo y tu número de cédula'
-						: !fullName
-							? 'tu nombre completo'
-							: 'tu número de cédula';
-				return await this.openai
-					.generateReply({
-						userMessage: text,
-						intent: 'awaiting_customer_data',
-					})
-					.catch(() => `Me falta ${missing}. ¿Me lo compartes?`);
-			}
-
-			flow.collectedData = { ...flow.collectedData, fullName, dni };
-			flow.step = 'awaiting_address';
-
-			return await this.openai
-				.generateReply({
-					userMessage: text,
-					intent: 'awaiting_address',
-				})
-				.catch(
-					() =>
-						'Perfecto. Ahora necesito tu dirección de entrega y la ciudad, por favor.',
-				);
-		}
-
-		if (flow.step === 'awaiting_address') {
-			const extracted = await this.openai.extractCustomerData(text, 'address');
-			const location = extracted.location ?? flow.collectedData?.location;
-			const cityText = extracted.city;
-
-			if (!location) {
-				return await this.openai
-					.generateReply({
-						userMessage: text,
-						intent: 'awaiting_address',
-					})
-					.catch(
-						() =>
-							'Necesito tu dirección de entrega para continuar. ¿Me la compartes?',
-					);
-			}
-
-			flow.collectedData = { ...flow.collectedData, location };
-
-			if (!cityText) {
-				return '¿Y en qué ciudad estás?';
-			}
-
-			// Buscar la ciudad
-			const cityResult = await this.cityService.search(cityText);
-			const cityResults = cityResult?.cities ?? [];
-			if (cityResults.length === 0) {
-				return `No encontré la ciudad "${cityText}". ¿Puedes escribirla de nuevo?`;
-			}
-
-			if (cityResults.length === 1) {
-				const city = cityResults[0].dataValues;
-				flow.collectedData.cityId = city.id;
-				flow.collectedData.cityName = `${city.name}, ${city.regionName}`;
-				flow.step = 'awaiting_confirmation';
-
-				return await this.openai
-					.generateReply({
-						userMessage: text,
-						intent: 'awaiting_confirmation',
-						cart: session.cart,
-						currency,
-						quoteFlowData: flow.collectedData,
-					})
-					.catch(() => '¿Confirmo la cotización con estos datos?');
-			}
-
-			// Múltiples coincidencias
-			flow.cityCandidates = cityResults.slice(0, 5).map(c => {
-				const d = c.dataValues;
-				return {
-					id: d.id,
-					name: d.name,
-					regionName: d.regionName,
-				};
-			});
-			flow.step = 'awaiting_city_selection';
-
-			return await this.openai
-				.generateReply({
-					userMessage: text,
-					intent: 'awaiting_city_selection',
-					cityCandidates: flow.cityCandidates.map((c, i) => ({
-						index: i + 1,
-						name: c.name,
-						region: c.regionName,
-					})),
-				})
-				.catch(() => {
-					const list = flow
-						.cityCandidates!.map(
-							(c, i) => `${i + 1}. ${c.name}, ${c.regionName}`,
-						)
-						.join('\n');
-					return `Encontré varias opciones:\n${list}\n¿Cuál es la tuya?`;
-				});
-		}
-
-		if (flow.step === 'awaiting_city_selection') {
-			const candidates = flow.cityCandidates ?? [];
-			// Intentar por número
-			const selectionMatch = normalizedText.match(/^(\d+)$/);
-			const selectedIdx = selectionMatch
-				? parseInt(selectionMatch[1], 10) - 1
-				: -1;
-
-			if (selectedIdx >= 0 && selectedIdx < candidates.length) {
-				const selected = candidates[selectedIdx];
-				flow.collectedData = {
-					...flow.collectedData,
-					cityId: selected.id,
-					cityName: `${selected.name}, ${selected.regionName}`,
-				};
-				flow.cityCandidates = undefined;
-				flow.step = 'awaiting_confirmation';
-
-				return await this.openai
-					.generateReply({
-						userMessage: text,
-						intent: 'awaiting_confirmation',
-						cart: session.cart,
-						currency,
-						quoteFlowData: flow.collectedData,
-					})
-					.catch(() => '¿Confirmo la cotización con estos datos?');
-			}
-
-			// Intentar por nombre
-			const nameMatch = candidates.find(
-				c =>
-					normalizeText(c.name).includes(normalizedText) ||
-					normalizedText.includes(normalizeText(c.name)),
-			);
-			if (nameMatch) {
-				flow.collectedData = {
-					...flow.collectedData,
-					cityId: nameMatch.id,
-					cityName: `${nameMatch.name}, ${nameMatch.regionName}`,
-				};
-				flow.cityCandidates = undefined;
-				flow.step = 'awaiting_confirmation';
-
-				return await this.openai
-					.generateReply({
-						userMessage: text,
-						intent: 'awaiting_confirmation',
-						cart: session.cart,
-						currency,
-						quoteFlowData: flow.collectedData,
-					})
-					.catch(() => '¿Confirmo la cotización con estos datos?');
-			}
-
-			// No se pudo identificar
-			const list = candidates
-				.map((c, i) => `${i + 1}. ${c.name}, ${c.regionName}`)
-				.join('\n');
-			return `No entendí tu selección. Elige el número:\n${list}`;
-		}
+		const commonReply = await this.handleCommonCollectionSteps(
+			flow,
+			text,
+			normalizedText,
+			session.cart ?? [],
+			currency,
+			'awaiting_confirmation',
+			'quoteFlowData',
+		);
+		if (commonReply !== null) return commonReply;
 
 		if (flow.step === 'awaiting_confirmation') {
 			// Detectar confirmación: comienza con palabra afirmativa Y no contiene intención de corrección
@@ -2726,16 +2965,19 @@ export class WhatsAppAgentService {
 				session.cart = [];
 				session.selectedProduct = undefined;
 
+				// Guardar referencia de la cotización para el flujo de compra
+				session.lastQuoteId = result.newQuote.id;
+				session.lastQuoteSerial = result.newQuote.serialNumber;
+
 				const serial = result.newQuote.serialNumber;
 
-				// Enviar PDF por WhatsApp (fire-and-forget, no bloquea el reply)
-				this.docsService
-					.generateQuote(serial)
-					.then(async (buffer: Buffer) => {
-						const filename = `CTZ-${serial}.pdf`;
-						const quoteResult = await this.quoteService.getOne(serial);
-						if (quoteResult.status !== 200) return;
+				// Enviar PDF por WhatsApp antes de devolver el mensaje de confirmación
+				try {
+					const buffer = await this.docsService.generateQuote(serial);
+					const filename = `CTZ-${serial}.pdf`;
+					const quoteResult = await this.quoteService.getOne(serial);
 
+					if (quoteResult.status === 200) {
 						const quote = quoteResult.quote;
 						const mediaId = await this.whatsAppService.uploadMedia(
 							buffer,
@@ -2744,26 +2986,23 @@ export class WhatsAppAgentService {
 						);
 						const { total } = calculateTotals(quote);
 						const recipientPhone = `${quote.callingCode}${quote.phoneNumber}`;
-
 						const formattedTotal = formatCurrency(total);
 						const caption = `📄 Cotización #${serial} por un total de ${formattedTotal}.\n\n`;
 
-						await Promise.all([
-							this.whatsAppService.sendDocument(
-								recipientPhone,
-								mediaId,
-								botPhoneNumberId,
-								filename,
-								caption,
-							),
-						]);
-					})
-					.catch(err =>
-						console.error(
-							`[WhatsApp Agent] Error sending quote PDF for ${serial}:`,
-							err,
-						),
+						await this.whatsAppService.sendDocument(
+							recipientPhone,
+							mediaId,
+							botPhoneNumberId,
+							filename,
+							caption,
+						);
+					}
+				} catch (err) {
+					console.error(
+						`[WhatsApp Agent] Error sending quote PDF for ${serial}:`,
+						err,
 					);
+				}
 
 				return 'Con gusto te ayudo a completar la compra 😊';
 			} catch (error) {
@@ -2771,6 +3010,571 @@ export class WhatsAppAgentService {
 				session.pendingQuoteFlow = null;
 				return 'Hubo un problema generando la cotización. Por favor intenta de nuevo o contacta a nuestro equipo.';
 			}
+		}
+
+		return null;
+	};
+
+	/**
+	 * Verifica si el momento actual está dentro del horario de atención.
+	 * Lunes–Viernes: 8:00–18:00, Sábado: 8:00–14:00, Domingo: cerrado.
+	 * Usa la zona horaria America/Bogota (UTC-5).
+	 */
+	private isWithinOfficeHours = (): boolean => {
+		const now = toZonedTime(new Date(), 'America/Bogota');
+		const day = now.getDay(); // 0=Dom, 1=Lun, ..., 6=Sáb
+		const hour = now.getHours();
+		const minute = now.getMinutes();
+		const timeInMinutes = hour * 60 + minute;
+
+		if (day >= 1 && day <= 5) {
+			// Lunes a Viernes: 8:00–18:00
+			return timeInMinutes >= 8 * 60 && timeInMinutes < 18 * 60;
+		}
+		if (day === 6) {
+			// Sábado: 8:00–14:00
+			return timeInMinutes >= 8 * 60 && timeInMinutes < 14 * 60;
+		}
+		return false; // Domingo cerrado
+	};
+
+	/**
+	 * Notifica al proveedor del pedido por WhatsApp.
+	 */
+	private handleIncomingImage = (
+		phoneNumber: string,
+		botPhoneNumberId: string,
+		mediaId: string,
+		mediaType: 'image' | 'document',
+	): Promise<void> => {
+		const prev = this.processingQueue.get(phoneNumber);
+		let resolveCurrent!: () => void;
+		const current = new Promise<void>(resolve => {
+			resolveCurrent = resolve;
+		});
+		this.processingQueue.set(phoneNumber, current);
+		const run = async () => {
+			if (prev) await prev;
+			try {
+				await this.doHandleIncomingImage(
+					phoneNumber,
+					botPhoneNumberId,
+					mediaId,
+					mediaType,
+				);
+			} finally {
+				resolveCurrent();
+				if (this.processingQueue.get(phoneNumber) === current) {
+					this.processingQueue.delete(phoneNumber);
+				}
+			}
+		};
+		return run();
+	};
+
+	private doHandleIncomingImage = async (
+		phoneNumber: string,
+		botPhoneNumberId: string,
+		mediaId: string,
+		mediaType: 'image' | 'document',
+	): Promise<void> => {
+		const raw = await redis.get(`session:${phoneNumber}`);
+		const session: UserSession = raw ? JSON.parse(raw) : {};
+
+		const step = session.pendingPurchaseFlow?.step;
+		if (
+			step !== 'awaiting_receipt' &&
+			step !== 'awaiting_payment_confirmation'
+		) {
+			// Media fuera del flujo de recibo: ignorar silenciosamente
+			console.log(
+				`[WhatsApp Agent] Received media from ${phoneNumber} outside receipt flow, ignoring.`,
+			);
+			return;
+		}
+
+		const flow = session.pendingPurchaseFlow!;
+		const countryInfo = await this.detectCountryFromPhone(phoneNumber);
+		const isoCode = countryInfo?.isoCode ?? 'CO';
+
+		// Notificar al vendedor con el recibo adjunto
+		await this.notifyVendor(
+			botPhoneNumberId,
+			isoCode,
+			flow,
+			mediaId,
+			mediaType,
+		).catch(err =>
+			console.error(
+				'[WhatsApp Agent] Error notifying vendor with receipt:',
+				err,
+			),
+		);
+
+		// Eliminar cotización vinculada si aplica
+		if (flow.purchaseFromQuote && flow.quoteId) {
+			await this.quoteService
+				.delete(flow.quoteId)
+				.catch(err =>
+					console.error(
+						'[WhatsApp Agent] Error deleting quote after purchase:',
+						err,
+					),
+				);
+			session.lastQuoteId = undefined;
+			session.lastQuoteSerial = undefined;
+		}
+
+		// Limpiar flujo y carrito
+		session.pendingPurchaseFlow = null;
+		session.cart = [];
+
+		await redis.set(
+			`session:${phoneNumber}`,
+			JSON.stringify(session),
+			'EX',
+			SESSION_TTL_SECONDS,
+		);
+
+		const offHoursNote = !this.isWithinOfficeHours()
+			? '\n\n⏰ Nuestro equipo está fuera de horario ahora mismo (L–V 8–18h, Sáb 8–14h), pero recibirán tu pedido y te contactarán a la brevedad.'
+			: '';
+
+		const reply =
+			`✅ ¡Comprobante recibido! Nuestro equipo lo verificará y te confirmará el pedido en breve.` +
+			offHoursNote +
+			`\n\n¡Gracias por tu compra! 🙌`;
+
+		await this.sendReply(phoneNumber, botPhoneNumberId, reply);
+	};
+
+	/**
+	 * Notifica al proveedor del pedido por WhatsApp.
+	 */
+	private notifyVendor = async (
+		botPhoneNumberId: string,
+		isoCode: string,
+		flow: PendingPurchaseFlow,
+		receiptMediaId?: string,
+		receiptMediaType?: 'image' | 'document',
+	): Promise<void> => {
+		const vendorPhone =
+			isoCode === 'CO' ? ENV.SHOP_CO_PHONE_NUMBER : ENV.SHOP_EC_PHONE_NUMBER;
+
+		if (!vendorPhone) {
+			console.warn(
+				`[WhatsApp Agent] No vendor phone configured for isoCode=${isoCode}`,
+			);
+			return;
+		}
+
+		const d = flow.collectedData ?? {};
+		const itemLines =
+			flow.items && flow.items.length > 0
+				? flow.items
+						.map(item => {
+							const name = item.variantName
+								? `${item.productName} – ${item.variantName}`
+								: item.productName;
+							return `  • ${item.quantity}x ${name}`;
+						})
+						.join('\n')
+				: '  • (sin detalle de productos)';
+
+		const totalLine =
+			flow.total != null
+				? `\nTotal: ${formatPrice(String(flow.total), flow.currency ?? 'USD')}`
+				: '';
+
+		const refLine = flow.paymentRef ? `\nRef pago: ${flow.paymentRef}` : '';
+		const quoteRefLine =
+			flow.purchaseFromQuote && flow.quoteSerial
+				? `\nCotización: ${flow.quoteSerial}`
+				: '';
+
+		const message =
+			`🛒 *Nueva orden de compra*` +
+			`\n\nCliente: ${d.fullName ?? '-'}` +
+			`\nCédula: ${d.dni ?? '-'}` +
+			`\nTeléfono: ${d.phoneNumber ?? '-'}` +
+			`\nDirección: ${d.location ?? '-'}` +
+			`\nCiudad: ${d.cityName ?? '-'}` +
+			`\n\nProductos:\n${itemLines}` +
+			totalLine +
+			refLine +
+			quoteRefLine +
+			`\n\n✅ El cliente confirmó el pago. Por favor, verificar y procesar el pedido.`;
+
+		await this.sendReply(vendorPhone, botPhoneNumberId, message);
+
+		if (receiptMediaId) {
+			const sendMedia =
+				receiptMediaType === 'document'
+					? this.whatsAppService.sendDocument(
+							vendorPhone,
+							receiptMediaId,
+							botPhoneNumberId,
+							'comprobante.pdf',
+							'🧾 Comprobante de pago del cliente',
+						)
+					: this.whatsAppService.sendImage(
+							vendorPhone,
+							receiptMediaId,
+							botPhoneNumberId,
+							'🧾 Comprobante de pago del cliente',
+						);
+			await sendMedia.catch(err =>
+				console.error(
+					'[WhatsApp Agent] Error forwarding receipt to vendor:',
+					err,
+				),
+			);
+		}
+	};
+
+	/**
+	 * Maneja los pasos del flujo de compra.
+	 * Análogo a handleQuoteFlowStep pero para completar una compra con link de pago.
+	 */
+	private handlePurchaseFlowStep = async (
+		phoneNumber: string,
+		botPhoneNumberId: string,
+		text: string,
+		normalizedText: string,
+		session: UserSession,
+		countryInfo: {
+			currency: string;
+			stockIds: string[];
+			shopId: string;
+			isoCode: string;
+		} | null,
+	): Promise<string | null> => {
+		const flow = session.pendingPurchaseFlow!;
+		const isoCode =
+			session.lastCountryInfo?.isoCode ?? countryInfo?.isoCode ?? 'CO';
+		const currency =
+			session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+
+		// Permitir cancelar el flujo
+		if (
+			/\b(cancelar|cancelalo|no\s*quiero|dejalo|olvidalo)\b/i.test(
+				normalizedText,
+			)
+		) {
+			session.pendingPurchaseFlow = null;
+			return 'Listo, cancelé el proceso de compra. ¿Necesitas algo más?';
+		}
+
+		// ── Paso 0: confirmar si procede desde la cotización existente ──
+		if (flow.step === 'awaiting_quote_confirmation') {
+			const isConfirm =
+				/^(si|sí|vale|ok|dale|claro|listo|perfecto|bueno|confirmo|de acuerdo|va|venga|correcto|todo bien|esta bien|nada|quiero|proceder|procede)\b/i.test(
+					normalizedText.trim(),
+				);
+
+			if (isConfirm) {
+				// Cargar items de la cotización
+				const quoteResult = await this.quoteService.getOne(flow.quoteSerial!);
+				if (quoteResult.status === 200 && quoteResult.quote) {
+					const quote = quoteResult.quote;
+					const items: CartItem[] = (quote.quoteItems ?? []).map(
+						(qi: { name: string; quantity: number; price: number }) => ({
+							productId: '',
+							productName: qi.name,
+							quantity: qi.quantity,
+							unitPrice: String(qi.price),
+							currency,
+						}),
+					);
+					const { total } = calculateTotals(quote);
+					flow.items = items;
+					flow.total = total;
+					flow.currency = currency;
+					flow.purchaseFromQuote = true;
+					// Usar datos del cliente de la cotización si los hay
+					flow.collectedData = flow.collectedData ?? {
+						fullName: quote.fullName,
+						dni: quote.dni,
+						phoneNumber: quote.phoneNumber,
+						location: quote.location,
+						cityId: quote.cityId,
+						cityName: quote.cityName
+							? `${quote.cityName}${quote.regionName ? `, ${quote.regionName}` : ''}`
+							: undefined,
+						customerId: String(quote.customerId ?? ''),
+					};
+				}
+
+				// Generar link y transitar a awaiting_payment_confirmation
+				const paymentRef = crypto.randomUUID();
+				const paymentLink = await this.paymentLinkService.getLinkForCountry(
+					isoCode,
+					flow.total ??
+						flow.items?.reduce(
+							(sum, i) =>
+								sum + (i.unitPrice ? parseFloat(i.unitPrice) * i.quantity : 0),
+							0,
+						) ??
+						0,
+					flow.currency ?? currency,
+					paymentRef,
+				);
+				const provider = this.paymentLinkService.getProviderName(isoCode);
+				flow.paymentRef = paymentRef;
+				flow.paymentLink = paymentLink;
+				flow.step = 'awaiting_receipt';
+
+				const itemLines =
+					flow.items && flow.items.length > 0
+						? flow.items
+								.map(i => {
+									const name = i.variantName
+										? `${i.productName} – ${i.variantName}`
+										: i.productName;
+									return `  • ${i.quantity}x ${name}`;
+								})
+								.join('\n')
+						: '';
+
+				const totalStr =
+					flow.total != null
+						? formatPrice(String(flow.total), flow.currency ?? currency)
+						: '';
+
+				return (
+					`¡Perfecto! 🎉 Aquí tienes tu link de pago con ${provider}:\n\n` +
+					`🔗 ${paymentLink}\n\n` +
+					(itemLines ? `Pedido:\n${itemLines}\n\n` : '') +
+					(totalStr ? `Total: ${totalStr}\n\n` : '') +
+					`Ref: ${paymentRef}\n\n` +
+					`Cuando realices el pago, envíanos el comprobante (imagen o PDF) para que nuestro equipo lo verifique. 📸`
+				);
+			} else {
+				// El cliente no quiere usar la cotización → iniciar flujo con datos nuevos
+				const localPhone = this.stripCallingCode(phoneNumber);
+				flow.purchaseFromQuote = false;
+				flow.quoteId = undefined;
+				flow.quoteSerial = undefined;
+
+				// Verificar si ya existe el cliente
+				const existingCustomer = await this.customerService.findByPhone(
+					localPhone,
+					isoCode,
+				);
+				if (existingCustomer) {
+					flow.collectedData = {
+						fullName: existingCustomer.fullName,
+						dni: existingCustomer.dni,
+						phoneNumber: localPhone,
+						location: existingCustomer.location,
+						cityId: existingCustomer.cityId,
+						cityName: existingCustomer.cityName
+							? `${existingCustomer.cityName}${existingCustomer.regionName ? `, ${existingCustomer.regionName}` : ''}`
+							: undefined,
+						customerId: existingCustomer.id,
+						personId: existingCustomer.personId,
+					};
+					flow.step = 'awaiting_confirmation';
+					return await this.openai
+						.generateReply({
+							userMessage: text,
+							intent: 'existing_customer_purchase_confirmation',
+							cart: flow.items ?? session.cart,
+							currency,
+							purchaseFlowData: flow.collectedData,
+						})
+						.catch(
+							() =>
+								`¡Hola de nuevo, ${existingCustomer.fullName}! Ya tengo tus datos. ¿Procedemos con la compra?`,
+						);
+				} else {
+					flow.collectedData = { phoneNumber: localPhone };
+					flow.step = 'awaiting_customer_data';
+					return await this.openai
+						.generateReply({
+							userMessage: text,
+							intent: 'purchase_intent',
+						})
+						.catch(
+							() =>
+								'¡Claro! Para procesar tu compra necesito tu nombre completo y tu número de cédula.',
+						);
+				}
+			}
+		}
+
+		// ── Paso 1-3: recopilación de datos del cliente (reutiliza lógica común) ──
+		const commonReply = await this.handleCommonCollectionSteps(
+			flow,
+			text,
+			normalizedText,
+			flow.items ?? session.cart ?? [],
+			currency,
+			'awaiting_purchase_confirmation',
+			'purchaseFlowData',
+		);
+		if (commonReply !== null) return commonReply;
+
+		// ── Paso 4: confirmación de datos antes del pago ──
+		if (flow.step === 'awaiting_confirmation') {
+			const startsAffirmative =
+				/^(si|sí|vale|ok|dale|claro|listo|perfecto|bueno|confirmo|de acuerdo|va|venga|correcto|todo bien|esta bien|nada)\b/i.test(
+					normalizedText.trim(),
+				);
+			const hasCorrection =
+				/\b(cambiar|cambio|cambia|corregir|corrige|modificar|modifica|pero|mal|error|falta|no es|en vez de|en lugar de|la cedula|el nombre|la direccion|el telefono|el numero)\b/i.test(
+					normalizedText,
+				);
+			const looksLikeDniCorrection =
+				!startsAffirmative && /\b\d{6,12}\b/.test(normalizedText);
+			const isConfirm =
+				startsAffirmative && !hasCorrection && !looksLikeDniCorrection;
+
+			if (!isConfirm) {
+				const correctionResult = await this.openai.extractQuoteCorrection(
+					text,
+					flow.collectedData ?? {},
+				);
+				let dataChanged = false;
+				if (correctionResult.fullName) {
+					flow.collectedData = {
+						...flow.collectedData,
+						fullName: correctionResult.fullName,
+					};
+					dataChanged = true;
+				}
+				if (correctionResult.dni) {
+					flow.collectedData = {
+						...flow.collectedData,
+						dni: correctionResult.dni,
+					};
+					dataChanged = true;
+				}
+				if (correctionResult.phoneNumber) {
+					flow.collectedData = {
+						...flow.collectedData,
+						phoneNumber: correctionResult.phoneNumber,
+					};
+					dataChanged = true;
+				}
+				if (correctionResult.location) {
+					flow.collectedData = {
+						...flow.collectedData,
+						location: correctionResult.location,
+					};
+					dataChanged = true;
+				}
+				if (correctionResult.city) {
+					const cityResult = await this.cityService.search(
+						correctionResult.city,
+					);
+					const cityResults = cityResult?.cities ?? [];
+					if (cityResults.length === 1) {
+						const city = cityResults[0].dataValues;
+						flow.collectedData = {
+							...flow.collectedData,
+							cityId: city.id,
+							cityName: `${city.name}, ${city.regionName}`,
+						};
+						dataChanged = true;
+					} else if (cityResults.length > 1) {
+						flow.cityCandidates = cityResults.slice(0, 5).map(c => {
+							const d = c.dataValues;
+							return { id: d.id, name: d.name, regionName: d.regionName };
+						});
+						flow.step = 'awaiting_city_selection';
+						const list = flow.cityCandidates
+							.map((c, i) => `${i + 1}. ${c.name}, ${c.regionName}`)
+							.join('\n');
+						return `Encontré varias opciones para "${correctionResult.city}":\n${list}\n¿Cuál es?`;
+					}
+				}
+				if (dataChanged) {
+					return await this.openai
+						.generateReply({
+							userMessage: text,
+							intent: 'awaiting_purchase_confirmation',
+							cart: flow.items ?? session.cart,
+							currency,
+							purchaseFlowData: flow.collectedData,
+						})
+						.catch(() => '¿Confirmo la compra con estos datos actualizados?');
+				}
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'awaiting_correction_unclear',
+						purchaseFlowData: flow.collectedData,
+					})
+					.catch(
+						() =>
+							'¿Qué dato necesitas corregir? Puedes decirme el nombre, cédula, dirección o ciudad.',
+					);
+			}
+
+			// Confirmado — generar items y total si no están aún
+			if (!flow.items || flow.items.length === 0) {
+				flow.items = session.cart ?? [];
+			}
+			if (flow.total == null) {
+				flow.total = flow.items.reduce((sum, item) => {
+					return (
+						sum +
+						(item.unitPrice ? parseFloat(item.unitPrice) * item.quantity : 0)
+					);
+				}, 0);
+				flow.currency = currency;
+			}
+
+			// Generar link de pago
+			const paymentRef = crypto.randomUUID();
+			const paymentLink = await this.paymentLinkService.getLinkForCountry(
+				isoCode,
+				flow.total,
+				flow.currency ?? currency,
+				paymentRef,
+			);
+			const provider = this.paymentLinkService.getProviderName(isoCode);
+			flow.paymentRef = paymentRef;
+			flow.paymentLink = paymentLink;
+			flow.step = 'awaiting_receipt';
+
+			const itemLines =
+				flow.items.length > 0
+					? flow.items
+							.map(i => {
+								const name = i.variantName
+									? `${i.productName} – ${i.variantName}`
+									: i.productName;
+								return `  • ${i.quantity}x ${name}`;
+							})
+							.join('\n')
+					: '';
+			const totalStr = formatPrice(
+				String(flow.total),
+				flow.currency ?? currency,
+			);
+
+			return (
+				`¡Perfecto! 🎉 Aquí tienes tu link de pago con ${provider}:\n\n` +
+				`🔗 ${paymentLink}\n\n` +
+				(itemLines ? `Pedido:\n${itemLines}\n\n` : '') +
+				`Total: ${totalStr}\n\n` +
+				`Ref: ${paymentRef}\n\n` +
+				`Cuando realices el pago, envíanos el comprobante (imagen o PDF) para que nuestro equipo lo verifique. 📸`
+			);
+		}
+
+		// ── Paso 5: confirmación de pago (compatibilidad sesiones anteriores) ──
+		if (flow.step === 'awaiting_payment_confirmation') {
+			// Transicionar directamente a awaiting_receipt
+			flow.step = 'awaiting_receipt';
+			return 'Por favor envíanos el comprobante de pago (imagen o PDF) para que nuestro equipo pueda verificarlo. 📸';
+		}
+
+		// ── Paso 6: esperando recibo ──
+		if (flow.step === 'awaiting_receipt') {
+			return 'Para continuar necesitamos el comprobante de pago. Por favor envía una imagen o PDF del comprobante. 📸';
 		}
 
 		return null;

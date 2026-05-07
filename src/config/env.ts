@@ -26,4 +26,17 @@ export const ENV = {
 	REDIS_PASSWORD: process.env.REDIS_PASSWORD,
 	SHOP_CO_PHONE_NUMBER: process.env.SHOP_CO_PHONE_NUMBER ?? '',
 	SHOP_EC_PHONE_NUMBER: process.env.SHOP_EC_PHONE_NUMBER ?? '',
+	BOLD_PAYMENT_BASE_URL: process.env.BOLD_PAYMENT_BASE_URL ?? '',
+	PAYPHONE_PAYMENT_BASE_URL: process.env.PAYPHONE_PAYMENT_BASE_URL ?? '',
+	PAYPHONE_TOKEN: process.env.PAYPHONE_TOKEN ?? '',
+	PAYPHONE_STORE_ID: process.env.PAYPHONE_STORE_ID ?? '',
+	// TEST_PAYPHONE_IN_CO: Cuando está en 'true', fuerza el uso de PayPhone
+	// aunque el país sea Colombia. Útil para probar desde Colombia.
+	// ⚠️ Dejar en '' o eliminar en producción.
+	TEST_PAYPHONE_IN_CO: process.env.TEST_PAYPHONE_IN_CO ?? '',
+	// TEST_FORCE_COUNTRY_ISO: Si está definida ('EC' o 'CO'), fuerza ese país
+	// para TODOS los mensajes entrantes, ignorando el prefijo del número.
+	// Útil para probar el bot de Ecuador desde un número colombiano.
+	// ⚠️ Dejar en '' o eliminar en producción.
+	TEST_FORCE_COUNTRY_ISO: process.env.TEST_FORCE_COUNTRY_ISO ?? '',
 };
