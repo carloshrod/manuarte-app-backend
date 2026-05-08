@@ -11,12 +11,64 @@ const PAYPHONE_API_URL = 'https://pay.payphonetodoesposible.com/api/Links';
  */
 export class PaymentLinkService {
 	/**
-	 * Genera un link de pago Bold para Colombia.
-	 * Actualmente usa el link base estático de ENV.
+	 * Genera un link de pago Bold para Colombia usando la API de Bold.
+	 * @param amount - Monto total en COP (ej: 10000)
+	 * @param currency - Moneda, normalmente "COP"
+	 * @param reference - Referencia única de la transacción
+	 * @returns URL del link de pago generado por Bold
 	 */
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	getBoldLink(_amount: number, _currency: string, _reference: string): string {
-		return ENV.BOLD_PAYMENT_BASE_URL;
+	async getBoldLink(
+		amount: number,
+		currency: string,
+		reference: string,
+	): Promise<string> {
+		if (!amount || amount <= 0) {
+			throw new Error(
+				`[PaymentLinkService] Invalid amount for Bold: ${amount}`,
+			);
+		}
+
+		const BOLD_API_URL = 'https://integrations.api.bold.co/online/link/v1';
+
+		const body = {
+			amount_type: 'CLOSE',
+			amount: {
+				currency: currency || 'COP',
+				total_amount: Math.round(amount),
+				tip_amount: 0,
+			},
+			reference:
+				reference?.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60) || undefined,
+			description: 'Pago Manuarte',
+		};
+
+		interface BoldLinkResponse {
+			payload?: {
+				payment_link: string;
+				url: string;
+			};
+			errors?: unknown[];
+		}
+		try {
+			const response = await axios.post<BoldLinkResponse>(BOLD_API_URL, body, {
+				headers: {
+					Authorization: `x-api-key ${ENV.BOLD_API_KEY}`,
+					'Content-Type': 'application/json',
+				},
+				timeout: 10_000,
+			});
+			const data = response.data;
+			if (data?.payload?.url) return data.payload.url;
+			throw new Error('[PaymentLinkService] Respuesta inesperada de Bold');
+		} catch (error) {
+			if (axios.isAxiosError(error) && error.response) {
+				console.error(
+					'[PaymentLinkService] Bold API error:',
+					JSON.stringify(error.response.data, null, 2),
+				);
+			}
+			throw error;
+		}
 	}
 
 	/**

@@ -211,6 +211,20 @@ export type AIDetectedIntent =
 	| 'general_question'
 	| 'unknown';
 
+export interface QuoteCorrectionResult {
+	fullName?: string;
+	dni?: string;
+	phoneNumber?: string;
+	location?: string;
+	city?: string;
+	productsToAdd?: Array<{
+		productHint: string;
+		quantity: number;
+		variantHint?: string;
+		unit?: string;
+	}>;
+}
+
 export interface AIIntentResult {
 	intent: AIDetectedIntent;
 	searchQuery?: string;
@@ -225,6 +239,13 @@ export interface AIIntentResult {
 	addProductHint?: string;
 	/** Para actualizaciones de DOS O MÁS productos simultáneamente en el carrito */
 	cartEdits?: Array<{ productHint: string; quantity: number }>;
+	/** Lista de productos con cantidades cuando el cliente pide cotización con lista en el mismo mensaje */
+	productList?: Array<{
+		productHint: string;
+		quantity: number;
+		variantHint?: string;
+		unit?: string;
+	}>;
 }
 
 export class OpenAIService {
@@ -302,7 +323,7 @@ Analiza el mensaje del cliente y devuelve un JSON con:
 ${selectionInstructions}${showMoreInstruction}  - "show_cart": el cliente pregunta por el resumen de su pedido, lo que lleva, el total, cuánto es todo, cuánto sería por todo, cuánto suma lo que lleva, o cualquier variante de solicitar el detalle o precio total de su pedido actual
   - "search_product": el cliente busca un producto que NO está en la lista actual, o pregunta por precio/disponibilidad de algo nuevo
   - "edit_cart": el cliente quiere MODIFICAR su pedido actual: eliminar un producto, cambiar cantidad de uno ya agregado, o reemplazar uno por otro
-  - "request_quote": el cliente pide una cotización, presupuesto, proforma, o quiere que le armen/generen/envíen una cotización con lo que lleva o ha pedido
+  - "request_quote": el cliente quiere cotizar o pide una cotización, presupuesto o proforma. Incluye el verbo "cotizar" y sus variantes (cotizame, cotíceme, me cotizas, me cotices, necesito cotizar, quiero cotizar, cotiza esto), y también frases como "quiero una cotización", "necesito una cotización", "quiero que me armen una cotización", "envíame la cotización", "genera la cotización"
   - "purchase_intent": el cliente dice que quiere comprar, pagar, finalizar su pedido o completar su compra (frases como "quiero comprar", "quiero pagar", "cómo pago", "cómo compro", "finalizar pedido", "completar la compra", "quiero proceder", "quiero el pedido", "quiero finalizarlo")
   - "objection": el cliente dice que está caro, que lo va a pensar, que después, que no tiene dinero, que no le interesa
   - "greeting": saludo puro sin consulta de producto ni pregunta específica
@@ -312,6 +333,7 @@ ${activeProducts && activeProducts.length > 0 ? '- "selectionIndexes": array de 
 - "removeProductHint": SOLO si intent es "edit_cart" Y el cliente pide EXPLÍCITAMENTE quitar/eliminar un producto (frases como "ya no quiero", "quita", "saca", "elimina", "sin"). NO usar si el cliente solo cambia la cantidad. Ej: "ya no quiero la mecha 8D" → removeProductHint: "mecha 8D". "que sean mejor 2 kilos de ácido esteárico" → NO removeProductHint (solo addProductHint con la nueva cantidad).
 - "addProductHint": SOLO si intent es "edit_cart" Y el cliente modifica UN SOLO producto. Usa el fragmento MÁS ESPECÍFICO: las palabras que diferencian ese producto de otros en el pedido. Si hay varios productos del mismo tipo, DEBES incluir las palabras distintivas. Ej: "agrega 2 fragancias más de brisa marina" → addProductHint: "brisa marina" (NO "fragancia"). "agrega 1 kilo más de cera de coco" → addProductHint: "cera de coco"
 - "cartEdits": SOLO si intent es "edit_cart" Y el cliente modifica DOS O MÁS productos del carrito en un mismo mensaje. Array de objetos {productHint, quantity}. No usar junto con addProductHint. Ej: "deben ser 4 de jazmin y 4 de brisa marina" → cartEdits: [{"productHint":"jazmin","quantity":4},{"productHint":"brisa marina","quantity":4}]
+- "productList": SOLO si intent es "request_quote" Y el mensaje contiene una lista de dos o más productos con cantidades. Array de objetos {productHint, quantity, variantHint?, unit?}. "productHint" es el nombre descriptivo del producto (sin frases de contexto). "quantity" es el número entero pedido. "variantHint" es la presentación específica si aplica (ej: "20 ml", "100 gramos"). "unit" es la unidad de peso si la cantidad está en peso (ej: "kilos", "kg", "gramos"). Ej: "Cotizame 5 kilos de cera de palma, 3 fragancias de chicle de 20 ml y 7 mechas 8D" → productList: [{"productHint":"cera de palma","quantity":5,"unit":"kilos"},{"productHint":"fragancia chicle","quantity":3,"variantHint":"20 ml"},{"productHint":"mecha 8d","quantity":7}]
 - "variantHint": TAMBIÉN para intent "search_product", si el cliente menciona una presentación, tamaño o formato específico del producto buscado (ej: "20 ml", "100 gramos", "1 litro", "medio kilo"). Extrae SOLO el fragmento de tamaño/presentación. Ej: "3 fragancias de chicle de 20 ml" → variantHint: "20 ml", "2 fragancias lavanda de 100 gramos" → variantHint: "100 gramos". No incluir si no hay presentación específica.
 - "searchQuery": SOLO si intent es "search_product" Y el producto mencionado NO aparece en la lista activa. Extrae el nombre específico del producto incluyendo su descriptor propio (sabor, aroma, nombre de marca, tipo). Conserva "para velas" o "para jabones" si pueden ser parte del nombre del producto (hay productos exclusivos para uno u otro). Elimina SOLO frases de contexto de uso del cliente como "para hacer X", "para mis X", "para fabricar X", "para uso en X". Ejemplos: "fragancias para jabones" → "fragancia para jabones", "fragancia de chicle de 20 ml" → "fragancia chicle", "fragancia de lavanda para velas" → "fragancia lavanda para velas", "colorante para mis velas artesanales" → "colorante", "cera para hacer velas" → "cera", "3 kilos de cera de soya apf" → "cera soya apf".
 
@@ -338,6 +360,7 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 			removeProductHint?: unknown;
 			addProductHint?: unknown;
 			cartEdits?: unknown;
+			productList?: unknown;
 		};
 
 		const validIntents: AIDetectedIntent[] = [
@@ -404,6 +427,25 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 				intent === 'edit_cart' && Array.isArray(parsed.cartEdits)
 					? (parsed.cartEdits as unknown[]).filter(
 							(e): e is { productHint: string; quantity: number } =>
+								typeof e === 'object' &&
+								e !== null &&
+								typeof (e as Record<string, unknown>).productHint ===
+									'string' &&
+								typeof (e as Record<string, unknown>).quantity === 'number' &&
+								(e as { quantity: number }).quantity > 0,
+						)
+					: undefined,
+			productList:
+				intent === 'request_quote' && Array.isArray(parsed.productList)
+					? (parsed.productList as unknown[]).filter(
+							(
+								e,
+							): e is {
+								productHint: string;
+								quantity: number;
+								variantHint?: string;
+								unit?: string;
+							} =>
 								typeof e === 'object' &&
 								e !== null &&
 								typeof (e as Record<string, unknown>).productHint ===
@@ -867,7 +909,7 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 							.join('\n')
 					: '';
 			parts.push(
-				`\nMuéstrale al cliente este resumen para que confirme:` +
+				`\nSaluda al cliente de forma natural usando su nombre SOLO si parece nombre de persona (no empresa). Nombre: "${d?.fullName ?? ''}". Si el nombre contiene palabras que indican empresa (S.A.S., SAS, Corp, Ltda, Distribuciones, Comercializadora, etc.) omite el nombre. Si es persona, usa una frase como "Listo [nombre sin apellido]" o "Perfecto [nombre sin apellido], tengo esto en el sistema:". Si es empresa, empieza con "Tengo esto en el sistema:".` +
 					`\n\nDatos:` +
 					`\nNombre: ${d?.fullName ?? ''}` +
 					`\nCédula: ${d?.dni ?? ''}` +
@@ -940,7 +982,9 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 					`\nTeléfono: ${d?.phoneNumber ?? ''}` +
 					`\nDirección: ${d?.location ?? ''}` +
 					`\nCiudad: ${d?.cityName ?? ''}` +
-					(cartSummaryPurchase ? `\n\nProductos:\n${cartSummaryPurchase}` : '') +
+					(cartSummaryPurchase
+						? `\n\nProductos:\n${cartSummaryPurchase}`
+						: '') +
 					'\n\nPregunta si todo está correcto para proceder con el pago. Si quiere cambiar algo, que te indique qué corregir.',
 			);
 		} else if (ctx.intent === 'awaiting_payment_confirmation') {
@@ -1025,25 +1069,28 @@ Responde ÚNICAMENTE con el JSON.`,
 	extractQuoteCorrection = async (
 		text: string,
 		currentData: Record<string, unknown>,
-	): Promise<Record<string, string | undefined>> => {
-		const prompt = `El cliente está revisando un resumen de cotización con estos datos:
+	): Promise<QuoteCorrectionResult> => {
+		const prompt = `El cliente está revisando un resumen de su pedido/cotización con estos datos:
 - Nombre: ${currentData.fullName ?? 'no proporcionado'}
 - Cédula: ${currentData.dni ?? 'no proporcionado'}
 - Teléfono: ${currentData.phoneNumber ?? 'no proporcionado'}
 - Dirección: ${currentData.location ?? 'no proporcionado'}
 - Ciudad: ${currentData.cityName ?? 'no proporcionado'}
 
-El cliente quiere CORREGIR uno o más datos. Analiza su mensaje e identifica qué campos quiere cambiar y cuáles son los nuevos valores.
+El cliente puede querer:
+  A) CORREGIR datos personales (nombre, cédula, teléfono, dirección o ciudad)
+  B) AGREGAR productos que faltaron en el pedido
 
-Devuelve un JSON con SOLO los campos que el cliente quiere corregir:
-- "fullName": nuevo nombre completo (capitalizado correctamente). Solo si quiere cambiar el nombre.
+Analiza su mensaje y devuelve un JSON con SOLO los campos relevantes:
+- "fullName": nuevo nombre completo (capitalizado). Solo si quiere cambiar el nombre.
 - "dni": nuevo número de documento. Solo si quiere cambiar la cédula/DNI.
-- "phoneNumber": nuevo número de teléfono (solo dígitos, sin código de país). Solo si quiere cambiar el teléfono.
+- "phoneNumber": nuevo teléfono (solo dígitos, sin código de país). Solo si quiere cambiar el teléfono.
 - "location": nueva dirección. Solo si quiere cambiar la dirección.
 - "city": nueva ciudad. Solo si quiere cambiar la ciudad.
+- "productsToAdd": si el cliente dice que faltó algo, que quiere agregar algo, o menciona productos que no estaban en el resumen. Array de objetos {productHint, quantity, variantHint?, unit?}. "quantity" es un entero; si no se especifica cantidad, usa 1. "variantHint" es la presentación (ej: "20 ml", "100 gramos"). "unit" solo si la cantidad está en peso (kilos, kg, gramos). Ej: "Faltaron las fragancias de chicle" → productsToAdd: [{"productHint":"fragancia chicle","quantity":1}]. "Faltaron 5 fragancias de chicle de 20 ml" → productsToAdd: [{"productHint":"fragancia chicle","quantity":5,"variantHint":"20 ml"}].
 
 Si el mensaje contiene un número largo (6-12 dígitos) sin contexto claro, probablemente es una corrección de cédula.
-Si no puedes determinar qué quiere corregir, devuelve un JSON vacío {}.
+Si no puedes determinar qué quiere corregir ni agregar, devuelve un JSON vacío {}.
 Responde ÚNICAMENTE con el JSON.`;
 
 		const response = await this.client.chat.completions.create({
@@ -1052,12 +1099,17 @@ Responde ÚNICAMENTE con el JSON.`;
 				{ role: 'system', content: prompt },
 				{ role: 'user', content: text },
 			],
-			max_tokens: 200,
+			max_tokens: 400,
 			temperature: 0,
 			response_format: { type: 'json_object' },
 		});
 
 		const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
-		return JSON.parse(raw) as Record<string, string | undefined>;
+		const parsed = JSON.parse(raw) as QuoteCorrectionResult;
+		// Validate productsToAdd is a proper array
+		if (!Array.isArray(parsed.productsToAdd)) {
+			parsed.productsToAdd = undefined;
+		}
+		return parsed;
 	};
 }

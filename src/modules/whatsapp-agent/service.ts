@@ -72,6 +72,7 @@ interface CartItem {
 
 interface PendingQuoteFlow {
 	step:
+		| 'awaiting_cart_confirmation'
 		| 'awaiting_customer_data'
 		| 'awaiting_address'
 		| 'awaiting_city_selection'
@@ -87,6 +88,7 @@ interface PendingQuoteFlow {
 		personId?: string;
 	};
 	cityCandidates?: Array<{ id: number; name: string; regionName: string }>;
+	outOfStockItems?: string[];
 }
 
 interface PendingPurchaseFlow {
@@ -520,6 +522,14 @@ export class WhatsAppAgentService {
 		let aiCartEdits:
 			| Array<{ productHint: string; quantity: number }>
 			| undefined;
+		let aiProductList:
+			| Array<{
+					productHint: string;
+					quantity: number;
+					variantHint?: string;
+					unit?: string;
+			  }>
+			| undefined;
 
 		if (isResumption && deterministicIntent !== 'search_product') {
 			intent = 'resumption';
@@ -751,6 +761,7 @@ export class WhatsAppAgentService {
 					aiRemoveProductHint = aiResult.removeProductHint;
 					aiAddProductHint = aiResult.addProductHint;
 					aiCartEdits = aiResult.cartEdits;
+					aiProductList = aiResult.productList;
 					console.log(
 						`[WhatsApp Agent] AI intent: ${aiResult.intent}` +
 							(aiSearchQuery ? `, searchQuery: "${aiSearchQuery}"` : '') +
@@ -1621,10 +1632,8 @@ export class WhatsAppAgentService {
 
 			// PASO B) Eliminar producto del carrito (segundo — omitir si mismo item fue actualizado en Paso A)
 			if (aiRemoveProductHint && session.cart?.length) {
-				const matchesRemove = buildCartMatcher(aiRemoveProductHint);
-				const idx = session.cart.findIndex(item =>
-					matchesRemove(cartFullName(item)),
-				);
+				const bestRemoveItem = findBestCartItemByHint(aiRemoveProductHint);
+				const idx = bestRemoveItem ? session.cart.indexOf(bestRemoveItem) : -1;
 				if (idx !== -1) {
 					const target = session.cart[idx];
 					const targetKey = target.productVariantId ?? target.productId;
@@ -1706,6 +1715,9 @@ export class WhatsAppAgentService {
 					return reply;
 				})
 				.catch(() => 'Listo, actualicé tu pedido. ¿Necesitas algo más?');
+			if (session.pendingQuoteFlow?.step === 'awaiting_cart_confirmation') {
+				replyText += '\n\n¿Quieres que te genere la cotización?';
+			}
 		} else if (intent === 'show_cart') {
 			const currency =
 				session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
@@ -1718,66 +1730,64 @@ export class WhatsAppAgentService {
 				})
 				.catch(() => 'No tienes productos en tu pedido todavía.');
 		} else if (intent === 'request_quote') {
+			// Procesar lista de productos si viene en el mensaje
+			let outOfStockFromList: string[] = [];
+			if (aiProductList && aiProductList.length > 0) {
+				const currency =
+					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+				const listResult = await this.processProductListItems(
+					aiProductList,
+					session,
+					currency,
+					countryInfo,
+					'quote',
+				);
+				outOfStockFromList = listResult.outOfStock;
+				console.log(
+					`[WhatsApp Agent] Processed product list for quote: ${session.cart?.length ?? 0} items added to cart`,
+				);
+			}
+
 			if (!session.cart || session.cart.length === 0) {
 				replyText =
 					'Todavía no tienes productos en tu pedido. Primero agrega lo que necesites y luego te armo la cotización.';
 			} else {
-				// Buscar si ya existe un cliente con este teléfono
-				const isoCode =
-					session.lastCountryInfo?.isoCode ?? countryInfo?.isoCode ?? 'CO';
-				// Strip country calling code — phoneNumber in DB is stored without it
-				const localPhone = this.stripCallingCode(phoneNumber);
-				const existingCustomer = await this.customerService.findByPhone(
-					localPhone,
-					isoCode,
+				const currency =
+					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+				// Mostrar carrito y pedir confirmación antes de iniciar el flujo de cotización
+				session.pendingQuoteFlow = {
+					step: 'awaiting_cart_confirmation',
+					outOfStockItems:
+						outOfStockFromList.length > 0 ? outOfStockFromList : undefined,
+				};
+				const cartLines = session.cart
+					.map(item => {
+						const name = item.variantName
+							? `${item.productName} ${item.variantName}`
+							: item.productName;
+						const total = item.unitPrice
+							? formatPrice(
+									String(Number(item.unitPrice) * item.quantity),
+									item.currency,
+								)
+							: null;
+						return total
+							? `- ${item.quantity}x ${name} = ${total}`
+							: `- ${item.quantity}x ${name}`;
+					})
+					.join('\n');
+				const grandTotal = session.cart.reduce(
+					(sum, item) =>
+						sum + (item.unitPrice ? Number(item.unitPrice) * item.quantity : 0),
+					0,
 				);
-				if (existingCustomer) {
-					// Cliente ya existe: ir directo a confirmación
-					session.pendingQuoteFlow = {
-						step: 'awaiting_confirmation',
-						collectedData: {
-							fullName: existingCustomer.fullName,
-							dni: existingCustomer.dni,
-							phoneNumber: localPhone,
-							location: existingCustomer.location,
-							cityId: existingCustomer.cityId,
-							cityName: existingCustomer.cityName
-								? `${existingCustomer.cityName}${existingCustomer.regionName ? `, ${existingCustomer.regionName}` : ''}`
-								: undefined,
-							customerId: existingCustomer.id,
-							personId: existingCustomer.personId,
-						},
-					};
-					const currency =
-						session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
-					replyText = await this.openai
-						.generateReply({
-							userMessage: text,
-							intent: 'existing_customer_confirmation',
-							cart: session.cart,
-							currency,
-							quoteFlowData: session.pendingQuoteFlow.collectedData,
-						})
-						.catch(
-							() =>
-								`¡Hola de nuevo, ${existingCustomer.fullName}! Ya tengo tus datos registrados. ¿Procedemos con la cotización?`,
-						);
-				} else {
-					// Cliente nuevo: iniciar flujo de recopilación
-					session.pendingQuoteFlow = {
-						step: 'awaiting_customer_data',
-						collectedData: { phoneNumber: localPhone },
-					};
-					replyText = await this.openai
-						.generateReply({
-							userMessage: text,
-							intent: 'request_quote',
-						})
-						.catch(
-							() =>
-								'¡Claro! Para armarte la cotización necesito tu nombre completo y tu número de cédula.',
-						);
+				const grandTotalFormatted = formatPrice(String(grandTotal), currency);
+				replyText = `Aquí está tu pedido:\n${cartLines}\n\nTotal: ${grandTotalFormatted}`;
+				if (outOfStockFromList.length > 0) {
+					const names = outOfStockFromList.map(p => `- ${p}`).join('\n');
+					replyText += `\n\n⚠️ Los siguientes productos no tienen stock suficiente actualmente:\n${names}\nLos incluimos en la cotización de todas formas, pero puede haber demora en el despacho.`;
 				}
+				replyText += '\n\n¿Quieres que te genere la cotización?';
 				await redis.set(
 					`session:${phoneNumber}`,
 					JSON.stringify(session),
@@ -1797,17 +1807,85 @@ export class WhatsAppAgentService {
 				replyText =
 					'Todavía no tienes productos en tu pedido. Primero agrega lo que necesites y luego te ayudo a completar la compra.';
 			} else if (hasQuote) {
-				// Ofrecer proceder con la cotización existente
+				// Proceder directamente con el pago de la cotización existente
 				const currency =
 					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
-				session.pendingPurchaseFlow = {
-					step: 'awaiting_quote_confirmation',
-					purchaseFromQuote: false,
+				const flow: PendingPurchaseFlow = {
+					step: 'awaiting_receipt',
+					purchaseFromQuote: true,
 					quoteId: session.lastQuoteId,
 					quoteSerial: session.lastQuoteSerial,
 					currency,
 				};
-				replyText = `Tienes una cotización reciente (#${session.lastQuoteSerial}). ¿Quieres proceder con el pago de esa cotización, o prefieres hacer un nuevo pedido?`;
+
+				// Cargar items y datos del cliente desde la cotización
+				const quoteResult = await this.quoteService.getOne(
+					session.lastQuoteSerial!,
+				);
+				if (quoteResult.status === 200 && quoteResult.quote) {
+					const quote = quoteResult.quote;
+					flow.items = (quote.quoteItems ?? []).map(
+						(qi: { name: string; quantity: number; price: number }) => ({
+							productId: '',
+							productName: qi.name,
+							quantity: qi.quantity,
+							unitPrice: String(qi.price),
+							currency,
+						}),
+					);
+					flow.total = calculateTotals(quote).total;
+					flow.collectedData = {
+						fullName: quote.fullName,
+						dni: quote.dni,
+						phoneNumber: quote.phoneNumber,
+						location: quote.location,
+						cityId: quote.cityId,
+						cityName: quote.cityName
+							? `${quote.cityName}${quote.regionName ? `, ${quote.regionName}` : ''}`
+							: undefined,
+						customerId: String(quote.customerId ?? ''),
+					};
+				}
+
+				const paymentRef = crypto.randomUUID();
+				const paymentLink = await this.paymentLinkService.getLinkForCountry(
+					isoCode,
+					flow.total ??
+						flow.items?.reduce(
+							(sum: number, i: CartItem) =>
+								sum + (i.unitPrice ? parseFloat(i.unitPrice) * i.quantity : 0),
+							0,
+						) ??
+						0,
+					currency,
+					paymentRef,
+				);
+				const provider = this.paymentLinkService.getProviderName(isoCode);
+				flow.paymentRef = paymentRef;
+				flow.paymentLink = paymentLink;
+				session.pendingPurchaseFlow = flow;
+
+				const itemLines =
+					flow.items && flow.items.length > 0
+						? flow.items
+								.map((i: CartItem) => {
+									const name = i.variantName
+										? `${i.productName} – ${i.variantName}`
+										: i.productName;
+									return `  • ${i.quantity}x ${name}`;
+								})
+								.join('\n')
+						: '';
+				const totalStr =
+					flow.total != null ? formatPrice(String(flow.total), currency) : '';
+
+				replyText =
+					`¡Perfecto! 🎉 Aquí tienes tu link de pago con ${provider}:\n\n` +
+					`🔗 ${paymentLink}\n\n` +
+					(itemLines ? `Pedido:\n${itemLines}\n\n` : '') +
+					(totalStr ? `Total: ${totalStr}\n\n` : '') +
+					`Ref: ${paymentRef}\n\n` +
+					`Cuando realices el pago, envíanos el comprobante (imagen o PDF) para que nuestro equipo lo verifique. 📸`;
 			} else {
 				// Flujo con el carrito actual
 				const currency =
@@ -2587,6 +2665,135 @@ export class WhatsAppAgentService {
 	};
 
 	/**
+	 * Procesa una lista de productos y los agrega al carrito de la sesión.
+	 * Usado en request_quote y en los handlers de awaiting_confirmation.
+	 * @returns objecto con número de productos agregados y lista de productos sin stock
+	 */
+	private processProductListItems = async (
+		items: Array<{
+			productHint: string;
+			quantity: number;
+			variantHint?: string;
+			unit?: string;
+		}>,
+		session: UserSession,
+		currency: string,
+		countryInfo: {
+			currency: string;
+			stockIds: string[];
+			shopId: string;
+			isoCode: string;
+		} | null,
+		mode: 'quote' | 'purchase' = 'purchase',
+	): Promise<{ added: number; outOfStock: string[] }> => {
+		let added = 0;
+		const outOfStock: string[] = [];
+		for (const item of items) {
+			try {
+				const result = await this.buildProductReply(
+					normalizeText(item.productHint),
+					countryInfo ?? session.lastCountryInfo ?? null,
+					item.productHint,
+				);
+				if (!result.productFound || result.products.length === 0) {
+					console.log(
+						`[WhatsApp Agent] Product list item not found: "${item.productHint}"`,
+					);
+					continue;
+				}
+				const product = result.products[0];
+				const qty = Math.max(1, item.quantity || 1);
+				const weightText = item.unit ? `${qty} ${item.unit}` : '';
+				const requestedGrams = weightText
+					? this.detectRequestedWeightGrams(weightText)
+					: null;
+
+				if (requestedGrams !== null) {
+					const resolved = this.resolveVariantByWeight(
+						product.variants,
+						requestedGrams,
+					);
+					if (resolved) {
+						const stock = resolved.variant.totalQty;
+						if (mode === 'purchase' && stock === 0) {
+							outOfStock.push(item.productHint);
+							continue;
+						}
+						const cartQty =
+							mode === 'quote'
+								? resolved.units
+								: Math.min(resolved.units, stock);
+						this.addToCart(
+							session,
+							product,
+							cartQty,
+							currency,
+							resolved.variant,
+						);
+						added++;
+						if (stock < resolved.units) outOfStock.push(item.productHint);
+					}
+				} else if (item.variantHint) {
+					const resolved = this.resolveVariant(
+						product,
+						item.variantHint,
+						normalizeText(item.productHint),
+					);
+					if (resolved) {
+						const stock = resolved.totalQty;
+						if (mode === 'purchase' && stock === 0) {
+							outOfStock.push(item.productHint);
+							continue;
+						}
+						const cartQty = mode === 'quote' ? qty : Math.min(qty, stock);
+						this.addToCart(session, product, cartQty, currency, resolved);
+						added++;
+						if (stock < qty) outOfStock.push(item.productHint);
+					} else if (product.variants.length === 1) {
+						const stock = product.variants[0].totalQty;
+						if (mode === 'purchase' && stock === 0) {
+							outOfStock.push(item.productHint);
+							continue;
+						}
+						const cartQty = mode === 'quote' ? qty : Math.min(qty, stock);
+						this.addToCart(
+							session,
+							product,
+							cartQty,
+							currency,
+							product.variants[0],
+						);
+						added++;
+						if (stock < qty) outOfStock.push(item.productHint);
+					}
+				} else if (product.variants.length === 1) {
+					const stock = product.variants[0].totalQty;
+					if (mode === 'purchase' && stock === 0) {
+						outOfStock.push(item.productHint);
+						continue;
+					}
+					const cartQty = mode === 'quote' ? qty : Math.min(qty, stock);
+					this.addToCart(
+						session,
+						product,
+						cartQty,
+						currency,
+						product.variants[0],
+					);
+					added++;
+					if (stock < qty) outOfStock.push(item.productHint);
+				}
+			} catch (err) {
+				console.error(
+					`[WhatsApp Agent] Error processing product list item: "${item.productHint}"`,
+					err,
+				);
+			}
+		}
+		return { added, outOfStock };
+	};
+
+	/**
 	 * Maneja los pasos comunes de recopilación de datos del cliente
 	 * (awaiting_customer_data → awaiting_address → awaiting_city_selection → awaiting_confirmation).
 	 * Compartido entre handleQuoteFlowStep y handlePurchaseFlowStep.
@@ -2776,13 +2983,68 @@ export class WhatsAppAgentService {
 			session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
 
 		// Permitir cancelar el flujo
-		if (
-			/\b(cancelar|cancelalo|no\s*quiero|dejalo|olvidalo)\b/i.test(
-				normalizedText,
-			)
-		) {
+		if (/\b(cancelar|cancelalo|dejalo|olvidalo)\b/i.test(normalizedText)) {
 			session.pendingQuoteFlow = null;
 			return 'Listo, cancelé el proceso de cotización. ¿Necesitas algo más?';
+		}
+
+		// Manejar el paso de confirmación del carrito antes de iniciar el flujo de datos
+		if (flow.step === 'awaiting_cart_confirmation') {
+			const isConfirm =
+				/^(si|sí|vale|ok|dale|claro|listo|perfecto|bueno|confirmo|de acuerdo|va|venga|correcto|todo bien|esta bien|procede|procedemos|sigamos|continua|generar|genera)\b/i.test(
+					normalizedText.trim(),
+				);
+			if (!isConfirm) {
+				// No es confirmación → dejar que el flujo normal maneje edit_cart, search_product, etc.
+				return null;
+			}
+			// Confirmado → buscar cliente existente y transicionar
+			const isoCode =
+				session.lastCountryInfo?.isoCode ?? countryInfo?.isoCode ?? 'CO';
+			const localPhone = this.stripCallingCode(phoneNumber);
+			const existingCustomer = await this.customerService.findByPhone(
+				localPhone,
+				isoCode,
+			);
+			if (existingCustomer) {
+				flow.step = 'awaiting_confirmation';
+				flow.collectedData = {
+					fullName: existingCustomer.fullName,
+					dni: existingCustomer.dni,
+					phoneNumber: localPhone,
+					location: existingCustomer.location,
+					cityId: existingCustomer.cityId,
+					cityName: existingCustomer.cityName
+						? `${existingCustomer.cityName}${existingCustomer.regionName ? `, ${existingCustomer.regionName}` : ''}`
+						: undefined,
+					customerId: existingCustomer.id,
+					personId: existingCustomer.personId,
+				};
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'existing_customer_confirmation',
+						cart: session.cart,
+						currency,
+						quoteFlowData: flow.collectedData,
+					})
+					.catch(
+						() =>
+							`¡Hola de nuevo, ${existingCustomer.fullName}! Ya tengo tus datos registrados. ¿Procedemos con la cotización?`,
+					);
+			} else {
+				flow.step = 'awaiting_customer_data';
+				flow.collectedData = { phoneNumber: localPhone };
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'request_quote',
+					})
+					.catch(
+						() =>
+							'¡Claro! Para armarte la cotización necesito tu nombre completo y tu número de cédula.',
+					);
+			}
 		}
 
 		const commonReply = await this.handleCommonCollectionSteps(
@@ -2887,6 +3149,39 @@ export class WhatsAppAgentService {
 						.catch(
 							() => '¿Confirmo la cotización con estos datos actualizados?',
 						);
+				}
+
+				// Check if the customer wants to ADD products to the cart
+				if (
+					correctionResult.productsToAdd &&
+					correctionResult.productsToAdd.length > 0
+				) {
+					const { added, outOfStock } = await this.processProductListItems(
+						correctionResult.productsToAdd,
+						session,
+						currency,
+						countryInfo,
+						'quote',
+					);
+					if (added > 0 || outOfStock.length > 0) {
+						let reply = await this.openai
+							.generateReply({
+								userMessage: text,
+								intent: 'awaiting_confirmation',
+								cart: session.cart,
+								currency,
+								quoteFlowData: flow.collectedData,
+							})
+							.catch(
+								() =>
+									'¿Confirmo la cotización con estos datos y productos actualizados?',
+							);
+						if (outOfStock.length > 0) {
+							const names = outOfStock.map(p => `- ${p}`).join('\n');
+							reply += `\n\n⚠️ Los siguientes productos no tienen stock disponible actualmente:\n${names}\nLos incluimos en la cotización de todas formas, pero puede haber demora en el despacho.`;
+						}
+						return reply;
+					}
 				}
 
 				// AI could not detect what to correct — ask for clarification
@@ -3205,8 +3500,6 @@ export class WhatsAppAgentService {
 			quoteRefLine +
 			`\n\n✅ El cliente confirmó el pago. Por favor, verificar y procesar el pedido.`;
 
-		await this.sendReply(vendorPhone, botPhoneNumberId, message);
-
 		if (receiptMediaId) {
 			const sendMedia =
 				receiptMediaType === 'document'
@@ -3215,13 +3508,13 @@ export class WhatsAppAgentService {
 							receiptMediaId,
 							botPhoneNumberId,
 							'comprobante.pdf',
-							'🧾 Comprobante de pago del cliente',
+							message,
 						)
 					: this.whatsAppService.sendImage(
 							vendorPhone,
 							receiptMediaId,
 							botPhoneNumberId,
-							'🧾 Comprobante de pago del cliente',
+							message,
 						);
 			await sendMedia.catch(err =>
 				console.error(
@@ -3229,6 +3522,8 @@ export class WhatsAppAgentService {
 					err,
 				),
 			);
+		} else {
+			await this.sendReply(vendorPhone, botPhoneNumberId, message);
 		}
 	};
 
@@ -3499,6 +3794,45 @@ export class WhatsAppAgentService {
 							purchaseFlowData: flow.collectedData,
 						})
 						.catch(() => '¿Confirmo la compra con estos datos actualizados?');
+				}
+				// Check if the customer wants to ADD products to the cart
+				if (
+					correctionResult.productsToAdd &&
+					correctionResult.productsToAdd.length > 0
+				) {
+					const { added, outOfStock } = await this.processProductListItems(
+						correctionResult.productsToAdd,
+						session,
+						currency,
+						countryInfo,
+						'purchase',
+					);
+					if (added > 0 || outOfStock.length > 0) {
+						let reply: string;
+						if (added > 0) {
+							flow.items = session.cart ?? [];
+							reply = await this.openai
+								.generateReply({
+									userMessage: text,
+									intent: 'awaiting_purchase_confirmation',
+									cart: flow.items,
+									currency,
+									purchaseFlowData: flow.collectedData,
+								})
+								.catch(
+									() =>
+										'¿Confirmo la compra con estos datos y productos actualizados?',
+								);
+						} else {
+							reply =
+								'Los productos que mencionas no tienen stock disponible en este momento.';
+						}
+						if (outOfStock.length > 0) {
+							const names = outOfStock.map(p => `- ${p}`).join('\n');
+							reply += `\n\n⚠️ Los siguientes productos no tienen stock disponible y no fueron incluidos en el pedido:\n${names}`;
+						}
+						return reply;
+					}
 				}
 				return await this.openai
 					.generateReply({

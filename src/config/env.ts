@@ -30,6 +30,7 @@ export const ENV = {
 	PAYPHONE_PAYMENT_BASE_URL: process.env.PAYPHONE_PAYMENT_BASE_URL ?? '',
 	PAYPHONE_TOKEN: process.env.PAYPHONE_TOKEN ?? '',
 	PAYPHONE_STORE_ID: process.env.PAYPHONE_STORE_ID ?? '',
+	BOLD_API_KEY: process.env.BOLD_API_KEY ?? '',
 	// TEST_PAYPHONE_IN_CO: Cuando está en 'true', fuerza el uso de PayPhone
 	// aunque el país sea Colombia. Útil para probar desde Colombia.
 	// ⚠️ Dejar en '' o eliminar en producción.
