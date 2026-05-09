@@ -196,6 +196,8 @@ export interface OpenAIContext {
 	cityCandidates?: Array<{ index: number; name: string; region: string }>;
 	/** Número de serie de cotización creada */
 	quoteSerialNumber?: string;
+	/** Aviso de productos sin stock suficiente para incluir en el mensaje antes de la pregunta de confirmación */
+	outOfStockNote?: string;
 }
 
 export type AIDetectedIntent =

@@ -12,7 +12,7 @@ import { StockModel } from '../stock/model';
 import { ShopModel } from '../shop/model';
 import { CountryModel } from '../country/model';
 import { WhatsAppLogService } from './logging/log.service';
-import { OpenAIService } from './openai.service';
+import { OpenAIService, OpenAIProduct } from './openai.service';
 import { PaymentLinkService } from './payment-link.service';
 import {
 	formatPrice,
@@ -93,6 +93,7 @@ interface PendingQuoteFlow {
 
 interface PendingPurchaseFlow {
 	step:
+		| 'awaiting_out_of_stock_resolution'
 		| 'awaiting_quote_confirmation'
 		| 'awaiting_customer_data'
 		| 'awaiting_address'
@@ -127,6 +128,17 @@ interface PendingPurchaseFlow {
 	paymentRef?: string;
 	/** Link de pago enviado al cliente */
 	paymentLink?: string;
+	/** Ítems con stock insuficiente pendientes de resolución por el cliente */
+	blockedItemsContext?: Array<{
+		item: CartItem;
+		availableStock: number;
+		alternatives: Array<{
+			variantId: string;
+			name: string;
+			stock: number;
+			unitPrice: string | null;
+		}>;
+	}>;
 }
 
 /** Campos compartidos entre PendingQuoteFlow y PendingPurchaseFlow usados por handleCommonCollectionSteps */
@@ -1732,6 +1744,11 @@ export class WhatsAppAgentService {
 		} else if (intent === 'request_quote') {
 			// Procesar lista de productos si viene en el mensaje
 			let outOfStockFromList: string[] = [];
+			let outOfStockDetailsFromList: Array<{
+				name: string;
+				currentStock: number;
+				alternatives: Array<{ name: string; stock: number }>;
+			}> = [];
 			if (aiProductList && aiProductList.length > 0) {
 				const currency =
 					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
@@ -1743,18 +1760,71 @@ export class WhatsAppAgentService {
 					'quote',
 				);
 				outOfStockFromList = listResult.outOfStock;
+				outOfStockDetailsFromList = listResult.outOfStockDetails;
 				console.log(
 					`[WhatsApp Agent] Processed product list for quote: ${session.cart?.length ?? 0} items added to cart`,
 				);
 			}
 
+			// Si el mensaje traía UN SOLO producto (el AI clasificó como request_quote pero
+			// el cliente probablemente aún no terminó de pedir), tratarlo como un add-to-cart
+			// normal: confirmar el producto y preguntar si necesita algo más.
+			// Solo se muestra el resumen completo cuando hay 2+ productos en la lista
+			// o cuando el cliente pidió la cotización de forma explícita (sin productList).
+			const isSingleProductFromList =
+				aiProductList !== undefined && aiProductList.length === 1;
+
 			if (!session.cart || session.cart.length === 0) {
 				replyText =
 					'Todavía no tienes productos en tu pedido. Primero agrega lo que necesites y luego te armo la cotización.';
+			} else if (isSingleProductFromList) {
+				// Un solo producto recién agregado → comportamiento igual a add-to-cart normal
+				const currency =
+					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+				const lastCartItem = session.cart[session.cart.length - 1];
+				const foundInList = session.lastProductList?.find(
+					p => p.name === lastCartItem?.productName,
+				);
+				const foundVariant = foundInList?.variants.find(
+					v => v.name === lastCartItem?.variantName,
+				);
+				const productForReply: OpenAIProduct =
+					foundInList && foundVariant
+						? { ...foundInList, variants: [foundVariant] }
+						: (foundInList ?? {
+								name: lastCartItem?.productName ?? '',
+								description: undefined,
+								variants: lastCartItem?.variantName
+									? [
+											{
+												name: lastCartItem.variantName,
+												price: lastCartItem.unitPrice ?? '0',
+												totalQty: lastCartItem.quantity,
+											},
+										]
+									: [],
+							});
+				await redis.set(
+					`session:${phoneNumber}`,
+					JSON.stringify(session),
+					'EX',
+					SESSION_TTL_SECONDS,
+				);
+				replyText = await this.openai
+					.generateReply({
+						userMessage: text,
+						selectedProduct: productForReply,
+						quantity: lastCartItem?.quantity,
+						currency,
+					})
+					.catch(
+						() =>
+							`Listo, agregué ${lastCartItem?.productName ?? 'el producto'} a tu pedido. ¿Necesitas algo más?`,
+					);
 			} else {
 				const currency =
 					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
-				// Mostrar carrito y pedir confirmación antes de iniciar el flujo de cotización
+				// Múltiples productos o cotización explícita → mostrar resumen y confirmar
 				session.pendingQuoteFlow = {
 					step: 'awaiting_cart_confirmation',
 					outOfStockItems:
@@ -1783,11 +1853,24 @@ export class WhatsAppAgentService {
 				);
 				const grandTotalFormatted = formatPrice(String(grandTotal), currency);
 				replyText = `Aquí está tu pedido:\n${cartLines}\n\nTotal: ${grandTotalFormatted}`;
-				if (outOfStockFromList.length > 0) {
-					const names = outOfStockFromList.map(p => `- ${p}`).join('\n');
-					replyText += `\n\n⚠️ Los siguientes productos no tienen stock suficiente actualmente:\n${names}\nLos incluimos en la cotización de todas formas, pero puede haber demora en el despacho.`;
+				if (outOfStockDetailsFromList.length > 0) {
+					const lines = outOfStockDetailsFromList
+						.map(p => {
+							const stockNote =
+								p.currentStock > 0
+									? `solo hay ${p.currentStock} disponible${p.currentStock !== 1 ? 's' : ''}`
+									: 'sin stock';
+							const altNote =
+								p.alternatives.length > 0
+									? `; también disponible en: ${p.alternatives.map(a => `${a.name} (${a.stock})`).join(', ')}`
+									: '';
+							return `- ${p.name} (${stockNote}${altNote})`;
+						})
+						.join('\n');
+					replyText += `\n\n⚠️ Los siguientes productos no tienen stock suficiente:\n${lines}`;
 				}
-				replyText += '\n\n¿Quieres que te genere la cotización?';
+				replyText +=
+					'\n\n¿Quieres generar una cotización o proceder con la compra?';
 				await redis.set(
 					`session:${phoneNumber}`,
 					JSON.stringify(session),
@@ -1890,58 +1973,109 @@ export class WhatsAppAgentService {
 				// Flujo con el carrito actual
 				const currency =
 					session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
-				const existingCustomer = await this.customerService.findByPhone(
-					localPhone,
-					isoCode,
-				);
-				if (existingCustomer) {
+
+				// Verificar stock antes de proceder con la compra
+				const stockIds =
+					session.lastCountryInfo?.stockIds ?? countryInfo?.stockIds ?? [];
+				const { purchasableItems, blockedItems } =
+					await this.filterCartItemsByStock(cartItems, stockIds);
+
+				if (purchasableItems.length === 0) {
+					replyText =
+						'Ninguno de los productos en tu pedido tiene stock suficiente para procesar la compra en este momento. Si quieres, puedo generarte una cotización.';
+				} else if (blockedItems.length > 0) {
+					// Hay ítems sin stock suficiente → preguntar al cliente antes de proceder
+					const blockedItemsContext = await Promise.all(
+						blockedItems.map(async blocked => {
+							const availableStock = blocked.stockItemId
+								? await this.getAvailableStock(blocked.stockItemId, stockIds)
+								: 0;
+							const productEntry = session.lastProductList?.find(
+								p => p.productId === blocked.productId,
+							);
+							const alternatives = productEntry
+								? productEntry.variants
+										.filter(
+											v =>
+												v.variantId !== blocked.productVariantId &&
+												v.totalQty > 0,
+										)
+										.map(v => ({
+											variantId: v.variantId,
+											name: v.name || '',
+											stock: v.totalQty,
+											unitPrice: v.price,
+										}))
+								: [];
+							return { item: blocked, availableStock, alternatives };
+						}),
+					);
+
 					session.pendingPurchaseFlow = {
-						step: 'awaiting_confirmation',
+						step: 'awaiting_out_of_stock_resolution',
 						purchaseFromQuote: false,
-						items: cartItems,
-						currency,
-						collectedData: {
-							fullName: existingCustomer.fullName,
-							dni: existingCustomer.dni,
-							phoneNumber: localPhone,
-							location: existingCustomer.location,
-							cityId: existingCustomer.cityId,
-							cityName: existingCustomer.cityName
-								? `${existingCustomer.cityName}${existingCustomer.regionName ? `, ${existingCustomer.regionName}` : ''}`
-								: undefined,
-							customerId: existingCustomer.id,
-							personId: existingCustomer.personId,
-						},
-					};
-					replyText = await this.openai
-						.generateReply({
-							userMessage: text,
-							intent: 'existing_customer_purchase_confirmation',
-							cart: session.cart,
-							currency,
-							purchaseFlowData: session.pendingPurchaseFlow.collectedData,
-						})
-						.catch(
-							() =>
-								`¡Hola de nuevo, ${existingCustomer.fullName}! Ya tengo tus datos. ¿Procedemos con la compra?`,
-						);
-				} else {
-					session.pendingPurchaseFlow = {
-						step: 'awaiting_customer_data',
-						purchaseFromQuote: false,
-						items: cartItems,
+						items: purchasableItems,
 						currency,
 						collectedData: { phoneNumber: localPhone },
+						blockedItemsContext,
 					};
-					replyText = await this.openai
-						.generateReply({
-							userMessage: text,
-							intent: 'purchase_intent',
-						})
-						.catch(
-							() =>
-								'¡Claro! Para procesar tu compra necesito tu nombre completo y tu número de cédula.',
-						);
+
+					replyText =
+						this.buildOutOfStockResolutionMessage(blockedItemsContext);
+				} else {
+					const existingCustomer = await this.customerService.findByPhone(
+						localPhone,
+						isoCode,
+					);
+					if (existingCustomer) {
+						session.pendingPurchaseFlow = {
+							step: 'awaiting_confirmation',
+							purchaseFromQuote: false,
+							items: purchasableItems,
+							currency,
+							collectedData: {
+								fullName: existingCustomer.fullName,
+								dni: existingCustomer.dni,
+								phoneNumber: localPhone,
+								location: existingCustomer.location,
+								cityId: existingCustomer.cityId,
+								cityName: existingCustomer.cityName
+									? `${existingCustomer.cityName}${existingCustomer.regionName ? `, ${existingCustomer.regionName}` : ''}`
+									: undefined,
+								customerId: existingCustomer.id,
+								personId: existingCustomer.personId,
+							},
+						};
+						replyText = await this.openai
+							.generateReply({
+								userMessage: text,
+								intent: 'existing_customer_purchase_confirmation',
+								cart: purchasableItems,
+								currency,
+								purchaseFlowData: session.pendingPurchaseFlow.collectedData,
+							})
+							.catch(
+								() =>
+									`¡Hola de nuevo, ${existingCustomer.fullName}! Ya tengo tus datos. ¿Procedemos con la compra?`,
+							);
+					} else {
+						session.pendingPurchaseFlow = {
+							step: 'awaiting_customer_data',
+							purchaseFromQuote: false,
+							items: purchasableItems,
+							currency,
+							collectedData: { phoneNumber: localPhone },
+						};
+						replyText = await this.openai
+							.generateReply({
+								userMessage: text,
+								intent: 'purchase_intent',
+							})
+							.catch(
+								() =>
+									'¡Claro! Para procesar tu compra necesito tu nombre completo y tu número de cédula.',
+							);
+					}
 				}
 				await redis.set(
 					`session:${phoneNumber}`,
@@ -2665,9 +2799,70 @@ export class WhatsAppAgentService {
 	};
 
 	/**
+	 * Verifica el stock actual de los ítems del carrito y los separa en
+	 * "comprables" (stock suficiente) y "bloqueados" (stock insuficiente).
+	 * Los ítems sin stockItemId se incluyen como comprables por defecto.
+	 */
+	private filterCartItemsByStock = async (
+		cartItems: CartItem[],
+		stockIds: string[],
+	): Promise<{ purchasableItems: CartItem[]; blockedItems: CartItem[] }> => {
+		const purchasableItems: CartItem[] = [];
+		const blockedItems: CartItem[] = [];
+
+		for (const item of cartItems) {
+			if (!item.stockItemId) {
+				purchasableItems.push(item);
+				continue;
+			}
+			try {
+				const stockItem = await StockItemModel.findOne({
+					where: {
+						id: item.stockItemId,
+						active: true,
+						...(stockIds.length > 0 ? { stockId: { [Op.in]: stockIds } } : {}),
+					},
+					attributes: ['quantity'],
+				});
+				if (!stockItem || Number(stockItem.get('quantity')) < item.quantity) {
+					blockedItems.push(item);
+				} else {
+					purchasableItems.push(item);
+				}
+			} catch {
+				// En caso de error al consultar stock, incluir el ítem
+				purchasableItems.push(item);
+			}
+		}
+
+		return { purchasableItems, blockedItems };
+	};
+
+	/** Devuelve el stock disponible actual de un stockItem (0 si no existe). */
+	private getAvailableStock = async (
+		stockItemId: string,
+		stockIds: string[],
+	): Promise<number> => {
+		try {
+			const si = await StockItemModel.findOne({
+				where: {
+					id: stockItemId,
+					active: true,
+					...(stockIds.length > 0 ? { stockId: { [Op.in]: stockIds } } : {}),
+				},
+				attributes: ['quantity'],
+			});
+			return si ? Number(si.get('quantity')) : 0;
+		} catch {
+			return 0;
+		}
+	};
+
+	/**
 	 * Procesa una lista de productos y los agrega al carrito de la sesión.
 	 * Usado en request_quote y en los handlers de awaiting_confirmation.
-	 * @returns objecto con número de productos agregados y lista de productos sin stock
+	 * @returns objecto con número de productos agregados, lista de productos sin stock
+	 *          y detalles de sin-stock con alternativas disponibles
 	 */
 	private processProductListItems = async (
 		items: Array<{
@@ -2685,9 +2880,40 @@ export class WhatsAppAgentService {
 			isoCode: string;
 		} | null,
 		mode: 'quote' | 'purchase' = 'purchase',
-	): Promise<{ added: number; outOfStock: string[] }> => {
+	): Promise<{
+		added: number;
+		outOfStock: string[];
+		outOfStockDetails: Array<{
+			name: string;
+			currentStock: number;
+			alternatives: Array<{ name: string; stock: number }>;
+		}>;
+	}> => {
 		let added = 0;
 		const outOfStock: string[] = [];
+		const outOfStockDetails: Array<{
+			name: string;
+			currentStock: number;
+			alternatives: Array<{ name: string; stock: number }>;
+		}> = [];
+
+		const pushOutOfStock = (
+			hint: string,
+			allVariants: Array<{ variantId: string; name: string; totalQty: number }>,
+			chosenVariantId?: string,
+			chosenStock = 0,
+		) => {
+			outOfStock.push(hint);
+			const alternatives = allVariants
+				.filter(v => v.variantId !== chosenVariantId && v.totalQty > 0)
+				.map(v => ({ name: v.name, stock: v.totalQty }));
+			outOfStockDetails.push({
+				name: hint,
+				currentStock: chosenStock,
+				alternatives,
+			});
+		};
+
 		for (const item of items) {
 			try {
 				const result = await this.buildProductReply(
@@ -2715,8 +2941,17 @@ export class WhatsAppAgentService {
 					);
 					if (resolved) {
 						const stock = resolved.variant.totalQty;
+						const realName = [product.name, resolved.variant.name]
+							.filter(Boolean)
+							.join(' ')
+							.trim();
 						if (mode === 'purchase' && stock === 0) {
-							outOfStock.push(item.productHint);
+							pushOutOfStock(
+								realName,
+								product.variants,
+								resolved.variant.variantId,
+								stock,
+							);
 							continue;
 						}
 						const cartQty =
@@ -2731,7 +2966,14 @@ export class WhatsAppAgentService {
 							resolved.variant,
 						);
 						added++;
-						if (stock < resolved.units) outOfStock.push(item.productHint);
+						if (stock < resolved.units) {
+							pushOutOfStock(
+								realName,
+								product.variants,
+								resolved.variant.variantId,
+								stock,
+							);
+						}
 					}
 				} else if (item.variantHint) {
 					const resolved = this.resolveVariant(
@@ -2741,18 +2983,43 @@ export class WhatsAppAgentService {
 					);
 					if (resolved) {
 						const stock = resolved.totalQty;
+						const realName = [product.name, resolved.name]
+							.filter(Boolean)
+							.join(' ')
+							.trim();
 						if (mode === 'purchase' && stock === 0) {
-							outOfStock.push(item.productHint);
+							pushOutOfStock(
+								realName,
+								product.variants,
+								resolved.variantId,
+								stock,
+							);
 							continue;
 						}
 						const cartQty = mode === 'quote' ? qty : Math.min(qty, stock);
 						this.addToCart(session, product, cartQty, currency, resolved);
 						added++;
-						if (stock < qty) outOfStock.push(item.productHint);
+						if (stock < qty) {
+							pushOutOfStock(
+								realName,
+								product.variants,
+								resolved.variantId,
+								stock,
+							);
+						}
 					} else if (product.variants.length === 1) {
 						const stock = product.variants[0].totalQty;
+						const realName = [product.name, product.variants[0].name]
+							.filter(Boolean)
+							.join(' ')
+							.trim();
 						if (mode === 'purchase' && stock === 0) {
-							outOfStock.push(item.productHint);
+							pushOutOfStock(
+								realName,
+								product.variants,
+								product.variants[0].variantId,
+								stock,
+							);
 							continue;
 						}
 						const cartQty = mode === 'quote' ? qty : Math.min(qty, stock);
@@ -2764,12 +3031,28 @@ export class WhatsAppAgentService {
 							product.variants[0],
 						);
 						added++;
-						if (stock < qty) outOfStock.push(item.productHint);
+						if (stock < qty) {
+							pushOutOfStock(
+								realName,
+								product.variants,
+								product.variants[0].variantId,
+								stock,
+							);
+						}
 					}
 				} else if (product.variants.length === 1) {
 					const stock = product.variants[0].totalQty;
+					const realName = [product.name, product.variants[0].name]
+						.filter(Boolean)
+						.join(' ')
+						.trim();
 					if (mode === 'purchase' && stock === 0) {
-						outOfStock.push(item.productHint);
+						pushOutOfStock(
+							realName,
+							product.variants,
+							product.variants[0].variantId,
+							stock,
+						);
 						continue;
 					}
 					const cartQty = mode === 'quote' ? qty : Math.min(qty, stock);
@@ -2781,7 +3064,14 @@ export class WhatsAppAgentService {
 						product.variants[0],
 					);
 					added++;
-					if (stock < qty) outOfStock.push(item.productHint);
+					if (stock < qty) {
+						pushOutOfStock(
+							realName,
+							product.variants,
+							product.variants[0].variantId,
+							stock,
+						);
+					}
 				}
 			} catch (err) {
 				console.error(
@@ -2790,7 +3080,7 @@ export class WhatsAppAgentService {
 				);
 			}
 		}
-		return { added, outOfStock };
+		return { added, outOfStock, outOfStockDetails };
 	};
 
 	/**
@@ -3178,7 +3468,7 @@ export class WhatsAppAgentService {
 							);
 						if (outOfStock.length > 0) {
 							const names = outOfStock.map(p => `- ${p}`).join('\n');
-							reply += `\n\n⚠️ Los siguientes productos no tienen stock disponible actualmente:\n${names}\nLos incluimos en la cotización de todas formas, pero puede haber demora en el despacho.`;
+							reply += `\n\n⚠️ Los siguientes productos no tienen stock suficiente actualmente:\n${names}`;
 						}
 						return reply;
 					}
@@ -3474,7 +3764,7 @@ export class WhatsAppAgentService {
 							return `  • ${item.quantity}x ${name}`;
 						})
 						.join('\n')
-				: '  • (sin detalle de productos)';
+				: `• Revisar Cotización #${flow.quoteSerial}`;
 
 		const totalLine =
 			flow.total != null
@@ -3484,7 +3774,7 @@ export class WhatsAppAgentService {
 		const refLine = flow.paymentRef ? `\nRef pago: ${flow.paymentRef}` : '';
 		const quoteRefLine =
 			flow.purchaseFromQuote && flow.quoteSerial
-				? `\nCotización: ${flow.quoteSerial}`
+				? `\nCotización: #${flow.quoteSerial}`
 				: '';
 
 		const message =
@@ -3531,6 +3821,50 @@ export class WhatsAppAgentService {
 	 * Maneja los pasos del flujo de compra.
 	 * Análogo a handleQuoteFlowStep pero para completar una compra con link de pago.
 	 */
+	/**
+	 * Construye el mensaje que pregunta al cliente qué quiere hacer
+	 * con los ítems del carrito que no tienen stock suficiente.
+	 */
+	private buildOutOfStockResolutionMessage = (
+		blockedItemsContext: Array<{
+			item: CartItem;
+			availableStock: number;
+			alternatives: Array<{
+				variantId: string;
+				name: string;
+				stock: number;
+				unitPrice: string | null;
+			}>;
+		}>,
+	): string => {
+		const lines: string[] = [
+			'Antes de continuar, necesito consultarte sobre algunos productos:',
+		];
+
+		for (const blocked of blockedItemsContext) {
+			const name = blocked.item.variantName
+				? `${blocked.item.productName} ${blocked.item.variantName}`
+				: blocked.item.productName;
+			lines.push(
+				`\n⚠️ *${name}*: pediste ${blocked.item.quantity} pero solo hay ${blocked.availableStock} disponibles.`,
+			);
+
+			const options: string[] = ['1. Llevar los que hay disponibles'];
+			let optionIndex = 2;
+			for (const alt of blocked.alternatives) {
+				options.push(
+					`${optionIndex}. Cambiar a ${alt.name} (${alt.stock} disponibles)`,
+				);
+				optionIndex++;
+			}
+			options.push(`${optionIndex}. No incluirlo en el pedido`);
+			lines.push(options.join('\n'));
+		}
+
+		lines.push('\n¿Qué prefieres hacer?');
+		return lines.join('\n');
+	};
+
 	private handlePurchaseFlowStep = async (
 		phoneNumber: string,
 		botPhoneNumberId: string,
@@ -3558,6 +3892,132 @@ export class WhatsAppAgentService {
 		) {
 			session.pendingPurchaseFlow = null;
 			return 'Listo, cancelé el proceso de compra. ¿Necesitas algo más?';
+		}
+
+		// ── Paso 0b: resolución de ítems sin stock suficiente ──
+		if (flow.step === 'awaiting_out_of_stock_resolution') {
+			const blockedCtx = flow.blockedItemsContext ?? [];
+
+			// Detectar intención del cliente
+			const wantsTakeAvailable =
+				/\b(as[ií]|llevar\s+(los|las|el|la)?\s*(disponibles?|que\s+hay)|quiero?\s+(los|las)?\s*disponibles?|con\s+(los|las)?\s*disponibles?|tomar?\s+(los|las)?\s*disponibles?|los\s+que\s+hay|lo\s+que\s+hay)\b/i.test(
+					normalizedText,
+				);
+
+			// Detectar si el cliente pide una alternativa por nombre
+			let chosenAlternative: {
+				blockedItem: CartItem;
+				variant: {
+					variantId: string;
+					name: string;
+					stock: number;
+					unitPrice: string | null;
+				};
+			} | null = null;
+			for (const blocked of blockedCtx) {
+				for (const alt of blocked.alternatives) {
+					const altNorm = normalizeText(alt.name);
+					if (normalizedText.includes(altNorm)) {
+						chosenAlternative = { blockedItem: blocked.item, variant: alt };
+						break;
+					}
+					// Intento por palabras clave (ej: "10 kilos")
+					const altWords = altNorm.split(/\s+/).filter(w => w.length > 2);
+					if (
+						altWords.length > 0 &&
+						altWords.every(w => normalizedText.includes(w))
+					) {
+						chosenAlternative = { blockedItem: blocked.item, variant: alt };
+						break;
+					}
+				}
+				if (chosenAlternative) break;
+			}
+
+			// Construir lista de ítems final (skip es el comportamiento por defecto)
+			const updatedItems = [...(flow.items ?? [])];
+
+			if (wantsTakeAvailable) {
+				// Agregar ítems bloqueados con la cantidad disponible
+				for (const blocked of blockedCtx) {
+					if (blocked.availableStock > 0) {
+						updatedItems.push({
+							...blocked.item,
+							quantity: blocked.availableStock,
+						});
+					}
+				}
+			} else if (chosenAlternative) {
+				// Agregar la variante alternativa elegida (cantidad 1 por defecto)
+				const { blockedItem, variant } = chosenAlternative;
+				// Buscar stockItemId para la variante alternativa
+				const productEntry = session.lastProductList?.find(
+					p => p.productId === blockedItem.productId,
+				);
+				const altVariantEntry = productEntry?.variants.find(
+					v => v.variantId === variant.variantId,
+				);
+				updatedItems.push({
+					...blockedItem,
+					productVariantId: variant.variantId,
+					variantName: variant.name,
+					stockItemId: altVariantEntry?.stockItemId ?? null,
+					quantity: 1,
+					unitPrice: variant.unitPrice,
+				});
+			}
+			// else wantsSkip (o por defecto): no agregar los bloqueados
+
+			flow.items = updatedItems;
+			flow.blockedItemsContext = undefined;
+
+			// Continuar con el flujo de compra normal
+			const localPhone =
+				flow.collectedData?.phoneNumber ?? this.stripCallingCode(phoneNumber);
+			const existingCustomer = await this.customerService.findByPhone(
+				localPhone,
+				isoCode,
+			);
+
+			if (existingCustomer) {
+				flow.collectedData = {
+					fullName: existingCustomer.fullName,
+					dni: existingCustomer.dni,
+					phoneNumber: localPhone,
+					location: existingCustomer.location,
+					cityId: existingCustomer.cityId,
+					cityName: existingCustomer.cityName
+						? `${existingCustomer.cityName}${existingCustomer.regionName ? `, ${existingCustomer.regionName}` : ''}`
+						: undefined,
+					customerId: existingCustomer.id,
+					personId: existingCustomer.personId,
+				};
+				flow.step = 'awaiting_confirmation';
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'existing_customer_purchase_confirmation',
+						cart: updatedItems,
+						currency,
+						purchaseFlowData: flow.collectedData,
+					})
+					.catch(
+						() =>
+							`¡Hola de nuevo, ${existingCustomer.fullName}! Ya tengo tus datos. ¿Procedemos con la compra?`,
+					);
+			} else {
+				flow.collectedData = { phoneNumber: localPhone };
+				flow.step = 'awaiting_customer_data';
+				return await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'purchase_intent',
+					})
+					.catch(
+						() =>
+							'¡Perfecto! Para procesar tu compra necesito tu nombre completo y tu número de cédula.',
+					);
+			}
 		}
 
 		// ── Paso 0: confirmar si procede desde la cotización existente ──
