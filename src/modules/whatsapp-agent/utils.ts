@@ -1,3 +1,5 @@
+import { toZonedTime } from 'date-fns-tz';
+
 export function normalizeText(text: string): string {
 	return text
 		.toLowerCase()
@@ -116,4 +118,22 @@ export function formatPrice(price: string | null, currency: string): string {
 		return `$${num.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
 	}
 	return `$${num.toFixed(2)}`;
+}
+
+export function isWithinOfficeHours(): boolean {
+	const now = toZonedTime(new Date(), 'America/Bogota');
+	const day = now.getDay(); // 0=Dom, 1=Lun, ..., 6=Sáb
+	const hour = now.getHours();
+	const minute = now.getMinutes();
+	const timeInMinutes = hour * 60 + minute;
+
+	if (day >= 1 && day <= 5) {
+		// Lunes a Viernes: 8:00–18:00
+		return timeInMinutes >= 8 * 60 && timeInMinutes < 18 * 60;
+	}
+	if (day === 6) {
+		// Sábado: 8:00–14:00
+		return timeInMinutes >= 8 * 60 && timeInMinutes < 14 * 60;
+	}
+	return false; // Domingo cerrado
 }

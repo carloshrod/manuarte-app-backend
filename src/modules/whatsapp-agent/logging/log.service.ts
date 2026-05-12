@@ -3,6 +3,17 @@ import { WhatsAppQueryLogModel } from './query-log.model';
 import { WhatsAppErrorLogModel } from './error-log.model';
 
 export class WhatsAppLogService {
+	/**
+	 * Devuelve true si el número ya envió al menos un mensaje al bot (según la tabla de logs).
+	 * Se usa para distinguir clientes que nunca han hablado con el bot de los que sí.
+	 */
+	async hasInteractedBefore(phoneNumber: string): Promise<boolean> {
+		const count = await WhatsAppMessageLogModel.count({
+			where: { phoneNumber, direction: 'inbound' },
+		});
+		return count > 0;
+	}
+
 	async logMessage(data: {
 		phoneNumber: string;
 		botPhoneNumberId: string;

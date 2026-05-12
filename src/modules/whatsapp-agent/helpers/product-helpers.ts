@@ -1,0 +1,192 @@
+import { formatPrice, normalizeText } from '../utils';
+import { ProductListEntry, CartItem } from '../types';
+
+export function buildSelectionReply(
+	product: ProductListEntry,
+	currency: string,
+): string {
+	if (product.variants.length === 1) {
+		const v = product.variants[0];
+		const priceText = formatPrice(v.price, currency);
+		const detail = v.name ? `${v.name} – ${priceText}` : priceText;
+		return (
+			`Perfecto 👌\n\n*${product.name}*\n${detail} · ${v.totalQty} disponibles` +
+			'\n\n¿Le ayudo con la cotización o tiene alguna duda?'
+		);
+	}
+
+	const variantLines = product.variants.map(v => {
+		const priceText = formatPrice(v.price, currency);
+		return `  - ${v.name} – ${priceText} (${v.totalQty} disponibles)`;
+	});
+
+	return (
+		`Perfecto 👌\n\n*${product.name}* lo tenemos en estas presentaciones:\n\n` +
+		variantLines.join('\n') +
+		'\n\n¿Con cuál te quedas?'
+	);
+}
+
+export function buildResumptionReply(product: ProductListEntry): string {
+	const variantLines = product.variants.map(v => `• ${v.name}`).join('\n');
+	return (
+		`Hola 😊 retomamos donde lo dejamos.\n\nEstábamos viendo:\n\n*${product.name}*` +
+		(product.description ? `\n_${product.description}_` : '') +
+		(product.variants.length > 1 ? `\n${variantLines}` : '') +
+		`\n\n¿Quiere continuar con ese o busca algo diferente?`
+	);
+}
+
+export function resolveVariant(
+	product: ProductListEntry,
+	hint?: string,
+	userText?: string,
+): ProductListEntry['variants'][0] | undefined {
+	if (product.variants.length === 1) return product.variants[0];
+
+	// 1) Hint-based match
+	if (hint) {
+		const normalizedHint = normalizeText(hint);
+		const match =
+			product.variants.find(v =>
+				normalizeText(v.name).includes(normalizedHint),
+			) ??
+			product.variants.find(v =>
+				normalizedHint.includes(normalizeText(v.name)),
+			);
+		if (match) return match;
+	}
+
+	// 2) User text keyword match: score each variant by how many of its
+	//    distinctive words appear in the message
+	if (userText) {
+		const normalized = normalizeText(userText);
+		let bestVariant: ProductListEntry['variants'][0] | undefined;
+		let bestScore = 0;
+		for (const v of product.variants) {
+			const vWords = normalizeText(v.name)
+				.split(/\s+/)
+				.filter((w: string) => w.length > 1);
+			const score = vWords.filter((w: string) => normalized.includes(w)).length;
+			if (score > bestScore) {
+				bestScore = score;
+				bestVariant = v;
+			}
+		}
+		if (bestVariant && bestScore > 0) return bestVariant;
+	}
+
+	// 3) Fallback: pick variant with highest stock (most popular)
+	return product.variants.reduce((best, v) =>
+		v.totalQty > best.totalQty ? v : best,
+	);
+}
+
+/**
+ * Convierte el nombre de una variante a gramos cuando es posible.
+ * Ej: "100g" → 100, "Medio Kilo" → 500, "KILO" → 1000, "(APROX. 20 unidades)" → null
+ */
+export function parseVariantWeightGrams(variantName: string): number | null {
+	const normalized = variantName.toLowerCase().trim();
+	// "Medio Kilo" → 500g
+	if (/\bmedio\s*kilo\b/.test(normalized)) return 500;
+	// "1 kilo", "2 kilos", "1kg" → gramos
+	const kiloMatch = normalized.match(/(\d+(?:[.,]\d+)?)\s*(?:kilo[s]?|kg)/);
+	if (kiloMatch) return parseFloat(kiloMatch[1].replace(',', '.')) * 1000;
+	// "kilo" o "kilos" sin número → 1000g
+	if (/^\s*kilo[s]?\s*$/.test(normalized)) return 1000;
+	// "100g", "250gr", "500 gramos" → gramos directos
+	const gramMatch = normalized.match(
+		/(\d+(?:[.,]\d+)?)\s*(?:gr(?:amo[s]?)?|g\b)/,
+	);
+	if (gramMatch) return parseFloat(gramMatch[1].replace(',', '.'));
+	return null;
+}
+
+/**
+ * Detecta si el texto del cliente especifica una cantidad por peso.
+ * Devuelve el peso en gramos, o null si no hay unidad de peso reconocible.
+ */
+export function detectRequestedWeightGrams(text: string): number | null {
+	const weightMatch = text.match(
+		/\b(\d+(?:[.,]\d+)?)\s*(kilo[s]?|kg|gramo[s]?|gr|g)\b/i,
+	);
+	if (!weightMatch) return null;
+	const val = parseFloat(weightMatch[1].replace(',', '.'));
+	const unit = weightMatch[2].toLowerCase();
+	return unit.startsWith('k') ? val * 1000 : val;
+}
+
+/**
+ * Dado un peso en gramos y las variantes de un producto, devuelve la variante
+ * más adecuada y la cantidad de unidades necesarias.
+ *
+ * Lógica:
+ * 1. Preferir variantes donde `requestedGrams` sea múltiplo exacto de la variante.
+ * 2. Entre candidatos exactos (o todos si no hay exactos), preferir la que da
+ *    MENOS unidades (más eficiente para el cliente).
+ */
+export function resolveVariantByWeight(
+	variants: ProductListEntry['variants'],
+	requestedGrams: number,
+): { variant: ProductListEntry['variants'][0]; units: number } | null {
+	const weighted = variants
+		.map(v => ({ variant: v, grams: parseVariantWeightGrams(v.name) }))
+		.filter(
+			(vw): vw is { variant: ProductListEntry['variants'][0]; grams: number } =>
+				vw.grams !== null && vw.grams > 0,
+		);
+	if (weighted.length === 0) return null;
+
+	const exactMatches = weighted.filter(vw => requestedGrams % vw.grams === 0);
+	const candidates = exactMatches.length > 0 ? exactMatches : weighted;
+
+	// Menor cantidad de unidades = presentación más práctica para la cantidad pedida
+	const best = candidates.reduce((a, b) => {
+		const unitsA = Math.ceil(requestedGrams / a.grams);
+		const unitsB = Math.ceil(requestedGrams / b.grams);
+		return unitsB < unitsA ? b : a;
+	});
+
+	return {
+		variant: best.variant,
+		units: Math.ceil(requestedGrams / best.grams),
+	};
+}
+
+/**
+ * Construye el mensaje que pregunta al cliente qué quiere hacer
+ * con los ítems del carrito que no tienen stock suficiente.
+ */
+export function buildOutOfStockResolutionMessage(
+	blockedItemsContext: Array<{
+		item: CartItem;
+		availableStock: number;
+		alternatives: Array<{
+			variantId: string;
+			name: string;
+			stock: number;
+			unitPrice: string | null;
+		}>;
+	}>,
+): string {
+	const lines: string[] = [];
+
+	for (const blocked of blockedItemsContext) {
+		const name = blocked.item.variantName
+			? `${blocked.item.productName} ${blocked.item.variantName}`
+			: blocked.item.productName;
+
+		if (blocked.availableStock > 0) {
+			lines.push(
+				`⚠️ *${name}*: solo hay ${blocked.availableStock} unidades disponibles de las ${blocked.item.quantity} que pediste. ¿Las incluyo en el pedido?`,
+			);
+		} else {
+			lines.push(
+				`⚠️ *${name}*: no hay stock disponible. ¿Lo omito del pedido?`,
+			);
+		}
+	}
+
+	return lines.join('\n\n');
+}
