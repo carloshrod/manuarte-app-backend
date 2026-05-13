@@ -252,9 +252,9 @@ export class WhatsAppAgentService {
 		const entry = this.messageBuffer.get(phoneNumber)!;
 		entry.timer = setTimeout(() => {
 			this.messageBuffer.delete(phoneNumber);
-			const combined = entry.texts.join(' ');
+			const combined = entry.texts.join('\n');
 			console.log(
-				`[WhatsApp Agent] Processing ${entry.texts.length} buffered message(s) from ${phoneNumber}: "${combined}"`,
+				`[WhatsApp Agent] Processing ${entry.texts.length} buffered message(s) from ${phoneNumber}: "${entry.texts.join(' | ')}"`,
 			);
 			this.processAndReply(phoneNumber, entry.botPhoneNumberId, combined).catch(
 				err => {
