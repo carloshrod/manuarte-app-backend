@@ -15,12 +15,7 @@ import { formatPrice, normalizeText } from '../utils';
 import { ProductSearchService } from './product-search.service';
 import { stripCallingCode } from '../helpers/intent-detection';
 import { mapCartToQuoteItems } from '../helpers/cart-helpers';
-import {
-	CartItem,
-	CollectionFlow,
-	PendingPurchaseFlow,
-	UserSession,
-} from '../types';
+import { CartItem, CollectionFlow, UserSession } from '../types';
 
 export class FlowsService {
 	constructor(
@@ -392,51 +387,8 @@ export class FlowsService {
 						);
 				}
 
-				// Check if the customer wants to ADD products to the cart
-				if (
-					correctionResult.productsToAdd &&
-					correctionResult.productsToAdd.length > 0
-				) {
-					const { added, outOfStock } =
-						await this.productSearchService.processProductListItems(
-							correctionResult.productsToAdd,
-							session,
-							currency,
-							countryInfo,
-							'quote',
-						);
-					if (added > 0 || outOfStock.length > 0) {
-						let reply = await this.openai
-							.generateReply({
-								userMessage: text,
-								intent: 'awaiting_confirmation',
-								cart: session.cart,
-								currency,
-								quoteFlowData: flow.collectedData,
-							})
-							.catch(
-								() =>
-									'¿Confirmo la cotización con estos datos y productos actualizados?',
-							);
-						if (outOfStock.length > 0) {
-							const names = outOfStock.map(p => `- ${p}`).join('\n');
-							reply += `\n\n⚠️ Los siguientes productos no tienen stock suficiente actualmente:\n${names}`;
-						}
-						return reply;
-					}
-				}
-
-				// AI could not detect what to correct — ask for clarification
-				return await this.openai
-					.generateReply({
-						userMessage: text,
-						intent: 'awaiting_correction_unclear',
-						quoteFlowData: flow.collectedData,
-					})
-					.catch(
-						() =>
-							'¿Qué dato necesitas corregir? Puedes decirme el nombre, cédula, dirección o ciudad.',
-					);
+				// Any other message (cart edits, product adds/removes) → let the normal pipeline handle it
+				return null;
 			}
 
 			// Generar la cotización
@@ -505,6 +457,15 @@ export class FlowsService {
 				// Guardar referencia de la cotización para el flujo de compra
 				session.lastQuoteId = result.newQuote.id;
 				session.lastQuoteSerial = result.newQuote.serialNumber;
+
+				// Iniciar flujo de compra en paso de confirmación de cotización
+				session.pendingPurchaseFlow = {
+					step: 'awaiting_quote_confirmation',
+					purchaseFromQuote: true,
+					quoteId: result.newQuote.id,
+					quoteSerial: result.newQuote.serialNumber,
+					currency,
+				};
 
 				const serial = result.newQuote.serialNumber;
 
@@ -846,7 +807,7 @@ export class FlowsService {
 						})
 						.catch(
 							() =>
-						'¡Claro! Para procesar su compra necesito su nombre completo y su número de cédula.',
+								'¡Claro! Para procesar su compra necesito su nombre completo y su número de cédula.',
 						);
 				}
 			}
@@ -949,56 +910,9 @@ export class FlowsService {
 						})
 						.catch(() => '¿Confirmo la compra con estos datos actualizados?');
 				}
-				// Check if the customer wants to ADD products to the cart
-				if (
-					correctionResult.productsToAdd &&
-					correctionResult.productsToAdd.length > 0
-				) {
-					const { added, outOfStock } =
-						await this.productSearchService.processProductListItems(
-							correctionResult.productsToAdd,
-							session,
-							currency,
-							countryInfo,
-							'purchase',
-						);
-					if (added > 0 || outOfStock.length > 0) {
-						let reply: string;
-						if (added > 0) {
-							flow.items = session.cart ?? [];
-							reply = await this.openai
-								.generateReply({
-									userMessage: text,
-									intent: 'awaiting_purchase_confirmation',
-									cart: flow.items,
-									currency,
-									purchaseFlowData: flow.collectedData,
-								})
-								.catch(
-									() =>
-										'¿Confirmo la compra con estos datos y productos actualizados?',
-								);
-						} else {
-							reply =
-								'Los productos que mencionas no tienen stock disponible en este momento.';
-						}
-						if (outOfStock.length > 0) {
-							const names = outOfStock.map(p => `- ${p}`).join('\n');
-							reply += `\n\n⚠️ Los siguientes productos no tienen stock disponible y no fueron incluidos en el pedido:\n${names}`;
-						}
-						return reply;
-					}
-				}
-				return await this.openai
-					.generateReply({
-						userMessage: text,
-						intent: 'awaiting_correction_unclear',
-						purchaseFlowData: flow.collectedData,
-					})
-					.catch(
-						() =>
-							'¿Qué dato necesitas corregir? Puedes decirme el nombre, cédula, dirección o ciudad.',
-					);
+
+				// Any other message (cart edits, product adds/removes) → let the normal pipeline handle it
+				return null;
 			}
 
 			// Confirmado — generar items y total si no están aún

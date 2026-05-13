@@ -314,7 +314,7 @@ export class OpenAIService {
 						})
 						.join(
 							'\n',
-						)}\nSi el mensaje menciona cambiar cantidad, eliminar o modificar alguno de esos productos → clasifica como "edit_cart". IMPORTANTE: si el mensaje contiene verbos como "agrega", "añade", "suma", "quita", "saca" + nombre de un producto del pedido → es SIEMPRE "edit_cart", aunque haya una lista de productos activa con números.\n`
+						)}\nSi el mensaje menciona cambiar cantidad, eliminar o modificar alguno de esos productos → clasifica como "edit_cart". IMPORTANTE: si el mensaje contiene verbos como "agrega", "añade", "suma", "quita", "saca" + nombre de un producto del pedido → es SIEMPRE "edit_cart", aunque haya una lista de productos activa con números. TAMBIÉN clasifica como "edit_cart" cuando: (1) el mensaje es solo [número] [nombre] sin verbo (ej: "5 fragancia chicle", "3 bases glicerina"); (2) el mensaje usa frases de corrección como "son N X", "deben ser N X", "mejor N X", "que sean N X", "en realidad N X". En ambos casos usa "addProductHint" con el nombre y "quantity" con el número. NUNCA generes "addProductHint" cuando el mensaje contiene SOLO un verbo de eliminación ("quita", "saca", "ya no quiero", "elimina") sin intención de agregar otro producto.\n`
 				: '';
 
 		const selectionInstructions =
@@ -340,14 +340,14 @@ ${selectionInstructions}${showMoreInstruction}  - "show_cart": el cliente pregun
   - "general_question": pregunta sobre envíos, métodos de pago, tiempo de entrega, políticas, u otras preguntas que no son sobre un producto específico en catálogo
   - "unknown": no se puede clasificar con certeza
 ${activeProducts && activeProducts.length > 0 ? '- "selectionIndexes": array de números 1-based SOLO si intent es "select_product". Puede ser uno o varios. Ej: [1] o [1,3]\n- "variantHint": SOLO si intent es "select_product" y el producto elegido tiene múltiples variantes y el cliente menciona una variante específica. Extrae el fragmento del nombre de la variante mencionada. Ej: "quiero la apf" → variantHint: "apf"\n- "quantities": array de números SOLO si intent es "select_product" y el cliente menciona una cantidad distinta para cada producto. Misma longitud y orden que selectionIndexes. Ej: "3 de chicle y 2 de floral" con selectionIndexes:[2,3] → quantities:[3,2]. Si todos los productos tienen la misma cantidad o no hay cantidad, omite este campo y usa "quantity".\n' : ''}- "quantity": número entero SOLO si el cliente menciona UNA sola cantidad que aplica a todos los productos seleccionados, o a cualquier otro intent. Ej: "dame 5", "quiero 3 kilos" → quantity: 5 o 3. No usar junto a "quantities".
-- "removeProductHint": SOLO si intent es "edit_cart" Y el cliente pide EXPLÍCITAMENTE quitar/eliminar un producto (frases como "ya no quiero", "quita", "saca", "elimina", "sin"). NO usar si el cliente solo cambia la cantidad. Ej: "ya no quiero la mecha 8D" → removeProductHint: "mecha 8D". "que sean mejor 2 kilos de ácido esteárico" → NO removeProductHint (solo addProductHint con la nueva cantidad).
+- "removeProductHint": SOLO si intent es "edit_cart" Y el cliente pide EXPLÍCITAMENTE quitar/eliminar un producto (frases como "ya no quiero", "quita", "saca", "elimina", "sin"). NO usar si el cliente solo cambia la cantidad. CRÍTICO: si el mensaje contiene SOLO un verbo de eliminación sin intención de agregar otro producto, genera ÚNICAMENTE "removeProductHint" y NUNCA "addProductHint" para el mismo producto. Ej: "ya no quiero la mecha 8D" → removeProductHint: "mecha 8D" (sin addProductHint). "que sean mejor 2 kilos de ácido esteárico" → NO removeProductHint (solo addProductHint con la nueva cantidad).
 - "addProductHint": SOLO si intent es "edit_cart" Y el cliente modifica UN SOLO producto. Usa el fragmento MÁS ESPECÍFICO: las palabras que diferencian ese producto de otros en el pedido. Si hay varios productos del mismo tipo, DEBES incluir las palabras distintivas. Ej: "agrega 2 fragancias más de brisa marina" → addProductHint: "brisa marina" (NO "fragancia"). "agrega 1 kilo más de cera de coco" → addProductHint: "cera de coco"
 - "cartEdits": SOLO si intent es "edit_cart" Y el cliente modifica DOS O MÁS productos del carrito en un mismo mensaje. Array de objetos {productHint, quantity}. No usar junto con addProductHint. Ej: "deben ser 4 de jazmin y 4 de brisa marina" → cartEdits: [{"productHint":"jazmin","quantity":4},{"productHint":"brisa marina","quantity":4}]
 - "productList": SOLO si intent es "request_quote" Y el mensaje contiene una lista de dos o más productos con cantidades. Array de objetos {productHint, quantity, variantHint?, unit?}. "productHint" es el nombre descriptivo del producto (sin frases de contexto). "quantity" es el número entero pedido. "variantHint" es la presentación específica si aplica (ej: "20 ml", "100 gramos"). "unit" es la unidad de peso si la cantidad está en peso (ej: "kilos", "kg", "gramos"). Ej: "Cotizame 5 kilos de cera de palma, 3 fragancias de chicle de 20 ml y 7 mechas 8D" → productList: [{"productHint":"cera de palma","quantity":5,"unit":"kilos"},{"productHint":"fragancia chicle","quantity":3,"variantHint":"20 ml"},{"productHint":"mecha 8d","quantity":7}]
 - "variantHint": TAMBIÉN para intent "search_product", si el cliente menciona una presentación, tamaño o formato específico del producto buscado (ej: "20 ml", "100 gramos", "1 litro", "medio kilo"). Extrae SOLO el fragmento de tamaño/presentación. Ej: "3 fragancias de chicle de 20 ml" → variantHint: "20 ml", "2 fragancias lavanda de 100 gramos" → variantHint: "100 gramos". No incluir si no hay presentación específica.
 - "searchQuery": SOLO si intent es "search_product" Y el producto mencionado NO aparece en la lista activa. Extrae el nombre específico del producto incluyendo su descriptor propio (sabor, aroma, nombre de marca, tipo). Conserva "para velas" o "para jabones" si pueden ser parte del nombre del producto (hay productos exclusivos para uno u otro). Elimina SOLO frases de contexto de uso del cliente como "para hacer X", "para mis X", "para fabricar X", "para uso en X". Ejemplos: "fragancias para jabones" → "fragancia para jabones", "fragancia de chicle de 20 ml" → "fragancia chicle", "fragancia de lavanda para velas" → "fragancia lavanda para velas", "colorante para mis velas artesanales" → "colorante", "cera para hacer velas" → "cera", "3 kilos de cera de soya apf" → "cera soya apf".
 
-Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && activeProducts.length > 0 ? '\nEjemplos:\n{"intent":"select_product","selectionIndexes":[2]}\n{"intent":"select_product","selectionIndexes":[1,3]}\n{"intent":"select_product","selectionIndexes":[1],"quantity":5}\n{"intent":"select_product","selectionIndexes":[2],"variantHint":"apf","quantity":2}\n{"intent":"select_product","selectionIndexes":[1]}  // cliente dice "la tr plus" y el producto 1 contiene "TR PLUS" en su nombre\n{"intent":"select_product","selectionIndexes":[2,3],"quantities":[3,2]}  // cliente dice "3 de chicle y 2 de floral"\n{"intent":"edit_cart","removeProductHint":"mecha 8D"}\n{"intent":"edit_cart","addProductHint":"cera de coco","quantity":1}\n{"intent":"edit_cart","cartEdits":[{"productHint":"jazmin","quantity":4},{"productHint":"brisa marina","quantity":4}]}\n{"intent":"unknown","quantity":3}' : '\nEjemplo: {"intent":"search_product","searchQuery":"cera de soja"}'}${awaitingMoreProducts ? '\n{"intent":"show_more"}' : ''}`;
+Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && activeProducts.length > 0 ? '\nEjemplos:\n{"intent":"select_product","selectionIndexes":[2]}\n{"intent":"select_product","selectionIndexes":[1,3]}\n{"intent":"select_product","selectionIndexes":[1],"quantity":5}\n{"intent":"select_product","selectionIndexes":[2],"variantHint":"apf","quantity":2}\n{"intent":"select_product","selectionIndexes":[1]}  // cliente dice "la tr plus" y el producto 1 contiene "TR PLUS" en su nombre\n{"intent":"select_product","selectionIndexes":[2,3],"quantities":[3,2]}  // cliente dice "3 de chicle y 2 de floral"\n{"intent":"edit_cart","removeProductHint":"mecha 8D"}  // SOLO removeProductHint cuando es eliminación pura, sin addProductHint\n{"intent":"edit_cart","addProductHint":"cera de coco","quantity":1}\n{"intent":"edit_cart","addProductHint":"fragancia chicle","quantity":5}  // "5 fragancia chicle" sin verbo, fragancia chicle está en el pedido\n{"intent":"edit_cart","addProductHint":"bases de glicerina white","quantity":4}  // "son 4 bases de glicerina white"\n{"intent":"edit_cart","cartEdits":[{"productHint":"jazmin","quantity":4},{"productHint":"brisa marina","quantity":4}]}\n{"intent":"search_product","searchQuery":"termometro","quantity":1}  // "1 termometro" cuando termometro no está en la lista\n{"intent":"unknown","quantity":3}' : '\nEjemplo: {"intent":"search_product","searchQuery":"cera de soja"}'}${awaitingMoreProducts ? '\n{"intent":"show_more"}' : ''}`;
 		const response = await this.client.chat.completions.create({
 			model: 'gpt-4o-mini',
 			messages: [
@@ -870,12 +870,13 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 				parts.push(`\nEl pedido actualizado queda así:\n${updatedLines}`);
 			}
 			parts.push(
-				'\nConfirma el cambio en UNA frase corta y directa. ' +
+				'\nConfirma el cambio con una frase corta, natural y variada. Evita frases robóticas como "Se quitó X y el pedido actualizado queda así". ' +
+					'En cambio usa expresiones coloquiales como: "¡Listo!", "Perfecto, ya lo quité.", "Hecho, sin problema.", "Ya está, lo removí." seguidas de un resumen breve del pedido si aplica. ' +
 					'Si se actualizó la cantidad, menciona la nueva cantidad y el precio total si está disponible. ' +
 					(ctx.removedProduct
-						? 'Menciona que se quitó el producto indicado. '
+						? 'Menciona brevemente que se quitó el producto de forma natural. '
 						: 'NO menciones eliminaciones. ') +
-					'Luego pregunta si necesita algo más.',
+					'Luego pregunta si necesita algo más de forma breve.',
 			);
 		} else if (ctx.intent === 'general_question') {
 			parts.push(
@@ -963,15 +964,15 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 							.join('\n')
 					: '';
 			parts.push(
-				`\nSaluda al cliente de forma natural usando su nombre SOLO si parece nombre de persona (no empresa). Nombre: "${d?.fullName ?? ''}". Si el nombre contiene palabras que indican empresa (S.A.S., SAS, Corp, Ltda, Distribuciones, Comercializadora, etc.) omite el nombre. Si es persona, usa una frase como "Listo [nombre sin apellido]" o "Perfecto [nombre sin apellido], tengo esto en el sistema:". Si es empresa, empieza con "Tengo esto en el sistema:".` +
-					`\n\nDatos:` +
+				`\nMuéstrale al cliente el resumen actualizado para que confirme. Usa una frase de apertura natural con su nombre (sin apellido) si parece nombre de persona. Si el nombre contiene palabras de empresa (S.A.S., SAS, Corp, Ltda, Distribuciones, Comercializadora, etc.) empieza con "Tengo esto en el sistema:". Varía las frases de apertura ("Listo [nombre]", "Perfecto [nombre], aquí está el resumen actualizado:", etc.).` +
+					`\n\nIncluye literalmente en el mensaje los siguientes datos:` +
 					`\nNombre: ${d?.fullName ?? ''}` +
 					`\nCédula: ${d?.dni ?? ''}` +
 					`\nTeléfono: ${d?.phoneNumber ?? ''}` +
 					`\nDirección: ${d?.location ?? ''}` +
 					`\nCiudad: ${d?.cityName ?? ''}` +
-					(cartSummary ? `\n\nProductos:\n${cartSummary}` : '') +
-					'\n\nPregunta si todo está correcto para generar la cotización. Si quiere cambiar algo, que te indique qué corregir.',
+					(cartSummary ? `\n\nPedido:\n${cartSummary}` : '') +
+					'\n\nAl final pregunta si todo está correcto para generar la cotización o si desea cambiar algo. Varía la frase de cierre.',
 			);
 		} else if (ctx.intent === 'purchase_intent') {
 			parts.push(
@@ -1029,8 +1030,8 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 							.join('\n')
 					: '';
 			parts.push(
-				`\nMuéstrale al cliente este resumen para que confirme antes de generar el pago:` +
-					`\n\nDatos:` +
+				`\nMuéstrale al cliente el resumen actualizado para que confirme antes de generar el pago. Usa una frase de apertura natural con su nombre (sin apellido) si parece nombre de persona. Varía las frases de apertura.` +
+					`\n\nIncluye literalmente en el mensaje los siguientes datos:` +
 					`\nNombre: ${d?.fullName ?? ''}` +
 					`\nCédula: ${d?.dni ?? ''}` +
 					`\nTeléfono: ${d?.phoneNumber ?? ''}` +
@@ -1039,7 +1040,7 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.${activeProducts && active
 					(cartSummaryPurchase
 						? `\n\nProductos:\n${cartSummaryPurchase}`
 						: '') +
-					'\n\nPregunta si todo está correcto para proceder con el pago. Si quiere cambiar algo, que te indique qué corregir.',
+					'\n\nAl final pregunta si todo está correcto para proceder con el pago o si desea cambiar algo. Varía la frase de cierre.',
 			);
 		} else if (ctx.intent === 'awaiting_payment_confirmation') {
 			parts.push(

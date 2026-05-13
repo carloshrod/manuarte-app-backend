@@ -282,6 +282,40 @@ export class ProductSearchService {
 							stock,
 						);
 					}
+				} else {
+					// Múltiples variantes sin hint ni unidad → usar la más pequeña disponible (menor precio).
+					// El cliente pidió cantidad sin especificar presentación; asumimos la de menor precio.
+					const sortedByPrice = [...product.variants]
+						.filter(v => v.totalQty > 0)
+						.sort((a, b) => Number(a.price) - Number(b.price));
+					const defaultVariant = sortedByPrice[0] ?? product.variants[0];
+					if (defaultVariant) {
+						const stock = defaultVariant.totalQty;
+						const realName = [product.name, defaultVariant.name]
+							.filter(Boolean)
+							.join(' ')
+							.trim();
+						if (mode === 'purchase' && stock === 0) {
+							pushOutOfStock(
+								realName,
+								product.variants,
+								defaultVariant.variantId,
+								stock,
+							);
+							continue;
+						}
+						const cartQty = mode === 'quote' ? qty : Math.min(qty, stock);
+						addToCart(session, product, cartQty, currency, defaultVariant);
+						added++;
+						if (stock < qty) {
+							pushOutOfStock(
+								realName,
+								product.variants,
+								defaultVariant.variantId,
+								stock,
+							);
+						}
+					}
 				}
 			} catch (err) {
 				console.error(
@@ -385,7 +419,11 @@ export class ProductSearchService {
 			: normalizedText;
 
 		const searchTerms = aiSearchQuery
-			? baseText.split(' ').filter(w => w.length > 1 && !/^\d+$/.test(w))
+			? baseText
+					.split(' ')
+					.filter(
+						w => w.length > 1 && !stopWords.includes(w) && !/^\d+$/.test(w),
+					)
 			: normalizedText
 					.split(' ')
 					.filter(

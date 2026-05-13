@@ -92,20 +92,6 @@ export class MediaHandlerService {
 			),
 		);
 
-		// Delete linked quote if applicable
-		if (flow.purchaseFromQuote && flow.quoteId) {
-			await this.quoteService
-				.delete(flow.quoteId)
-				.catch(err =>
-					console.error(
-						'[WhatsApp Agent] Error deleting quote after purchase:',
-						err,
-					),
-				);
-			session.lastQuoteId = undefined;
-			session.lastQuoteSerial = undefined;
-		}
-
 		// Clear flow and cart
 		session.pendingPurchaseFlow = null;
 		session.cart = [];

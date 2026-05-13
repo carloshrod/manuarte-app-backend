@@ -8,7 +8,7 @@ import { WhatsAppLogService } from '../logging/log.service';
 import { QuoteService } from '../../quote/service';
 import { CustomerService } from '../../customer/service';
 import { calculateTotals } from '../../docs/utils';
-import { formatPrice, normalizeText } from '../utils';
+import { formatPrice, normalizeText, stemTerm } from '../utils';
 import { SESSION_TTL_SECONDS, MAX_PRODUCT_RESULTS } from '../constants';
 import {
 	ProductListEntry,
@@ -88,6 +88,8 @@ export class IntentHandlerService {
 			return this.handleIntentShowCart(ctx);
 		} else if (intent === 'request_quote') {
 			return this.handleIntentRequestQuote(ctx);
+		} else if (intent === 'multi_product_add') {
+			return this.handleIntentMultiProductAdd(ctx);
 		} else if (intent === 'purchase_intent') {
 			return this.handleIntentPurchaseIntent(ctx);
 		} else {
@@ -152,6 +154,86 @@ export class IntentHandlerService {
 
 			const requestedGramsInSelection =
 				detectRequestedWeightGrams(normalizedText);
+
+			// Cross-list weight resolution: when a weight is requested and a single product
+			// is selected, search all related products in the list for the optimal variant.
+			// Example: "dame 4 kilos de la white" → prefer WHITE KILO x4 over WHITE 10 KILOS x1.
+			if (requestedGramsInSelection !== null && selectedItems.length === 1) {
+				const selectedKeywords = normalizeText(selectedItems[0].name)
+					.split(/\s+/)
+					.filter(w => w.length > 2);
+				type VariantRef = {
+					variant: ProductListEntry['variants'][0];
+					product: ProductListEntry;
+					grams: number;
+				};
+				const candidatePool: VariantRef[] = [];
+				for (const listProduct of session.lastProductList ?? []) {
+					const pNorm = normalizeText(listProduct.name);
+					if (selectedKeywords.some(kw => pNorm.includes(kw))) {
+						for (const v of listProduct.variants) {
+							const g = parseVariantWeightGrams(v.name);
+							if (g !== null && g > 0) {
+								candidatePool.push({
+									variant: v,
+									product: listProduct,
+									grams: g,
+								});
+							}
+						}
+					}
+				}
+				if (candidatePool.length > 0) {
+					const exact = candidatePool.filter(
+						c => requestedGramsInSelection % c.grams === 0,
+					);
+					const pool = exact.length > 0 ? exact : candidatePool;
+					const best = pool.reduce((a, b) => {
+						const uA = Math.ceil(requestedGramsInSelection / a.grams);
+						const uB = Math.ceil(requestedGramsInSelection / b.grams);
+						return uB < uA ? b : a;
+					});
+					// Only redirect when a genuinely better product or variant was found
+					if (
+						best.product.name !== selectedItems[0].name ||
+						best.variant.name !== resolvedVariant?.name
+					) {
+						const units = Math.ceil(requestedGramsInSelection / best.grams);
+						const cappedUnits = Math.min(units, best.variant.totalQty);
+						const stockExceeded = cappedUnits < units;
+						if (!stockExceeded) {
+							addToCart(
+								session,
+								best.product,
+								cappedUnits,
+								currency,
+								best.variant,
+							);
+						}
+						session.selectedProduct = best.product.name;
+						session.selectedVariantName = best.variant.name;
+						const productForReply = {
+							...best.product,
+							variants: [best.variant],
+						};
+						await redis.set(
+							`session:${phoneNumber}`,
+							JSON.stringify(session),
+							'EX',
+							SESSION_TTL_SECONDS,
+						);
+						return this.openai
+							.generateReply({
+								userMessage: text,
+								selectedProduct: productForReply,
+								quantity: stockExceeded ? undefined : cappedUnits,
+								requestedQuantity: stockExceeded ? units : undefined,
+								currency,
+							})
+							.catch(() => buildSelectionReply(productForReply, currency));
+					}
+				}
+			}
 
 			let primaryItemQty: number | undefined;
 			let primaryRequestedQty: number | undefined;
@@ -312,7 +394,9 @@ export class IntentHandlerService {
 						autoAddedQty = cappedUnits;
 						autoAddedVariant = resolved.variant;
 						if (stockExceeded) {
-							const variantGrams = parseVariantWeightGrams(resolved.variant.name);
+							const variantGrams = parseVariantWeightGrams(
+								resolved.variant.name,
+							);
 							const requestedKg = requestedGrams / 1000;
 							const availableGrams =
 								variantGrams !== null ? cappedUnits * variantGrams : null;
@@ -373,6 +457,35 @@ export class IntentHandlerService {
 					}
 					console.log(
 						`[WhatsApp Agent] Auto-added to cart from search (variant hint "${aiVariantHint}"): ${product.name} – ${resolved.name} x${cappedUnits}`,
+					);
+				}
+			} else {
+				// Múltiples variantes sin hint ni peso → usar la más pequeña disponible (menor precio).
+				// El cliente pidió cantidad pero sin especificar presentación; asumimos la más económica
+				// (generalmente la de menor tamaño/precio) es la más vendida.
+				const sortedByPrice = [...product.variants]
+					.filter(v => v.totalQty > 0)
+					.sort((a, b) => Number(a.price) - Number(b.price));
+				const smallestVariant = sortedByPrice[0];
+				if (smallestVariant) {
+					const cappedUnits = Math.min(aiQuantity, smallestVariant.totalQty);
+					const stockExceeded = cappedUnits < aiQuantity;
+					if (!stockExceeded) {
+						addToCart(session, product, cappedUnits, currency, smallestVariant);
+					}
+					session.selectedProduct = product.name;
+					session.selectedVariantName = smallestVariant.name;
+					if (cappedUnits > 0) {
+						autoAddedProduct = product;
+						autoAddedQty = cappedUnits;
+						autoAddedVariant = smallestVariant;
+						if (stockExceeded) {
+							autoAddedRequestedQty = aiQuantity;
+							session.pendingStockConfirmQty = cappedUnits;
+						}
+					}
+					console.log(
+						`[WhatsApp Agent] Auto-added to cart from search (smallest variant): ${product.name} – ${smallestVariant.name} x${cappedUnits}`,
 					);
 				}
 			}
@@ -495,10 +608,7 @@ export class IntentHandlerService {
 					isShowingMore: true,
 					currency,
 				})
-				.catch(
-				() =>
-					'Aquí hay más opciones, dígame cuál le interesa.',
-			);
+				.catch(() => 'Aquí hay más opciones, dígame cuál le interesa.');
 		} else if (session.lastSearchQuery) {
 			session.selectedProduct = undefined;
 			const result = await this.productSearchService.buildProductReply(
@@ -801,7 +911,29 @@ export class IntentHandlerService {
 			/\d+\s*(?:kilo[s]?|kg|unidades?|u)?\.?\s+mas\b/i.test(normalizedText) ||
 			/\bmas\s+de\b/i.test(normalizedText);
 
-		if (aiAddProductHint && !(aiCartEdits && aiCartEdits.length > 0)) {
+		// Detectar pure-remove: la IA generó addProductHint Y removeProductHint apuntando al
+		// mismo item del carrito. Ocurre cuando el cliente solo quiere eliminar un producto
+		// (ej: "quita la white de 10 kilos") pero la IA genera ambos hints.
+		// En ese caso, saltar el bloque de add para evitar que el item quede con qty=1
+		// antes de ser eliminado.
+		const preRemoveTarget = aiRemoveProductHint
+			? findBestCartItemByHint(aiRemoveProductHint)
+			: undefined;
+		const preAddTarget =
+			aiAddProductHint && !(aiCartEdits && aiCartEdits.length > 0)
+				? findBestCartItemByHint(aiAddProductHint)
+				: undefined;
+		const isPureRemove = !!(
+			preRemoveTarget &&
+			preAddTarget &&
+			preRemoveTarget === preAddTarget
+		);
+
+		if (
+			aiAddProductHint &&
+			!(aiCartEdits && aiCartEdits.length > 0) &&
+			!isPureRemove
+		) {
 			const normalizedHint = normalizeText(aiAddProductHint);
 			const hintWords = normalizedHint
 				.split(/\s+/)
@@ -852,12 +984,24 @@ export class IntentHandlerService {
 				};
 				addedQty = cartItemToUpdate.quantity;
 			} else {
+				// Aplicar stemming a los tokens del hint para que "florales" matchee "Floral",
+				// "esenciales" matchee "esencial", etc.
+				// Se usa coincidencia por palabra completa (\b) para evitar falsos positivos:
+				// ej: "cera" (stem de "ceras") no debe matchear "encerada" (que lo contiene).
+				const stemmedHintWords = hintWords.map(w => stemTerm(w));
+				const matchesByWordBoundary = (normName: string): boolean =>
+					stemmedHintWords.some(t => {
+						const wordRe = new RegExp(`(?:^|\\s)${t}(?:\\s|$)`);
+						return wordRe.test(normName);
+					});
 				addedProductEntry =
-					session.lastProductList?.find(
-						p =>
-							normalizeText(p.name).includes(normalizedHint) ||
-							hintWords.some(t => normalizeText(p.name).includes(t)),
-					) ?? undefined;
+					session.lastProductList?.find(p => {
+						const normName = normalizeText(p.name);
+						return (
+							normName.includes(normalizedHint) ||
+							matchesByWordBoundary(normName)
+						);
+					}) ?? undefined;
 
 				if (addedProductEntry) {
 					if (requestedGrams !== null) {
@@ -989,6 +1133,29 @@ export class IntentHandlerService {
 		if (session.pendingQuoteFlow?.step === 'awaiting_cart_confirmation') {
 			return editReply + '\n\n¿Quiere que le genere la cotización?';
 		}
+		if (session.pendingQuoteFlow?.step === 'awaiting_confirmation') {
+			return this.openai
+				.generateReply({
+					userMessage: text,
+					intent: 'awaiting_confirmation',
+					cart: session.cart,
+					currency,
+					quoteFlowData: session.pendingQuoteFlow.collectedData,
+				})
+				.catch(() => editReply);
+		}
+		if (session.pendingPurchaseFlow?.step === 'awaiting_confirmation') {
+			session.pendingPurchaseFlow.items = session.cart ?? [];
+			return this.openai
+				.generateReply({
+					userMessage: text,
+					intent: 'awaiting_purchase_confirmation',
+					cart: session.cart,
+					currency,
+					purchaseFlowData: session.pendingPurchaseFlow.collectedData,
+				})
+				.catch(() => editReply);
+		}
 		return editReply;
 	};
 
@@ -1106,60 +1273,149 @@ export class IntentHandlerService {
 		} else {
 			const currency =
 				session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
-			session.pendingQuoteFlow = {
-				step: 'awaiting_cart_confirmation',
-				outOfStockItems:
-					outOfStockFromList.length > 0 ? outOfStockFromList : undefined,
-			};
-			const cartLines = session.cart
-				.map(item => {
-					const name = item.variantName
-						? `${item.productName} ${item.variantName}`
-						: item.productName;
-					const total = item.unitPrice
-						? formatPrice(
-								String(Number(item.unitPrice) * item.quantity),
-								item.currency,
-							)
-						: null;
-					return total
-						? `- ${item.quantity}x ${name} = ${total}`
-						: `- ${item.quantity}x ${name}`;
-				})
-				.join('\n');
-			const grandTotal = session.cart.reduce(
-				(sum, item) =>
-					sum + (item.unitPrice ? Number(item.unitPrice) * item.quantity : 0),
-				0,
+			const isoCode =
+				session.lastCountryInfo?.isoCode ?? countryInfo?.isoCode ?? 'CO';
+			const localPhone = stripCallingCode(phoneNumber);
+			const existingCustomer = await this.customerService.findByPhone(
+				localPhone,
+				isoCode,
 			);
-			const grandTotalFormatted = formatPrice(String(grandTotal), currency);
-			let replyText = `Aquí está su pedido:\n${cartLines}\n\nTotal: ${grandTotalFormatted}`;
-			if (outOfStockDetailsFromList.length > 0) {
-				const lines = outOfStockDetailsFromList
-					.map(p => {
-						const stockNote =
-							p.currentStock > 0
-								? `solo hay ${p.currentStock} disponible${p.currentStock !== 1 ? 's' : ''}`
-								: 'sin stock';
-						const altNote =
-							p.alternatives.length > 0
-								? `; también disponible en: ${p.alternatives.map(a => `${a.name} (${a.stock})`).join(', ')}`
-								: '';
-						return `- ${p.name} (${stockNote}${altNote})`;
+			if (existingCustomer) {
+				session.pendingQuoteFlow = {
+					step: 'awaiting_confirmation',
+					outOfStockItems:
+						outOfStockFromList.length > 0 ? outOfStockFromList : undefined,
+					collectedData: {
+						fullName: existingCustomer.fullName,
+						dni: existingCustomer.dni,
+						phoneNumber: localPhone,
+						location: existingCustomer.location,
+						cityId: existingCustomer.cityId,
+						cityName: existingCustomer.cityName
+							? `${existingCustomer.cityName}${existingCustomer.regionName ? `, ${existingCustomer.regionName}` : ''}`
+							: undefined,
+						customerId: existingCustomer.id,
+						personId: existingCustomer.personId,
+					},
+				};
+				await redis.set(
+					`session:${phoneNumber}`,
+					JSON.stringify(session),
+					'EX',
+					SESSION_TTL_SECONDS,
+				);
+				let reply = await this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'existing_customer_confirmation',
+						cart: session.cart,
+						currency,
+						quoteFlowData: session.pendingQuoteFlow.collectedData,
 					})
-					.join('\n');
-				replyText += `\n\n⚠️ Los siguientes productos no tienen stock suficiente:\n${lines}`;
+					.catch(
+						() =>
+							`¡Hola de nuevo, ${existingCustomer.fullName}! Ya tengo sus datos registrados. ¿Procedemos con la cotización?`,
+					);
+				if (outOfStockDetailsFromList.length > 0) {
+					const lines = outOfStockDetailsFromList
+						.map(p => {
+							const stockNote =
+								p.currentStock > 0
+									? `solo hay ${p.currentStock} disponible${p.currentStock !== 1 ? 's' : ''}`
+									: 'sin stock';
+							const altNote =
+								p.alternatives.length > 0
+									? `; también disponible en: ${p.alternatives.map(a => `${a.name} (${a.stock})`).join(', ')}`
+									: '';
+							return `- ${p.name} (${stockNote}${altNote})`;
+						})
+						.join('\n');
+					reply += `\n\n⚠️ Los siguientes productos no tienen stock suficiente:\n${lines}`;
+				}
+				return reply;
+			} else {
+				session.pendingQuoteFlow = {
+					step: 'awaiting_customer_data',
+					outOfStockItems:
+						outOfStockFromList.length > 0 ? outOfStockFromList : undefined,
+					collectedData: { phoneNumber: localPhone },
+				};
+				await redis.set(
+					`session:${phoneNumber}`,
+					JSON.stringify(session),
+					'EX',
+					SESSION_TTL_SECONDS,
+				);
+				return this.openai
+					.generateReply({
+						userMessage: text,
+						intent: 'request_quote',
+					})
+					.catch(
+						() =>
+							'¡Claro! Para armarle la cotización necesito su nombre completo y su número de cédula.',
+					);
 			}
-			replyText +=
-				'\n\n¿Quiere generar una cotización o proceder con la compra?';
-			await redis.set(
-				`session:${phoneNumber}`,
-				JSON.stringify(session),
-				'EX',
-				SESSION_TTL_SECONDS,
-			);
-			return replyText;
 		}
+	};
+
+	private handleIntentMultiProductAdd = async (
+		ctx: IntentContext,
+	): Promise<string> => {
+		const { session, phoneNumber, countryInfo, aiProductList } = ctx;
+		if (!aiProductList || aiProductList.length === 0) {
+			return 'No pude identificar los productos solicitados. ¿Puede darnos más detalles?';
+		}
+		const currency =
+			session.lastCountryInfo?.currency ?? countryInfo?.currency ?? 'USD';
+		const result = await this.productSearchService.processProductListItems(
+			aiProductList,
+			session,
+			currency,
+			countryInfo,
+			'purchase',
+		);
+		console.log(
+			`[WhatsApp Agent] multi_product_add: added=${result.added}, outOfStock=${result.outOfStock.join(',')}`,
+		);
+		if (!session.cart || session.cart.length === 0) {
+			const hints = aiProductList.map(i => `"${i.productHint}"`).join(', ');
+			return `No encontré los productos solicitados (${hints}). ¿Puede revisar los nombres?`;
+		}
+		const cartLines = session.cart
+			.map(item => {
+				const name = item.variantName
+					? `${item.productName} ${item.variantName}`
+					: item.productName;
+				const total = item.unitPrice
+					? formatPrice(
+							String(Number(item.unitPrice) * item.quantity),
+							item.currency,
+						)
+					: null;
+				return total
+					? `- ${item.quantity}x ${name} = ${total}`
+					: `- ${item.quantity}x ${name}`;
+			})
+			.join('\n');
+		const grandTotal = session.cart.reduce(
+			(sum, item) =>
+				sum + (item.unitPrice ? Number(item.unitPrice) * item.quantity : 0),
+			0,
+		);
+		const grandTotalFormatted = formatPrice(String(grandTotal), currency);
+		let reply = `Listo, aquí está su pedido:\n${cartLines}\n\nTotal: ${grandTotalFormatted}`;
+		if (result.outOfStock.length > 0) {
+			reply += `\n\n⚠️ Los siguientes productos no están disponibles: ${result.outOfStock.join(', ')}.`;
+		}
+		reply += '\n\n¿Necesita algo más?';
+		await redis.set(
+			`session:${phoneNumber}`,
+			JSON.stringify(session),
+			'EX',
+			SESSION_TTL_SECONDS,
+		);
+		return reply;
 	};
 
 	private handleIntentPurchaseIntent = async (
