@@ -175,4 +175,9 @@ src/models
 models
 data
 
+service_backup.js
+service_backup.js.map
+tmp_head_service.js
+tmp_head_service.js.map
+
 # End of https://www.toptal.com/developers/gitignore/api/node,windows
